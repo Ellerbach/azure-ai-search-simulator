@@ -28,13 +28,13 @@ RUN dotnet publish -c Release -o /app/publish --no-restore
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 
-# Create non-root user for security
-RUN groupadd --gid 1000 appuser && \
-    useradd --uid 1000 --gid appuser --shell /bin/bash --create-home appuser
+# Create non-root user for security (handle existing GID/UID)
+RUN getent group 1000 || groupadd --gid 1000 appuser && \
+    id -u 1000 >/dev/null 2>&1 || useradd --uid 1000 --gid 1000 --shell /bin/bash --create-home appuser
 
 # Create directories for data persistence
 RUN mkdir -p /app/data /app/lucene-indexes && \
-    chown -R appuser:appuser /app
+    chown -R 1000:1000 /app
 
 # Copy published application
 COPY --from=build /app/publish .
@@ -46,7 +46,7 @@ ENV Simulator__DataPath=/app/data
 ENV Lucene__IndexPath=/app/lucene-indexes
 
 # Switch to non-root user
-USER appuser
+USER 1000
 
 # Expose port
 EXPOSE 8080
