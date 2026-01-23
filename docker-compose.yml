@@ -1,0 +1,50 @@
+# Azure AI Search Simulator - Docker Compose
+# Run with: docker-compose up -d
+
+services:
+  search-simulator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: azure-ai-search-simulator
+    ports:
+      - "5250:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - Simulator__AdminApiKey=admin-key-12345
+      - Simulator__QueryApiKey=query-key-67890
+      - AzureOpenAI__ApiKey=${AZURE_OPENAI_API_KEY:-}
+    volumes:
+      # Persist data between container restarts
+      - simulator-data:/app/data
+      - lucene-indexes:/app/lucene-indexes
+      # Mount local test data (optional)
+      - ./testdata:/app/testdata:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  simulator-data:
+    name: azure-ai-search-simulator-data
+  lucene-indexes:
+    name: azure-ai-search-simulator-lucene
+
+# Development override example:
+# Create docker-compose.override.yml with:
+#
+# services:
+#   search-simulator:
+#     environment:
+#       - ASPNETCORE_ENVIRONMENT=Development
+#     ports:
+#       - "5250:8080"

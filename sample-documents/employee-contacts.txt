@@ -1,0 +1,17 @@
+Employee Contact Information
+
+Name: John Smith
+Email: john.smith@company.com
+Phone: 555-123-4567
+SSN: 123-45-6789
+
+Name: Jane Doe
+Email: jane.doe@example.org
+Phone: (555) 987-6543
+Credit Card: 4111-1111-1111-1111
+
+Name: Bob Johnson
+Email: bob.j@test.net
+Phone: +1 555-246-8135
+
+Please handle this information with care. Contact HR at hr@company.com for any questions.

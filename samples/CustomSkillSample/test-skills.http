@@ -1,0 +1,209 @@
+###############################################################################
+# Custom Skills API - Test Requests
+# 
+# These requests test the custom skills directly.
+# Run the CustomSkillSample project first: dotnet run
+###############################################################################
+
+@skillsBaseUrl = http://localhost:5260
+
+### Health Check
+GET {{skillsBaseUrl}}/api/skills/health
+
+###############################################################################
+# Text Stats Skill
+# Counts characters, words, and sentences
+###############################################################################
+
+### Text Stats - Single record
+POST {{skillsBaseUrl}}/api/skills/text-stats
+Content-Type: application/json
+
+{
+  "values": [
+    {
+      "recordId": "1",
+      "data": {
+        "text": "Azure AI Search is a powerful cloud search service. It provides full-text search capabilities. Many companies use it for their applications!"
+      }
+    }
+  ]
+}
+
+### Text Stats - Multiple records
+POST {{skillsBaseUrl}}/api/skills/text-stats
+Content-Type: application/json
+
+{
+  "values": [
+    {
+      "recordId": "doc1",
+      "data": {
+        "text": "First document with some text."
+      }
+    },
+    {
+      "recordId": "doc2",
+      "data": {
+        "text": "Second document. It has more sentences. And even more content here!"
+      }
+    }
+  ]
+}
+
+###############################################################################
+# Extract Keywords Skill
+# Extracts keywords using word frequency analysis
+###############################################################################
+
+### Extract Keywords - Default (5 keywords)
+POST {{skillsBaseUrl}}/api/skills/extract-keywords
+Content-Type: application/json
+
+{
+  "values": [
+    {
+      "recordId": "1",
+      "data": {
+        "text": "Azure AI Search provides powerful search capabilities for applications. The search service supports full-text search, faceted navigation, and filters. Developers can integrate search into their applications using REST APIs or SDKs. The search index stores documents and enables fast search queries."
+      }
+    }
+  ]
+}
+
+### Extract Keywords - Custom max keywords
+POST {{skillsBaseUrl}}/api/skills/extract-keywords
+Content-Type: application/json
+
+{
+  "values": [
+    {
+      "recordId": "1",
+      "data": {
+        "text": "Machine learning models can be trained on large datasets. The models learn patterns from the data and can make predictions on new data. Deep learning is a subset of machine learning that uses neural networks. Neural networks have multiple layers that process information.",
+        "maxKeywords": 10
+      }
+    }
+  ]
+}
+
+###############################################################################
+# Sentiment Analysis Skill
+# Analyzes sentiment (positive/negative/neutral)
+###############################################################################
+
+### Sentiment - Positive
+POST {{skillsBaseUrl}}/api/skills/analyze-sentiment
+Content-Type: application/json
+
+{
+  "values": [
+    {
+      "recordId": "1",
+      "data": {
+        "text": "This product is absolutely amazing! I love it so much. The quality is excellent and the service was fantastic. Best purchase I've ever made!"
+      }
+    }
+  ]
+}
+
+### Sentiment - Negative
+POST {{skillsBaseUrl}}/api/skills/analyze-sentiment
+Content-Type: application/json
+
+{
+  "values": [
+    {
+      "recordId": "1",
+      "data": {
+        "text": "This is terrible. The product is broken and doesn't work at all. Very bad quality. I hate that I wasted my money on this awful thing."
+      }
+    }
+  ]
+}
+
+### Sentiment - Neutral
+POST {{skillsBaseUrl}}/api/skills/analyze-sentiment
+Content-Type: application/json
+
+{
+  "values": [
+    {
+      "recordId": "1",
+      "data": {
+        "text": "The product arrived yesterday. It comes in a box. The dimensions are 10x20x30 cm. The color is blue."
+      }
+    }
+  ]
+}
+
+###############################################################################
+# PII Detection Skill
+# Detects and masks personal information
+###############################################################################
+
+### PII Detection - Multiple PII types
+POST {{skillsBaseUrl}}/api/skills/detect-pii
+Content-Type: application/json
+
+{
+  "values": [
+    {
+      "recordId": "1",
+      "data": {
+        "text": "Please contact John at john.doe@example.com or call him at 555-123-4567. His SSN is 123-45-6789 and his credit card is 4111-1111-1111-1111."
+      }
+    }
+  ]
+}
+
+### PII Detection - No PII
+POST {{skillsBaseUrl}}/api/skills/detect-pii
+Content-Type: application/json
+
+{
+  "values": [
+    {
+      "recordId": "1",
+      "data": {
+        "text": "Azure AI Search is a cloud search service that provides indexing and querying capabilities for applications."
+      }
+    }
+  ]
+}
+
+###############################################################################
+# Summarize Skill
+# Creates extractive summary from text
+###############################################################################
+
+### Summarize - Default (3 sentences)
+POST {{skillsBaseUrl}}/api/skills/summarize
+Content-Type: application/json
+
+{
+  "values": [
+    {
+      "recordId": "1",
+      "data": {
+        "text": "Azure AI Search is a powerful cloud search service. It enables developers to build sophisticated search experiences. The service supports full-text search, faceted navigation, and filters. You can also use AI enrichment to extract insights from your data. Indexers can automatically pull data from various sources. The service scales to handle large amounts of data and traffic."
+      }
+    }
+  ]
+}
+
+### Summarize - Custom sentence count
+POST {{skillsBaseUrl}}/api/skills/summarize
+Content-Type: application/json
+
+{
+  "values": [
+    {
+      "recordId": "1",
+      "data": {
+        "text": "Azure AI Search is a powerful cloud search service. It enables developers to build sophisticated search experiences. The service supports full-text search, faceted navigation, and filters. You can also use AI enrichment to extract insights from your data. Indexers can automatically pull data from various sources. The service scales to handle large amounts of data and traffic.",
+        "maxSentences": 2
+      }
+    }
+  ]
+}

@@ -1,0 +1,303 @@
+###############################################################################
+# Custom Skills Integration Example
+# 
+# This file demonstrates how to use custom skills with the Azure AI Search 
+# Simulator. It creates an index, skillset, data source, and indexer that
+# uses the custom skills from the CustomSkillSample project.
+#
+# Prerequisites:
+# 1. Start the Azure AI Search Simulator: 
+#    cd src/AzureAISearchSimulator.Api && dotnet run --urls "http://localhost:5250"
+# 2. Start the Custom Skills API:
+#    cd samples/CustomSkillSample && dotnet run
+# 3. Ensure the sample-documents folder has some text files
+#
+###############################################################################
+
+@baseUrl = http://localhost:5250
+@apiVersion = 2024-07-01
+@apiKey = admin-key-12345
+
+###############################################################################
+# Step 1: Create Index with fields for skill outputs
+###############################################################################
+
+### Create Index for enriched documents
+PUT {{baseUrl}}/indexes/enriched-docs?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "name": "enriched-docs",
+  "fields": [
+    { "name": "id", "type": "Edm.String", "key": true, "filterable": true },
+    { "name": "content", "type": "Edm.String", "searchable": true, "analyzer": "en.lucene" },
+    { "name": "metadata_storage_path", "type": "Edm.String", "filterable": true },
+    { "name": "metadata_storage_name", "type": "Edm.String", "filterable": true, "sortable": true },
+    
+    // Fields populated by text-stats skill
+    { "name": "characterCount", "type": "Edm.Int32", "filterable": true, "sortable": true },
+    { "name": "wordCount", "type": "Edm.Int32", "filterable": true, "sortable": true },
+    { "name": "sentenceCount", "type": "Edm.Int32", "filterable": true, "sortable": true },
+    
+    // Fields populated by extract-keywords skill
+    { "name": "keywords", "type": "Collection(Edm.String)", "filterable": true, "facetable": true },
+    
+    // Fields populated by analyze-sentiment skill
+    { "name": "sentiment", "type": "Edm.String", "filterable": true, "facetable": true },
+    { "name": "sentimentScore", "type": "Edm.Double", "filterable": true, "sortable": true },
+    
+    // Fields populated by summarize skill
+    { "name": "summary", "type": "Edm.String", "searchable": true }
+  ]
+}
+
+###############################################################################
+# Step 2: Create Skillset with custom WebApiSkills
+###############################################################################
+
+### Create Skillset with custom skills
+PUT {{baseUrl}}/skillsets/custom-enrichment?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "name": "custom-enrichment",
+  "description": "Skillset using custom WebApi skills for text analysis",
+  "skills": [
+    {
+      "@odata.type": "#Microsoft.Skills.Custom.WebApiSkill",
+      "name": "text-stats-skill",
+      "description": "Counts characters, words, and sentences",
+      "uri": "http://localhost:5260/api/skills/text-stats",
+      "httpMethod": "POST",
+      "timeout": "PT30S",
+      "batchSize": 10,
+      "context": "/document",
+      "inputs": [
+        {
+          "name": "text",
+          "source": "/document/content"
+        }
+      ],
+      "outputs": [
+        { "name": "characterCount", "targetName": "characterCount" },
+        { "name": "wordCount", "targetName": "wordCount" },
+        { "name": "sentenceCount", "targetName": "sentenceCount" }
+      ]
+    },
+    {
+      "@odata.type": "#Microsoft.Skills.Custom.WebApiSkill",
+      "name": "keywords-skill",
+      "description": "Extracts keywords from text",
+      "uri": "http://localhost:5260/api/skills/extract-keywords",
+      "httpMethod": "POST",
+      "timeout": "PT30S",
+      "batchSize": 10,
+      "context": "/document",
+      "inputs": [
+        {
+          "name": "text",
+          "source": "/document/content"
+        },
+        {
+          "name": "maxKeywords",
+          "source": "=5"
+        }
+      ],
+      "outputs": [
+        { "name": "keywords", "targetName": "keywords" }
+      ]
+    },
+    {
+      "@odata.type": "#Microsoft.Skills.Custom.WebApiSkill",
+      "name": "sentiment-skill",
+      "description": "Analyzes text sentiment",
+      "uri": "http://localhost:5260/api/skills/analyze-sentiment",
+      "httpMethod": "POST",
+      "timeout": "PT30S",
+      "batchSize": 10,
+      "context": "/document",
+      "inputs": [
+        {
+          "name": "text",
+          "source": "/document/content"
+        }
+      ],
+      "outputs": [
+        { "name": "sentiment", "targetName": "sentiment" },
+        { "name": "score", "targetName": "sentimentScore" }
+      ]
+    },
+    {
+      "@odata.type": "#Microsoft.Skills.Custom.WebApiSkill",
+      "name": "summarize-skill",
+      "description": "Creates extractive summary",
+      "uri": "http://localhost:5260/api/skills/summarize",
+      "httpMethod": "POST",
+      "timeout": "PT30S",
+      "batchSize": 10,
+      "context": "/document",
+      "inputs": [
+        {
+          "name": "text",
+          "source": "/document/content"
+        },
+        {
+          "name": "maxSentences",
+          "source": "=2"
+        }
+      ],
+      "outputs": [
+        { "name": "summary", "targetName": "summary" }
+      ]
+    }
+  ]
+}
+
+###############################################################################
+# Step 3: Create Data Source (local file system)
+###############################################################################
+
+### Create local file system data source
+PUT {{baseUrl}}/datasources/local-docs?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "name": "local-docs",
+  "type": "filesystem",
+  "credentials": {
+    "connectionString": "path=./sample-documents"
+  },
+  "container": {
+    "name": "documents"
+  }
+}
+
+###############################################################################
+# Step 4: Create Indexer with skillset
+###############################################################################
+
+### Create Indexer that uses the skillset
+PUT {{baseUrl}}/indexers/enriched-indexer?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "name": "enriched-indexer",
+  "description": "Indexer with custom skill enrichment",
+  "dataSourceName": "local-docs",
+  "targetIndexName": "enriched-docs",
+  "skillsetName": "custom-enrichment",
+  "schedule": null,
+  "parameters": {
+    "configuration": {
+      "parsingMode": "default"
+    }
+  },
+  "fieldMappings": [
+    { "sourceFieldName": "metadata_storage_path", "targetFieldName": "id" }
+  ],
+  "outputFieldMappings": [
+    { "sourceFieldName": "/document/characterCount", "targetFieldName": "characterCount" },
+    { "sourceFieldName": "/document/wordCount", "targetFieldName": "wordCount" },
+    { "sourceFieldName": "/document/sentenceCount", "targetFieldName": "sentenceCount" },
+    { "sourceFieldName": "/document/keywords", "targetFieldName": "keywords" },
+    { "sourceFieldName": "/document/sentiment", "targetFieldName": "sentiment" },
+    { "sourceFieldName": "/document/sentimentScore", "targetFieldName": "sentimentScore" },
+    { "sourceFieldName": "/document/summary", "targetFieldName": "summary" }
+  ]
+}
+
+###############################################################################
+# Step 5: Run the indexer
+###############################################################################
+
+### Run indexer
+POST {{baseUrl}}/indexers/enriched-indexer/run?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+### Check indexer status
+GET {{baseUrl}}/indexers/enriched-indexer/status?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+###############################################################################
+# Step 6: Query the enriched index
+###############################################################################
+
+### Search all documents
+POST {{baseUrl}}/indexes/enriched-docs/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "search": "*",
+  "select": "id,metadata_storage_name,wordCount,sentiment,keywords,summary",
+  "top": 10
+}
+
+### Filter by sentiment
+POST {{baseUrl}}/indexes/enriched-docs/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "search": "*",
+  "filter": "sentiment eq 'positive'",
+  "select": "id,metadata_storage_name,sentiment,sentimentScore"
+}
+
+### Filter by word count
+POST {{baseUrl}}/indexes/enriched-docs/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "search": "*",
+  "filter": "wordCount gt 100",
+  "orderby": "wordCount desc",
+  "select": "id,metadata_storage_name,wordCount,sentenceCount"
+}
+
+### Facet by keywords
+POST {{baseUrl}}/indexes/enriched-docs/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "search": "*",
+  "facets": ["keywords", "sentiment"],
+  "top": 0
+}
+
+### Search by keyword
+POST {{baseUrl}}/indexes/enriched-docs/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "search": "*",
+  "filter": "keywords/any(k: k eq 'azure')",
+  "select": "id,metadata_storage_name,keywords,summary"
+}
+
+###############################################################################
+# Cleanup (optional)
+###############################################################################
+
+### Delete indexer
+# DELETE {{baseUrl}}/indexers/enriched-indexer?api-version={{apiVersion}}
+# api-key: {{apiKey}}
+
+### Delete skillset
+# DELETE {{baseUrl}}/skillsets/custom-enrichment?api-version={{apiVersion}}
+# api-key: {{apiKey}}
+
+### Delete data source
+# DELETE {{baseUrl}}/datasources/local-docs?api-version={{apiVersion}}
+# api-key: {{apiKey}}
+
+### Delete index
+# DELETE {{baseUrl}}/indexes/enriched-docs?api-version={{apiVersion}}
+# api-key: {{apiKey}}

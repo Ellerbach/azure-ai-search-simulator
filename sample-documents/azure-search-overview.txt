@@ -1,0 +1,14 @@
+Azure AI Search is a powerful cloud search service that provides developers with the tools they need to build sophisticated search experiences. The service offers full-text search capabilities with support for multiple languages and analyzers.
+
+With Azure AI Search, you can index data from various sources including Azure Blob Storage, Azure SQL Database, and Cosmos DB. The indexing process can be enhanced with AI skills that extract insights from your content.
+
+Key features include:
+- Full-text search with relevance scoring
+- Faceted navigation for filtering results
+- Autocomplete and suggestions
+- Geospatial search capabilities
+- Vector search for semantic similarity
+
+The service scales automatically to handle large amounts of data and high query volumes. It integrates seamlessly with other Azure services and supports both push and pull data ingestion models.
+
+Developers love using Azure AI Search because it simplifies complex search scenarios. The REST API and SDKs make it easy to integrate into any application. The excellent documentation and community support help teams get started quickly.

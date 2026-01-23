@@ -1,0 +1,6 @@
+@AzureAISearchSimulator.Api_HostAddress = http://localhost:5250
+
+GET {{AzureAISearchSimulator.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

@@ -1,0 +1,55 @@
+# Docker ignore file for Azure AI Search Simulator
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# IDE
+.vs
+.vscode
+.idea
+*.user
+*.suo
+*.swp
+
+# Build outputs
+**/bin
+**/obj
+**/out
+**/publish
+
+# Test results
+**/TestResults
+**/coverage
+
+# Documentation source (not needed in container)
+docs/
+
+# Scripts (not needed in container)
+scripts/
+
+# Test projects
+tests/
+
+# Local data (will be mounted as volumes)
+data/
+lucene-indexes/
+testdata/
+
+# Logs
+*.log
+logs/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Misc
+*.md
+!README.md
+LICENSE
+Dockerfile
+docker-compose*.yml
+.dockerignore

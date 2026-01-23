@@ -1,0 +1,682 @@
+### Azure AI Search Simulator - Sample HTTP Requests
+### Use with REST Client extension in VS Code or similar tools
+### Base URL: http://localhost:5250
+
+@baseUrl = http://localhost:5250
+@apiVersion = 2024-07-01
+@adminKey = admin-key-12345
+@queryKey = query-key-67890
+
+# ============================================
+# INDEX MANAGEMENT
+# ============================================
+
+### List all indexes
+GET {{baseUrl}}/indexes?api-version={{apiVersion}}
+api-key: {{adminKey}}
+
+### Create a simple index
+POST {{baseUrl}}/indexes?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "name": "hotels",
+  "fields": [
+    { "name": "hotelId", "type": "Edm.String", "key": true, "filterable": true },
+    { "name": "hotelName", "type": "Edm.String", "searchable": true, "filterable": true, "sortable": true },
+    { "name": "description", "type": "Edm.String", "searchable": true },
+    { "name": "category", "type": "Edm.String", "searchable": true, "filterable": true, "facetable": true },
+    { "name": "rating", "type": "Edm.Double", "filterable": true, "sortable": true },
+    { "name": "parkingIncluded", "type": "Edm.Boolean", "filterable": true },
+    { "name": "lastRenovationDate", "type": "Edm.DateTimeOffset", "filterable": true, "sortable": true },
+    { "name": "tags", "type": "Collection(Edm.String)", "searchable": true, "filterable": true }
+  ]
+}
+
+### Create an index with vector search
+POST {{baseUrl}}/indexes?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "name": "documents-vector",
+  "fields": [
+    { "name": "id", "type": "Edm.String", "key": true },
+    { "name": "title", "type": "Edm.String", "searchable": true },
+    { "name": "content", "type": "Edm.String", "searchable": true },
+    { "name": "contentVector", "type": "Collection(Edm.Single)", "searchable": false, "dimensions": 1536 }
+  ],
+  "vectorSearch": {
+    "algorithms": [
+      { "name": "hnsw-config", "kind": "hnsw" }
+    ],
+    "profiles": [
+      { "name": "vector-profile", "algorithm": "hnsw-config" }
+    ]
+  }
+}
+
+### Get a specific index
+GET {{baseUrl}}/indexes/hotels?api-version={{apiVersion}}
+api-key: {{adminKey}}
+
+### Update an index (add a field)
+PUT {{baseUrl}}/indexes/hotels?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "name": "hotels",
+  "fields": [
+    { "name": "hotelId", "type": "Edm.String", "key": true, "filterable": true },
+    { "name": "hotelName", "type": "Edm.String", "searchable": true, "filterable": true, "sortable": true },
+    { "name": "description", "type": "Edm.String", "searchable": true },
+    { "name": "category", "type": "Edm.String", "searchable": true, "filterable": true, "facetable": true },
+    { "name": "rating", "type": "Edm.Double", "filterable": true, "sortable": true },
+    { "name": "parkingIncluded", "type": "Edm.Boolean", "filterable": true },
+    { "name": "lastRenovationDate", "type": "Edm.DateTimeOffset", "filterable": true, "sortable": true },
+    { "name": "tags", "type": "Collection(Edm.String)", "searchable": true, "filterable": true },
+    { "name": "address", "type": "Edm.String", "searchable": true }
+  ]
+}
+
+### Delete an index
+DELETE {{baseUrl}}/indexes/hotels?api-version={{apiVersion}}
+api-key: {{adminKey}}
+
+# ============================================
+# DOCUMENT OPERATIONS (Push Model)
+# ============================================
+
+### Upload documents
+POST {{baseUrl}}/indexes/hotels/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "value": [
+    {
+      "@search.action": "upload",
+      "hotelId": "1",
+      "hotelName": "Grand Azure Hotel",
+      "description": "A luxurious hotel in the heart of downtown with stunning views and world-class amenities.",
+      "category": "Luxury",
+      "rating": 4.8,
+      "parkingIncluded": true,
+      "lastRenovationDate": "2023-06-15T00:00:00Z",
+      "tags": ["luxury", "spa", "pool", "wifi"]
+    },
+    {
+      "@search.action": "upload",
+      "hotelId": "2",
+      "hotelName": "Budget Inn Express",
+      "description": "Affordable accommodation for business travelers with free breakfast and parking.",
+      "category": "Budget",
+      "rating": 3.5,
+      "parkingIncluded": true,
+      "lastRenovationDate": "2020-01-10T00:00:00Z",
+      "tags": ["budget", "breakfast", "wifi"]
+    },
+    {
+      "@search.action": "upload",
+      "hotelId": "3",
+      "hotelName": "Seaside Resort & Spa",
+      "description": "Beachfront resort with private beach access, multiple pools, and a full-service spa.",
+      "category": "Resort",
+      "rating": 4.5,
+      "parkingIncluded": false,
+      "lastRenovationDate": "2022-09-01T00:00:00Z",
+      "tags": ["beach", "spa", "pool", "restaurant"]
+    },
+    {
+      "@search.action": "upload",
+      "hotelId": "4",
+      "hotelName": "Mountain Lodge Retreat",
+      "description": "Cozy mountain retreat perfect for hiking enthusiasts and nature lovers.",
+      "category": "Boutique",
+      "rating": 4.2,
+      "parkingIncluded": true,
+      "lastRenovationDate": "2021-05-20T00:00:00Z",
+      "tags": ["hiking", "nature", "fireplace", "pets"]
+    },
+    {
+      "@search.action": "upload",
+      "hotelId": "5",
+      "hotelName": "City Center Suites",
+      "description": "Modern suites in the business district with kitchenette and workspace.",
+      "category": "Business",
+      "rating": 4.0,
+      "parkingIncluded": false,
+      "lastRenovationDate": "2024-02-28T00:00:00Z",
+      "tags": ["business", "wifi", "workspace", "kitchen"]
+    }
+  ]
+}
+
+### Merge documents (update existing)
+POST {{baseUrl}}/indexes/hotels/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "value": [
+    {
+      "@search.action": "merge",
+      "hotelId": "1",
+      "rating": 4.9
+    }
+  ]
+}
+
+### MergeOrUpload (upsert)
+POST {{baseUrl}}/indexes/hotels/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "value": [
+    {
+      "@search.action": "mergeOrUpload",
+      "hotelId": "6",
+      "hotelName": "Historic Downtown Inn",
+      "description": "A charming boutique hotel in a renovated 19th-century building.",
+      "category": "Boutique",
+      "rating": 4.3,
+      "parkingIncluded": false,
+      "tags": ["historic", "boutique", "wifi"]
+    }
+  ]
+}
+
+### Delete a document
+POST {{baseUrl}}/indexes/hotels/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "value": [
+    {
+      "@search.action": "delete",
+      "hotelId": "6"
+    }
+  ]
+}
+
+### Get document by key
+GET {{baseUrl}}/indexes/hotels/docs/1?api-version={{apiVersion}}
+api-key: {{queryKey}}
+
+### Get document count
+GET {{baseUrl}}/indexes/hotels/docs/$count?api-version={{apiVersion}}
+api-key: {{queryKey}}
+
+# ============================================
+# SEARCH OPERATIONS
+# ============================================
+
+### Simple search
+POST {{baseUrl}}/indexes/hotels/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "luxury spa",
+  "top": 10
+}
+
+### Search with filter
+POST {{baseUrl}}/indexes/hotels/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "*",
+  "filter": "rating ge 4.0",
+  "orderby": "rating desc",
+  "top": 10
+}
+
+### Search with multiple filters
+POST {{baseUrl}}/indexes/hotels/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "hotel",
+  "filter": "rating ge 4.0 and parkingIncluded eq true",
+  "select": "hotelId,hotelName,rating,category",
+  "top": 5
+}
+
+### Search with highlighting
+POST {{baseUrl}}/indexes/hotels/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "spa pool",
+  "highlight": "description",
+  "highlightPreTag": "<em>",
+  "highlightPostTag": "</em>",
+  "top": 10
+}
+
+### Full Lucene query syntax
+POST {{baseUrl}}/indexes/hotels/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "description:luxury OR description:spa",
+  "queryType": "full",
+  "searchMode": "all",
+  "top": 10
+}
+
+### Search with count
+POST {{baseUrl}}/indexes/hotels/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "*",
+  "count": true,
+  "top": 3
+}
+
+### Search with paging
+POST {{baseUrl}}/indexes/hotels/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "*",
+  "orderby": "hotelName",
+  "top": 2,
+  "skip": 2
+}
+
+### Search using search.in filter
+POST {{baseUrl}}/indexes/hotels/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "*",
+  "filter": "search.in(category, 'Luxury,Resort,Boutique')",
+  "top": 10
+}
+
+### GET search (alternative to POST)
+GET {{baseUrl}}/indexes/hotels/docs?api-version={{apiVersion}}&search=luxury&$filter=rating ge 4&$top=5&$orderby=rating desc
+api-key: {{queryKey}}
+
+# ============================================
+# AUTOCOMPLETE & SUGGESTIONS
+# ============================================
+
+### Autocomplete
+POST {{baseUrl}}/indexes/hotels/docs/autocomplete?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "lux",
+  "suggesterName": "sg",
+  "autocompleteMode": "oneTerm"
+}
+
+### Suggestions
+POST {{baseUrl}}/indexes/hotels/docs/suggest?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "grand",
+  "suggesterName": "sg",
+  "select": "hotelId,hotelName"
+}
+
+# ============================================
+# VECTOR SEARCH
+# ============================================
+
+### Upload documents with vectors (simplified example - 8 dimensions)
+POST {{baseUrl}}/indexes/documents-vector/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "value": [
+    {
+      "@search.action": "upload",
+      "id": "doc1",
+      "title": "Introduction to Machine Learning",
+      "content": "Machine learning is a subset of artificial intelligence that enables systems to learn from data.",
+      "contentVector": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]
+    },
+    {
+      "@search.action": "upload",
+      "id": "doc2",
+      "title": "Deep Learning Fundamentals",
+      "content": "Deep learning uses neural networks with many layers to process complex patterns.",
+      "contentVector": [0.15, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85]
+    },
+    {
+      "@search.action": "upload",
+      "id": "doc3",
+      "title": "Natural Language Processing",
+      "content": "NLP combines linguistics and machine learning to understand human language.",
+      "contentVector": [0.12, 0.22, 0.32, 0.42, 0.52, 0.62, 0.72, 0.82]
+    }
+  ]
+}
+
+### Pure vector search
+POST {{baseUrl}}/indexes/documents-vector/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "vectorQueries": [
+    {
+      "kind": "vector",
+      "vector": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8],
+      "fields": "contentVector",
+      "k": 3
+    }
+  ],
+  "select": "id,title,content"
+}
+
+### Hybrid search (text + vector)
+POST {{baseUrl}}/indexes/documents-vector/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "machine learning",
+  "vectorQueries": [
+    {
+      "kind": "vector",
+      "vector": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8],
+      "fields": "contentVector",
+      "k": 3
+    }
+  ],
+  "select": "id,title,content"
+}
+
+# ============================================
+# DATA SOURCES (Pull Model)
+# ============================================
+
+### List all data sources
+GET {{baseUrl}}/datasources?api-version={{apiVersion}}
+api-key: {{adminKey}}
+
+### Create a file system data source
+PUT {{baseUrl}}/datasources/local-files?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "name": "local-files",
+  "type": "filesystem",
+  "credentials": {
+    "connectionString": "c:\\Projets\\AzureAISimulator\\testdata\\documents"
+  },
+  "container": {
+    "name": "documents"
+  }
+}
+
+### Get a data source
+GET {{baseUrl}}/datasources/local-files?api-version={{apiVersion}}
+api-key: {{adminKey}}
+
+### Delete a data source
+DELETE {{baseUrl}}/datasources/local-files?api-version={{apiVersion}}
+api-key: {{adminKey}}
+
+# ============================================
+# INDEXERS (Pull Model)
+# ============================================
+
+### Create an index for the indexer
+POST {{baseUrl}}/indexes?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "name": "file-documents",
+  "fields": [
+    { "name": "id", "type": "Edm.String", "key": true },
+    { "name": "content", "type": "Edm.String", "searchable": true },
+    { "name": "metadata_storage_path", "type": "Edm.String", "filterable": true },
+    { "name": "metadata_storage_name", "type": "Edm.String", "filterable": true },
+    { "name": "metadata_storage_size", "type": "Edm.Int64", "filterable": true },
+    { "name": "metadata_storage_last_modified", "type": "Edm.DateTimeOffset", "filterable": true, "sortable": true }
+  ]
+}
+
+### List all indexers
+GET {{baseUrl}}/indexers?api-version={{apiVersion}}
+api-key: {{adminKey}}
+
+### Create an indexer
+PUT {{baseUrl}}/indexers/file-indexer?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "name": "file-indexer",
+  "dataSourceName": "local-files",
+  "targetIndexName": "file-documents",
+  "fieldMappings": [
+    {
+      "sourceFieldName": "metadata_storage_path",
+      "targetFieldName": "id",
+      "mappingFunction": {
+        "name": "base64Encode"
+      }
+    }
+  ]
+}
+
+### Get an indexer
+GET {{baseUrl}}/indexers/file-indexer?api-version={{apiVersion}}
+api-key: {{adminKey}}
+
+### Run an indexer
+POST {{baseUrl}}/indexers/file-indexer/run?api-version={{apiVersion}}
+api-key: {{adminKey}}
+
+### Get indexer status
+GET {{baseUrl}}/indexers/file-indexer/status?api-version={{apiVersion}}
+api-key: {{adminKey}}
+
+### Reset an indexer
+POST {{baseUrl}}/indexers/file-indexer/reset?api-version={{apiVersion}}
+api-key: {{adminKey}}
+
+### Delete an indexer
+DELETE {{baseUrl}}/indexers/file-indexer?api-version={{apiVersion}}
+api-key: {{adminKey}}
+
+# ============================================
+# SKILLSETS
+# ============================================
+
+### List all skillsets
+GET {{baseUrl}}/skillsets?api-version={{apiVersion}}
+api-key: {{adminKey}}
+
+### Create a skillset with text split
+PUT {{baseUrl}}/skillsets/text-processing?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "name": "text-processing",
+  "description": "Skillset for text processing",
+  "skills": [
+    {
+      "@odata.type": "#Microsoft.Skills.Text.SplitSkill",
+      "name": "split-text",
+      "description": "Split text into pages",
+      "context": "/document",
+      "textSplitMode": "pages",
+      "maximumPageLength": 2000,
+      "inputs": [
+        { "name": "text", "source": "/document/content" }
+      ],
+      "outputs": [
+        { "name": "textItems", "targetName": "pages" }
+      ]
+    },
+    {
+      "@odata.type": "#Microsoft.Skills.Text.MergeSkill",
+      "name": "merge-text",
+      "description": "Merge text chunks",
+      "context": "/document",
+      "insertPreTag": " ",
+      "insertPostTag": " ",
+      "inputs": [
+        { "name": "itemsToInsert", "source": "/document/pages/*" }
+      ],
+      "outputs": [
+        { "name": "mergedText", "targetName": "merged_content" }
+      ]
+    }
+  ]
+}
+
+### Create a skillset with Azure OpenAI embedding
+PUT {{baseUrl}}/skillsets/embedding-skillset?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "name": "embedding-skillset",
+  "description": "Skillset for generating embeddings",
+  "skills": [
+    {
+      "@odata.type": "#Microsoft.Skills.Text.AzureOpenAIEmbeddingSkill",
+      "name": "generate-embeddings",
+      "description": "Generate embeddings using Azure OpenAI",
+      "context": "/document",
+      "resourceUri": "https://your-openai-resource.openai.azure.com",
+      "deploymentId": "text-embedding-ada-002",
+      "modelName": "text-embedding-ada-002",
+      "inputs": [
+        { "name": "text", "source": "/document/content" }
+      ],
+      "outputs": [
+        { "name": "embedding", "targetName": "contentVector" }
+      ]
+    }
+  ]
+}
+
+### Create a skillset with Custom Web API skill
+PUT {{baseUrl}}/skillsets/custom-processing?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "name": "custom-processing",
+  "description": "Skillset with custom web API",
+  "skills": [
+    {
+      "@odata.type": "#Microsoft.Skills.Custom.WebApiSkill",
+      "name": "custom-enrichment",
+      "description": "Call custom enrichment API",
+      "context": "/document",
+      "uri": "https://your-function-app.azurewebsites.net/api/enrich",
+      "httpMethod": "POST",
+      "timeout": "PT30S",
+      "batchSize": 10,
+      "httpHeaders": {
+        "x-functions-key": "your-function-key"
+      },
+      "inputs": [
+        { "name": "text", "source": "/document/content" }
+      ],
+      "outputs": [
+        { "name": "enrichedData", "targetName": "customEnrichment" }
+      ]
+    }
+  ]
+}
+
+### Create a skillset with Shaper skill
+PUT {{baseUrl}}/skillsets/shaper-skillset?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "name": "shaper-skillset",
+  "description": "Skillset with shaper for complex output",
+  "skills": [
+    {
+      "@odata.type": "#Microsoft.Skills.Util.ShaperSkill",
+      "name": "shape-output",
+      "description": "Shape output structure",
+      "context": "/document",
+      "inputs": [
+        { "name": "title", "source": "/document/metadata_storage_name" },
+        { "name": "content", "source": "/document/content" },
+        { "name": "path", "source": "/document/metadata_storage_path" }
+      ],
+      "outputs": [
+        { 
+          "name": "output", 
+          "targetName": "documentInfo"
+        }
+      ]
+    }
+  ]
+}
+
+### Get a skillset
+GET {{baseUrl}}/skillsets/text-processing?api-version={{apiVersion}}
+api-key: {{adminKey}}
+
+### Delete a skillset
+DELETE {{baseUrl}}/skillsets/text-processing?api-version={{apiVersion}}
+api-key: {{adminKey}}
+
+### Create indexer with skillset
+PUT {{baseUrl}}/indexers/enriched-indexer?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "name": "enriched-indexer",
+  "dataSourceName": "local-files",
+  "targetIndexName": "file-documents",
+  "skillsetName": "text-processing",
+  "fieldMappings": [
+    {
+      "sourceFieldName": "metadata_storage_path",
+      "targetFieldName": "id",
+      "mappingFunction": { "name": "base64Encode" }
+    }
+  ],
+  "outputFieldMappings": [
+    {
+      "sourceFieldName": "/document/merged_content",
+      "targetFieldName": "content"
+    }
+  ]
+}
+
+# ============================================
+# SERVICE INFORMATION
+# ============================================
+
+### Get service statistics
+GET {{baseUrl}}/servicestats?api-version={{apiVersion}}
+api-key: {{adminKey}}

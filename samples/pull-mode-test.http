@@ -1,0 +1,140 @@
+### Pull Mode Test - Azure AI Search Simulator
+### This file tests the complete pull mode workflow:
+### 1. Create Index
+### 2. Create Data Source (file system)
+### 3. Create Indexer
+### 4. Run Indexer
+### 5. Verify documents are indexed
+
+@baseUrl = http://localhost:5250
+@apiKey = admin-key-12345
+@apiVersion = 2024-07-01
+
+### =====================================================
+### Step 1: Create Index
+### =====================================================
+
+PUT {{baseUrl}}/indexes/pull-mode-test?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "name": "pull-mode-test",
+  "fields": [
+    { "name": "id", "type": "Edm.String", "key": true },
+    { "name": "content", "type": "Edm.String", "searchable": true },
+    { "name": "metadata_storage_path", "type": "Edm.String", "filterable": true },
+    { "name": "metadata_storage_name", "type": "Edm.String", "filterable": true }
+  ]
+}
+
+### =====================================================
+### Step 2: Create Data Source (Local File System)
+### =====================================================
+
+PUT {{baseUrl}}/datasources/local-test-files?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "name": "local-test-files",
+  "type": "filesystem",
+  "credentials": {
+    "connectionString": "C:/Projets/AzureAISimulator/data"
+  },
+  "container": {
+    "name": "test-docs"
+  },
+  "description": "Local test files for pull mode testing"
+}
+
+### =====================================================
+### Step 3: Create Indexer
+### =====================================================
+
+PUT {{baseUrl}}/indexers/pull-mode-indexer?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "name": "pull-mode-indexer",
+  "dataSourceName": "local-test-files",
+  "targetIndexName": "pull-mode-test",
+  "description": "Indexer for pull mode testing",
+  "parameters": {
+    "batchSize": 10,
+    "maxFailedItems": 5
+  },
+  "fieldMappings": [
+    { "sourceFieldName": "metadata_storage_path", "targetFieldName": "id" }
+  ]
+}
+
+### =====================================================
+### Step 4: Run Indexer
+### =====================================================
+
+POST {{baseUrl}}/indexers/pull-mode-indexer/run?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+### =====================================================
+### Step 5: Check Indexer Status
+### =====================================================
+
+GET {{baseUrl}}/indexers/pull-mode-indexer/status?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+### =====================================================
+### Step 6: Verify Documents are Indexed - Count
+### =====================================================
+
+GET {{baseUrl}}/indexes/pull-mode-test/docs/$count?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+### =====================================================
+### Step 7: Search Documents
+### =====================================================
+
+POST {{baseUrl}}/indexes/pull-mode-test/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "search": "*",
+  "count": true,
+  "select": "id,content,metadata_storage_name"
+}
+
+### =====================================================
+### Step 8: Search for Specific Content
+### =====================================================
+
+POST {{baseUrl}}/indexes/pull-mode-test/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "search": "machine learning",
+  "count": true,
+  "select": "id,content,metadata_storage_name"
+}
+
+### =====================================================
+### Cleanup
+### =====================================================
+
+### Delete Indexer
+DELETE {{baseUrl}}/indexers/pull-mode-indexer?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+###
+
+### Delete Data Source
+DELETE {{baseUrl}}/datasources/local-test-files?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+###
+
+### Delete Index
+DELETE {{baseUrl}}/indexes/pull-mode-test?api-version={{apiVersion}}
+api-key: {{apiKey}}

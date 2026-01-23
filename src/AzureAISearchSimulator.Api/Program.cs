@@ -1,0 +1,144 @@
+using AzureAISearchSimulator.Api.Middleware;
+using AzureAISearchSimulator.Api.Services;
+using AzureAISearchSimulator.Core.Configuration;
+using AzureAISearchSimulator.Core.Services;
+using AzureAISearchSimulator.DataSources;
+using AzureAISearchSimulator.Search;
+using AzureAISearchSimulator.Search.DataSources;
+using AzureAISearchSimulator.Search.DocumentCracking;
+using AzureAISearchSimulator.Search.Skills;
+using AzureAISearchSimulator.Storage.Repositories;
+using Scalar.AspNetCore;
+using Serilog;
+
+// Configure Serilog
+Log.Logger = new LoggerConfiguration()
+    .WriteTo.Console()
+    .CreateBootstrapLogger();
+
+try
+{
+    Log.Information("Starting Azure AI Search Simulator");
+
+    var builder = WebApplication.CreateBuilder(args);
+
+    // Configure Serilog from appsettings
+    builder.Host.UseSerilog((context, services, configuration) => configuration
+        .ReadFrom.Configuration(context.Configuration)
+        .ReadFrom.Services(services));
+
+    // Bind configuration sections
+    builder.Services.Configure<SimulatorSettings>(
+        builder.Configuration.GetSection(SimulatorSettings.SectionName));
+    builder.Services.Configure<LuceneSettings>(
+        builder.Configuration.GetSection(LuceneSettings.SectionName));
+    builder.Services.Configure<IndexerSettings>(
+        builder.Configuration.GetSection(IndexerSettings.SectionName));
+    builder.Services.Configure<VectorSearchSettings>(
+        builder.Configuration.GetSection(VectorSearchSettings.SectionName));
+    builder.Services.Configure<AzureOpenAISettings>(
+        builder.Configuration.GetSection(AzureOpenAISettings.SectionName));
+
+    // Add services
+    builder.Services.AddControllers()
+        .AddJsonOptions(options =>
+        {
+            options.JsonSerializerOptions.DefaultIgnoreCondition = 
+                System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull;
+        });
+
+    // Add OpenAPI documentation
+    builder.Services.AddOpenApi();
+
+    // Register repositories
+    builder.Services.AddSingleton<IIndexRepository, LiteDbIndexRepository>();
+    builder.Services.AddSingleton<IDataSourceRepository, LiteDbDataSourceRepository>();
+    builder.Services.AddSingleton<IIndexerRepository, LiteDbIndexerRepository>();
+    builder.Services.AddSingleton<ISkillsetRepository, LiteDbSkillsetRepository>();
+
+    // Register Search infrastructure
+    builder.Services.AddSingleton<LuceneIndexManager>();
+    builder.Services.AddSingleton<VectorStore>();
+
+    // Register data source connectors
+    builder.Services.AddSingleton<IDataSourceConnector, FileSystemConnector>();
+    builder.Services.AddAzureDataSourceConnectors(); // Add Azure Blob Storage and ADLS Gen2 connectors
+    builder.Services.AddSingleton<IDataSourceConnectorFactory, DataSourceConnectorFactory>();
+
+    // Register document crackers
+    builder.Services.AddSingleton<IDocumentCracker, PlainTextCracker>();
+    builder.Services.AddSingleton<IDocumentCracker, JsonCracker>();
+    builder.Services.AddSingleton<IDocumentCracker, CsvCracker>();
+    builder.Services.AddSingleton<IDocumentCracker, HtmlCracker>();
+    builder.Services.AddSingleton<IDocumentCracker, PdfCracker>();
+    builder.Services.AddSingleton<IDocumentCracker, WordDocCracker>();
+    builder.Services.AddSingleton<IDocumentCracker, ExcelCracker>();
+    builder.Services.AddSingleton<IDocumentCrackerFactory, DocumentCrackerFactory>();
+
+    // Register skill executors
+    builder.Services.AddSingleton<ISkillExecutor, TextSplitSkillExecutor>();
+    builder.Services.AddSingleton<ISkillExecutor, TextMergeSkillExecutor>();
+    builder.Services.AddSingleton<ISkillExecutor, ShaperSkillExecutor>();
+    builder.Services.AddSingleton<ISkillExecutor, ConditionalSkillExecutor>();
+    builder.Services.AddSingleton<ISkillExecutor, CustomWebApiSkillExecutor>();
+    builder.Services.AddSingleton<ISkillExecutor, AzureOpenAIEmbeddingSkillExecutor>();
+    builder.Services.AddSingleton<ISkillPipeline, SkillPipeline>();
+
+    // Register HTTP client factory for custom skills
+    builder.Services.AddHttpClient();
+    builder.Services.AddHttpClient("AzureOpenAI", (serviceProvider, client) =>
+    {
+        var config = serviceProvider.GetRequiredService<IConfiguration>();
+        var apiKey = config.GetValue<string>("AzureOpenAI:ApiKey");
+        if (!string.IsNullOrEmpty(apiKey))
+        {
+            client.DefaultRequestHeaders.Add("api-key", apiKey);
+        }
+    });
+
+    // Register services
+    builder.Services.AddScoped<IIndexService, IndexService>();
+    builder.Services.AddScoped<IDocumentService, DocumentService>();
+    builder.Services.AddScoped<ISearchService, SearchService>();
+    builder.Services.AddScoped<IDataSourceService, DataSourceService>();
+    builder.Services.AddScoped<IIndexerService, IndexerService>();
+    builder.Services.AddScoped<ISkillsetService, SkillsetService>();
+
+    var app = builder.Build();
+
+    // Configure the HTTP request pipeline
+    app.UseGlobalExceptionHandler(); // Add global exception handler first
+    app.UseSerilogRequestLogging();
+
+    if (app.Environment.IsDevelopment())
+    {
+        app.MapOpenApi();
+        app.MapScalarApiReference(options =>
+        {
+            options.Title = "Azure AI Search Simulator API";
+            options.Theme = ScalarTheme.Default;
+        });
+    }
+
+    // Add API key authentication middleware
+    app.UseApiKeyAuthentication();
+
+    app.MapControllers();
+
+    // Health check endpoint
+    app.MapGet("/health", () => Results.Ok(new { Status = "Healthy", Timestamp = DateTime.UtcNow }))
+        .ExcludeFromDescription();
+
+    Log.Information("Azure AI Search Simulator is ready at {Urls}", 
+        string.Join(", ", app.Urls.DefaultIfEmpty("http://localhost:5000")));
+
+    app.Run();
+}
+catch (Exception ex)
+{
+    Log.Fatal(ex, "Application terminated unexpectedly");
+}
+finally
+{
+    Log.CloseAndFlush();
+}

@@ -1,0 +1,682 @@
+### Azure AI Search Simulator - REST API Examples
+### This file can be used with the REST Client extension in VS Code
+### Make sure the simulator is running on https://localhost:7250 or http://localhost:5250
+
+@baseUrl = https://localhost:7250
+@apiKey = admin-key-12345
+@apiVersion = 2024-07-01
+
+### =====================================================
+### 1. Create Index (Hotels)
+### =====================================================
+
+POST {{baseUrl}}/indexes?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "name": "hotels-rest-test",
+  "fields": [
+    { "name": "hotelId", "type": "Edm.String", "key": true, "filterable": true },
+    { "name": "hotelName", "type": "Edm.String", "searchable": true, "filterable": true, "sortable": true },
+    { "name": "description", "type": "Edm.String", "searchable": true, "analyzer": "en.lucene" },
+    { "name": "category", "type": "Edm.String", "searchable": true, "filterable": true, "facetable": true },
+    { "name": "rating", "type": "Edm.Double", "filterable": true, "sortable": true, "facetable": true },
+    { "name": "pricePerNight", "type": "Edm.Double", "filterable": true, "sortable": true },
+    { "name": "tags", "type": "Collection(Edm.String)", "searchable": true, "filterable": true, "facetable": true },
+    { "name": "address", "type": "Edm.ComplexType", "fields": [
+      { "name": "streetAddress", "type": "Edm.String", "searchable": true },
+      { "name": "city", "type": "Edm.String", "searchable": true, "filterable": true, "facetable": true },
+      { "name": "country", "type": "Edm.String", "searchable": true, "filterable": true }
+    ]}
+  ]
+}
+
+### =====================================================
+### 2. Get Index
+### =====================================================
+
+GET {{baseUrl}}/indexes/hotels-rest-test?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+### =====================================================
+### 3. List All Indexes
+### =====================================================
+
+GET {{baseUrl}}/indexes?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+### =====================================================
+### 4. Upload Documents
+### =====================================================
+
+POST {{baseUrl}}/indexes/hotels-rest-test/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "value": [
+    {
+      "@search.action": "upload",
+      "hotelId": "1",
+      "hotelName": "Grand Hotel Seattle",
+      "description": "A luxury hotel in downtown Seattle with stunning views of the Puget Sound and Olympic Mountains.",
+      "category": "Luxury",
+      "rating": 4.8,
+      "pricePerNight": 350.0,
+      "address": { "streetAddress": "123 Pike Street", "city": "Seattle", "country": "USA" },
+      "tags": ["pool", "spa", "wifi", "restaurant", "concierge"]
+    },
+    {
+      "@search.action": "upload",
+      "hotelId": "2",
+      "hotelName": "Budget Inn Portland",
+      "description": "Affordable accommodation near Portland International Airport. Clean rooms with basic amenities.",
+      "category": "Budget",
+      "rating": 3.5,
+      "pricePerNight": 89.0,
+      "address": { "streetAddress": "456 Airport Way", "city": "Portland", "country": "USA" },
+      "tags": ["wifi", "parking", "breakfast"]
+    },
+    {
+      "@search.action": "upload",
+      "hotelId": "3",
+      "hotelName": "Mountain Resort Aspen",
+      "description": "Ski-in ski-out resort with breathtaking mountain views. Perfect for winter sports enthusiasts.",
+      "category": "Resort",
+      "rating": 4.9,
+      "pricePerNight": 550.0,
+      "address": { "streetAddress": "789 Ski Run Road", "city": "Aspen", "country": "USA" },
+      "tags": ["ski", "spa", "restaurant", "gym", "pool"]
+    },
+    {
+      "@search.action": "upload",
+      "hotelId": "4",
+      "hotelName": "Business Suites Chicago",
+      "description": "Modern business hotel in the heart of Chicago's financial district. Meeting rooms and business center available.",
+      "category": "Business",
+      "rating": 4.2,
+      "pricePerNight": 220.0,
+      "address": { "streetAddress": "100 LaSalle Street", "city": "Chicago", "country": "USA" },
+      "tags": ["wifi", "business center", "meeting rooms", "restaurant"]
+    },
+    {
+      "@search.action": "upload",
+      "hotelId": "5",
+      "hotelName": "Beachfront Paradise Miami",
+      "description": "Beautiful beachfront hotel with direct access to Miami Beach. Tropical atmosphere and excellent dining.",
+      "category": "Resort",
+      "rating": 4.6,
+      "pricePerNight": 420.0,
+      "address": { "streetAddress": "200 Ocean Drive", "city": "Miami", "country": "USA" },
+      "tags": ["beach", "pool", "spa", "restaurant", "bar"]
+    }
+  ]
+}
+
+### =====================================================
+### 5. Simple Search
+### =====================================================
+
+POST {{baseUrl}}/indexes/hotels-rest-test/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "search": "luxury hotel",
+  "count": true,
+  "select": "hotelId,hotelName,rating,category"
+}
+
+### =====================================================
+### 6. Filtered Search (rating >= 4.5)
+### =====================================================
+
+POST {{baseUrl}}/indexes/hotels-rest-test/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "search": "*",
+  "filter": "rating ge 4.5",
+  "orderby": "rating desc",
+  "select": "hotelId,hotelName,rating,category"
+}
+
+### =====================================================
+### 7. Faceted Search
+### =====================================================
+
+POST {{baseUrl}}/indexes/hotels-rest-test/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "search": "*",
+  "facets": ["category,count:10", "tags,count:10"],
+  "top": 0
+}
+
+### =====================================================
+### 8. Get Document by Key
+### =====================================================
+
+GET {{baseUrl}}/indexes/hotels-rest-test/docs/3?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+### =====================================================
+### 9. Get Document Count
+### =====================================================
+
+GET {{baseUrl}}/indexes/hotels-rest-test/docs/$count?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+### =====================================================
+### 10. Merge Document (Update Rating)
+### =====================================================
+
+POST {{baseUrl}}/indexes/hotels-rest-test/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "value": [
+    {
+      "@search.action": "merge",
+      "hotelId": "1",
+      "rating": 4.9
+    }
+  ]
+}
+
+### =====================================================
+### 11. Delete Document
+### =====================================================
+
+POST {{baseUrl}}/indexes/hotels-rest-test/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "value": [
+    {
+      "@search.action": "delete",
+      "hotelId": "2"
+    }
+  ]
+}
+
+### =====================================================
+### 12. Create Data Source (Azure Blob Storage)
+### =====================================================
+
+POST {{baseUrl}}/datasources?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "name": "blob-datasource-rest-test",
+  "type": "azureblob",
+  "credentials": {
+    "connectionString": "DefaultEndpointsProtocol=https;AccountName=myaccount;AccountKey=mykey;EndpointSuffix=core.windows.net"
+  },
+  "container": {
+    "name": "documents",
+    "query": null
+  },
+  "description": "Test blob data source created via REST API"
+}
+
+### =====================================================
+### 12b. Create Data Source (Azure Blob Storage with Managed Identity)
+### =====================================================
+
+POST {{baseUrl}}/datasources?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "name": "blob-managed-identity-test",
+  "type": "azureblob",
+  "credentials": {
+    "connectionString": "https://mystorageaccount.blob.core.windows.net"
+  },
+  "container": {
+    "name": "documents",
+    "query": "subfolder/"
+  },
+  "description": "Azure Blob Storage with Managed Identity authentication"
+}
+
+### =====================================================
+### 12c. Create Data Source (ADLS Gen2)
+### =====================================================
+
+POST {{baseUrl}}/datasources?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "name": "adls-datasource-rest-test",
+  "type": "adlsgen2",
+  "credentials": {
+    "connectionString": "DefaultEndpointsProtocol=https;AccountName=mydatalake;AccountKey=mykey;EndpointSuffix=core.windows.net"
+  },
+  "container": {
+    "name": "filesystem1",
+    "query": "data/raw/"
+  },
+  "description": "Azure Data Lake Storage Gen2 data source"
+}
+
+### =====================================================
+### 12d. Create Data Source (ADLS Gen2 with Managed Identity)
+### =====================================================
+
+POST {{baseUrl}}/datasources?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "name": "adls-managed-identity-test",
+  "type": "adlsgen2",
+  "credentials": {
+    "connectionString": "https://mydatalake.dfs.core.windows.net"
+  },
+  "container": {
+    "name": "filesystem1",
+    "query": "data/processed/"
+  },
+  "description": "ADLS Gen2 with Managed Identity and hierarchical namespace"
+}
+
+### =====================================================
+### 12e. Create Data Source (Local File System - Simulator Only)
+### =====================================================
+
+POST {{baseUrl}}/datasources?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "name": "local-files-test",
+  "type": "filesystem",
+  "credentials": {
+    "connectionString": "C:/data"
+  },
+  "container": {
+    "name": "documents",
+    "query": "*.pdf"
+  },
+  "description": "Local file system data source (simulator-specific)"
+}
+
+### =====================================================
+### 13. Get Data Source
+### =====================================================
+
+GET {{baseUrl}}/datasources/blob-datasource-rest-test?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+### =====================================================
+### 14. List All Data Sources
+### =====================================================
+
+GET {{baseUrl}}/datasources?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+### =====================================================
+### 15. Create Skillset (Cognitive Skills)
+### =====================================================
+
+POST {{baseUrl}}/skillsets?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "name": "document-skillset-rest-test",
+  "description": "Skillset for document processing created via REST API",
+  "skills": [
+    {
+      "@odata.type": "#Microsoft.Skills.Vision.OcrSkill",
+      "name": "ocr-skill",
+      "description": "Extract text from images",
+      "context": "/document/normalized_images/*",
+      "inputs": [
+        { "name": "image", "source": "/document/normalized_images/*" }
+      ],
+      "outputs": [
+        { "name": "text", "targetName": "extractedText" }
+      ]
+    },
+    {
+      "@odata.type": "#Microsoft.Skills.Text.MergeSkill",
+      "name": "merge-skill",
+      "description": "Merge content with OCR text",
+      "context": "/document",
+      "inputs": [
+        { "name": "text", "source": "/document/content" },
+        { "name": "itemsToInsert", "source": "/document/normalized_images/*/extractedText" }
+      ],
+      "outputs": [
+        { "name": "mergedText", "targetName": "merged_content" }
+      ]
+    },
+    {
+      "@odata.type": "#Microsoft.Skills.Text.KeyPhraseExtractionSkill",
+      "name": "keyphrases-skill",
+      "description": "Extract key phrases from text",
+      "context": "/document",
+      "inputs": [
+        { "name": "text", "source": "/document/content" }
+      ],
+      "outputs": [
+        { "name": "keyPhrases", "targetName": "keyphrases" }
+      ]
+    }
+  ]
+}
+
+### =====================================================
+### 16. Get Skillset
+### =====================================================
+
+GET {{baseUrl}}/skillsets/document-skillset-rest-test?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+### =====================================================
+### 17. List All Skillsets
+### =====================================================
+
+GET {{baseUrl}}/skillsets?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+### =====================================================
+### 18. Create Index for Indexer
+### =====================================================
+
+POST {{baseUrl}}/indexes?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "name": "documents-index-rest-test",
+  "fields": [
+    { "name": "id", "type": "Edm.String", "key": true },
+    { "name": "content", "type": "Edm.String", "searchable": true, "analyzer": "en.lucene" },
+    { "name": "merged_content", "type": "Edm.String", "searchable": true, "analyzer": "en.lucene" },
+    { "name": "keyphrases", "type": "Collection(Edm.String)", "searchable": true, "filterable": true },
+    { "name": "metadata_storage_path", "type": "Edm.String", "filterable": true },
+    { "name": "metadata_storage_name", "type": "Edm.String", "filterable": true }
+  ]
+}
+
+### =====================================================
+### 19. Create Indexer
+### =====================================================
+
+POST {{baseUrl}}/indexers?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "name": "blob-indexer-rest-test",
+  "description": "Indexer for blob storage created via REST API",
+  "dataSourceName": "blob-datasource-rest-test",
+  "targetIndexName": "documents-index-rest-test",
+  "skillsetName": "document-skillset-rest-test",
+  "schedule": {
+    "interval": "PT1H",
+    "startTime": "2026-01-23T00:00:00Z"
+  },
+  "parameters": {
+    "batchSize": 10,
+    "maxFailedItems": 5,
+    "maxFailedItemsPerBatch": 2,
+    "configuration": {
+      "parsingMode": "default",
+      "dataToExtract": "contentAndMetadata"
+    }
+  },
+  "fieldMappings": [
+    { "sourceFieldName": "metadata_storage_path", "targetFieldName": "id" }
+  ],
+  "outputFieldMappings": [
+    { "sourceFieldName": "/document/merged_content", "targetFieldName": "merged_content" },
+    { "sourceFieldName": "/document/keyphrases", "targetFieldName": "keyphrases" }
+  ]
+}
+
+### =====================================================
+### 20. Get Indexer
+### =====================================================
+
+GET {{baseUrl}}/indexers/blob-indexer-rest-test?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+### =====================================================
+### 21. List All Indexers
+### =====================================================
+
+GET {{baseUrl}}/indexers?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+### =====================================================
+### 22. Get Indexer Status
+### =====================================================
+
+GET {{baseUrl}}/indexers/blob-indexer-rest-test/status?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+### =====================================================
+### 23. Run Indexer Manually
+### =====================================================
+
+POST {{baseUrl}}/indexers/blob-indexer-rest-test/run?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+### =====================================================
+### 24. Reset Indexer
+### =====================================================
+
+POST {{baseUrl}}/indexers/blob-indexer-rest-test/reset?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+### =====================================================
+### 25. Autocomplete
+### =====================================================
+
+POST {{baseUrl}}/indexes/hotels-rest-test/docs/autocomplete?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "search": "lux",
+  "autocompleteMode": "oneTermWithContext",
+  "suggesterName": "sg"
+}
+
+### =====================================================
+### 26. Suggest
+### =====================================================
+
+POST {{baseUrl}}/indexes/hotels-rest-test/docs/suggest?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "search": "sea",
+  "suggesterName": "sg",
+  "select": "hotelId,hotelName"
+}
+
+### =====================================================
+### 27. Analyze Text
+### =====================================================
+
+POST {{baseUrl}}/indexes/hotels-rest-test/analyze?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "text": "The quick brown fox jumps over the lazy dog",
+  "analyzer": "en.lucene"
+}
+
+### =====================================================
+### CLEANUP - Delete All Resources
+### Run these in reverse order to avoid dependency issues
+### =====================================================
+
+### Delete Indexer
+DELETE {{baseUrl}}/indexers/blob-indexer-rest-test?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+###
+
+### Delete Skillset
+DELETE {{baseUrl}}/skillsets/document-skillset-rest-test?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+###
+
+### Delete Data Source
+DELETE {{baseUrl}}/datasources/blob-datasource-rest-test?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+###
+
+### Delete Documents Index
+DELETE {{baseUrl}}/indexes/documents-index-rest-test?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+###
+
+### Delete Hotels Index
+DELETE {{baseUrl}}/indexes/hotels-rest-test?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+### =====================================================
+### BONUS: Vector Search Example
+### =====================================================
+
+### Create Vector Index
+POST {{baseUrl}}/indexes?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "name": "vector-search-test",
+  "fields": [
+    { "name": "id", "type": "Edm.String", "key": true },
+    { "name": "title", "type": "Edm.String", "searchable": true },
+    { "name": "content", "type": "Edm.String", "searchable": true },
+    { 
+      "name": "contentVector", 
+      "type": "Collection(Edm.Single)", 
+      "searchable": true,
+      "dimensions": 3,
+      "vectorSearchProfile": "vector-profile"
+    }
+  ],
+  "vectorSearch": {
+    "algorithms": [
+      {
+        "name": "hnsw-algo",
+        "kind": "hnsw",
+        "hnswParameters": {
+          "m": 4,
+          "efConstruction": 400,
+          "efSearch": 500,
+          "metric": "cosine"
+        }
+      }
+    ],
+    "profiles": [
+      {
+        "name": "vector-profile",
+        "algorithm": "hnsw-algo"
+      }
+    ]
+  }
+}
+
+###
+
+### Upload Documents with Vectors
+POST {{baseUrl}}/indexes/vector-search-test/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "value": [
+    {
+      "@search.action": "upload",
+      "id": "1",
+      "title": "Azure AI Search",
+      "content": "Azure AI Search is a cloud search service.",
+      "contentVector": [0.1, 0.2, 0.3]
+    },
+    {
+      "@search.action": "upload",
+      "id": "2",
+      "title": "Machine Learning",
+      "content": "Machine learning enables intelligent applications.",
+      "contentVector": [0.4, 0.5, 0.6]
+    },
+    {
+      "@search.action": "upload",
+      "id": "3",
+      "title": "Natural Language Processing",
+      "content": "NLP helps computers understand human language.",
+      "contentVector": [0.15, 0.25, 0.35]
+    }
+  ]
+}
+
+###
+
+### Vector Search Query
+POST {{baseUrl}}/indexes/vector-search-test/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "count": true,
+  "select": "id,title,content",
+  "vectorQueries": [
+    {
+      "kind": "vector",
+      "vector": [0.1, 0.2, 0.3],
+      "fields": "contentVector",
+      "k": 3
+    }
+  ]
+}
+
+###
+
+### Hybrid Search (Text + Vector)
+POST {{baseUrl}}/indexes/vector-search-test/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "search": "search service",
+  "count": true,
+  "select": "id,title,content",
+  "vectorQueries": [
+    {
+      "kind": "vector",
+      "vector": [0.1, 0.2, 0.3],
+      "fields": "contentVector",
+      "k": 3
+    }
+  ]
+}
+
+###
+
+### Delete Vector Index
+DELETE {{baseUrl}}/indexes/vector-search-test?api-version={{apiVersion}}
+api-key: {{apiKey}}
