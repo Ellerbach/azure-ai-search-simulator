@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using LiteDB;
 
 namespace AzureAISearchSimulator.Core.Models;
 
@@ -7,6 +8,13 @@ namespace AzureAISearchSimulator.Core.Models;
 /// </summary>
 public class Skillset
 {
+    /// <summary>
+    /// Internal ID for LiteDB storage (not serialized to JSON).
+    /// </summary>
+    [BsonId]
+    [JsonIgnore]
+    public int InternalId { get; set; }
+
     /// <summary>
     /// The name of the skillset.
     /// </summary>

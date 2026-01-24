@@ -1,0 +1,17 @@
+# Python dependencies for Azure AI Search Notebook Sample
+
+# Azure AI Search SDK
+azure-search-documents>=11.4.0
+
+# HTTP requests for downloading sample files
+requests>=2.31.0
+
+# Data display
+pandas>=2.0.0
+
+# Jupyter notebook support
+jupyter>=1.0.0
+ipykernel>=6.0.0
+
+# Optional: for better notebook experience
+ipywidgets>=8.0.0

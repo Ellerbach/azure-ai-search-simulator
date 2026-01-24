@@ -83,7 +83,9 @@ public class IndexersController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Get(string indexerName)
     {
+        _logger.LogInformation("IndexersController.Get called with: {IndexerName}", indexerName);
         var indexer = await _indexerService.GetAsync(indexerName);
+        _logger.LogInformation("IndexersController.Get result for {IndexerName}: {Found}", indexerName, indexer != null);
         if (indexer == null)
         {
             return NotFound(new { error = $"Indexer '{indexerName}' not found." });
@@ -125,6 +127,7 @@ public class IndexersController : ControllerBase
     /// Gets the status of an indexer.
     /// </summary>
     [HttpGet("{indexerName}/status")]
+    [HttpGet("{indexerName}/search.status")] // Azure SDK uses this format
     [ProducesResponseType(typeof(IndexerStatus), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetStatus(string indexerName)
@@ -142,6 +145,7 @@ public class IndexersController : ControllerBase
     /// Runs an indexer immediately.
     /// </summary>
     [HttpPost("{indexerName}/run")]
+    [HttpPost("{indexerName}/search.run")] // Azure SDK uses this format
     [ProducesResponseType(StatusCodes.Status202Accepted)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -168,6 +172,7 @@ public class IndexersController : ControllerBase
     /// Resets an indexer (clears tracking state).
     /// </summary>
     [HttpPost("{indexerName}/reset")]
+    [HttpPost("{indexerName}/search.reset")] // Azure SDK uses this format
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Reset(string indexerName)

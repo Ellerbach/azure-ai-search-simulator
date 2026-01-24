@@ -310,13 +310,13 @@ AzureAISearchSimulator/
 | Feature | Azure AI Search | Simulator |
 | ------- | -------------- | --------- |
 | Full-text search | ✅ | ✅ |
-| Filtering & facets | ✅ | ✅ (filtering only) |
+| Filtering & facets | ✅ | ✅ |
 | Vector search | ✅ | ✅ (cosine similarity) |
 | Hybrid search | ✅ | ✅ |
 | Highlighting | ✅ | ✅ |
 | Autocomplete | ✅ | ✅ |
 | Suggestions | ✅ | ✅ |
-| Indexers | ✅ | ✅ (file system) |
+| Indexers | ✅ | ✅ (Blob, ADLS, filesystem) |
 | Skillsets (utility) | ✅ | ✅ |
 | Custom Web API Skill | ✅ | ✅ |
 | Azure OpenAI Embedding | ✅ | ✅ |
@@ -325,6 +325,20 @@ AzureAISearchSimulator/
 | AI skills (OCR, etc.) | ✅ | ❌ |
 | Managed Identity | ✅ | ❌ |
 | Scale (millions of docs) | ✅ | Limited |
+
+### Skills Support
+
+| Skill Category | Azure AI Search | Simulator |
+| --- | --- | --- |
+| **Utility Skills** (Split, Merge, Shaper, Conditional) | ✅ | ✅ |
+| **Custom Web API Skill** | ✅ | ✅ |
+| **Azure OpenAI Embedding Skill** | ✅ | ✅ |
+| **AI Vision Skills** (OCR, Image Analysis) | ✅ | ❌ |
+| **AI Language Skills** (Entity Recognition, Sentiment, PII, etc.) | ✅ | ❌ |
+| **Translation Skill** | ✅ | ❌ |
+| **GenAI Prompt Skill** | ✅ | ❌ |
+
+> **Tip**: Use the Custom Web API Skill to implement your own versions of missing AI skills. See [samples/CustomSkillSample](samples/CustomSkillSample/) for examples.
 
 ## Contributing
 

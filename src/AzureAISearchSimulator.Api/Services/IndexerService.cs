@@ -77,7 +77,10 @@ public class IndexerService : IIndexerService
 
     public async Task<Indexer?> GetAsync(string name)
     {
-        return await _repository.GetAsync(name);
+        _logger.LogInformation("IndexerService.GetAsync called for: {Name}", name);
+        var result = await _repository.GetAsync(name);
+        _logger.LogInformation("IndexerService.GetAsync result for {Name}: {Found}", name, result != null);
+        return result;
     }
 
     public async Task<IEnumerable<Indexer>> ListAsync()
@@ -334,8 +337,9 @@ public class IndexerService : IIndexerService
                 
                 if (!pipelineResult.Success)
                 {
-                    _logger.LogWarning("Skillset '{SkillsetName}' failed for document {Key}: {Errors}",
-                        skillset.Name, sourceDoc.Key, string.Join("; ", pipelineResult.Errors));
+                    var errorMessage = $"Skillset '{skillset.Name}' failed for document {sourceDoc.Key}: {string.Join("; ", pipelineResult.Errors)}";
+                    _logger.LogWarning(errorMessage);
+                    throw new InvalidOperationException(errorMessage);
                 }
 
                 if (pipelineResult.Warnings.Count > 0)
