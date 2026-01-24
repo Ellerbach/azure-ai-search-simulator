@@ -99,23 +99,57 @@ The simulator is designed for **development, learning, and testing purposes only
 | Custom Web API | ✅ Full | Calls external HTTP endpoints |
 | Azure OpenAI Embedding | ✅ Full | Requires Azure OpenAI endpoint config |
 
-### Unsupported Skills
+### Complete Skills Reference
 
-All Azure AI-powered skills (except Azure OpenAI Embedding) are **not supported**:
+The following table lists **all skills available in Azure AI Search** and their support status in the simulator:
 
-- OCR Skill
-- Image Analysis Skill
-- Entity Recognition Skill
-- Entity Linking Skill
-- Key Phrase Extraction Skill
-- Language Detection Skill
-- PII Detection Skill
-- Sentiment Analysis Skill
-- Text Translation Skill
+#### Foundry/Cognitive Services Skills (Billable in Azure)
 
-**Note**: Azure OpenAI Embedding Skill **is supported** but requires Azure OpenAI endpoint configuration.
+| @odata.type | Skill Name | Azure | Simulator | Notes |
+| --- | --- | --- | --- | --- |
+| `#Microsoft.Skills.Vision.OcrSkill` | OCR | ✅ | ❌ | Requires Azure AI Vision |
+| `#Microsoft.Skills.Vision.ImageAnalysisSkill` | Image Analysis | ✅ | ❌ | Requires Azure AI Vision |
+| `#Microsoft.Skills.Text.V3.EntityRecognitionSkill` | Entity Recognition | ✅ | ❌ | Requires Azure AI Language |
+| `#Microsoft.Skills.Text.EntityLinkingSkill` | Entity Linking | ✅ | ❌ | Requires Azure AI Language |
+| `#Microsoft.Skills.Text.KeyPhraseExtractionSkill` | Key Phrase Extraction | ✅ | ❌ | Requires Azure AI Language |
+| `#Microsoft.Skills.Text.LanguageDetectionSkill` | Language Detection | ✅ | ❌ | Requires Azure AI Language |
+| `#Microsoft.Skills.Text.PIIDetectionSkill` | PII Detection | ✅ | ❌ | Requires Azure AI Language |
+| `#Microsoft.Skills.Text.V3.SentimentSkill` | Sentiment Analysis | ✅ | ❌ | Requires Azure AI Language |
+| `#Microsoft.Skills.Text.TranslationSkill` | Text Translation | ✅ | ❌ | Requires Azure AI Translator |
+| `#Microsoft.Skills.Vision.VectorizeSkill` | Vision Multimodal Embeddings | ✅ | ❌ | Requires Azure AI Vision |
 
-**Workaround**: Use Custom Web API skill to call your own implementations.
+#### Azure-Hosted Model Skills
+
+| @odata.type | Skill Name | Azure | Simulator | Notes |
+| --- | --- | --- | --- | --- |
+| `#Microsoft.Skills.Text.AzureOpenAIEmbeddingSkill` | Azure OpenAI Embedding | ✅ | ✅ | Requires Azure OpenAI endpoint |
+| `#Microsoft.Skills.Custom.AzureContentUnderstandingSkill` | Azure Content Understanding | ✅ | ❌ | Requires Azure AI Document Intelligence |
+| `#Microsoft.Skills.Text.GenAIPromptSkill` | GenAI Prompt | ✅ | ❌ | Requires Azure OpenAI |
+
+#### Custom Skills
+
+| @odata.type | Skill Name | Azure | Simulator | Notes |
+| --- | --- | --- | --- | --- |
+| `#Microsoft.Skills.Custom.WebApiSkill` | Web API | ✅ | ✅ | Full support for external REST APIs |
+| `#Microsoft.Skills.Custom.AmlSkill` | Azure Machine Learning | ✅ | ❌ | Requires Azure ML workspace |
+| `#Microsoft.Skills.Text.CustomEntityLookupSkill` | Custom Entity Lookup | ✅ | ❌ | Not yet implemented |
+
+#### Utility Skills (Free - No external dependencies)
+
+| @odata.type | Skill Name | Azure | Simulator | Notes |
+| --- | --- | --- | --- | --- |
+| `#Microsoft.Skills.Text.SplitSkill` | Text Split | ✅ | ✅ | Pages and sentences |
+| `#Microsoft.Skills.Text.MergeSkill` | Text Merge | ✅ | ✅ | Full support |
+| `#Microsoft.Skills.Util.ShaperSkill` | Shaper | ✅ | ✅ | Restructure data |
+| `#Microsoft.Skills.Util.ConditionalSkill` | Conditional | ✅ | ✅ | Filter and merge data |
+| `#Microsoft.Skills.Util.DocumentExtractionSkill` | Document Extraction | ✅ | ⚠️ | PDF, Office, JSON, text only and very basic |
+
+### Summary
+
+- **Implemented**: 6 skills (Text Split, Text Merge, Shaper, Conditional, Web API, Azure OpenAI Embedding)
+- **Not Implemented**: 14 skills (require Azure AI Services or are not yet added)
+
+**Workaround**: Use the Custom Web API skill to call your own implementations of missing skills. See the [CustomSkillSample](../samples/CustomSkillSample/) for examples of PII detection, sentiment analysis, keyword extraction, and more.
 
 ## Document Cracking Limitations
 
@@ -188,12 +222,14 @@ All Azure AI-powered skills (except Azure OpenAI Embedding) are **not supported*
 ### OData Filter Limitations
 
 Supported functions:
+
 - `search.ismatch()` - Basic support
 - `search.in()` - Full support
 - `geo.distance()` - Basic support
 - `any()` / `all()` - Full support
 
 Not supported:
+
 - `search.ismatchscoring()`
 - Complex geo-spatial functions
 
@@ -220,6 +256,7 @@ Not supported:
 ### When to Use the Simulator
 
 ✅ **Good for:**
+
 - Learning Azure AI Search concepts
 - Prototyping search solutions
 - Testing index schemas
@@ -230,6 +267,7 @@ Not supported:
 ### When NOT to Use the Simulator
 
 ❌ **Not suitable for:**
+
 - Production workloads
 - Performance benchmarking
 - Testing AI-powered features

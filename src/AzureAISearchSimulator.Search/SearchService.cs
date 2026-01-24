@@ -84,7 +84,7 @@ public class SearchService : ISearchService
                 }
             }
 
-            var sort = BuildSort(request.OrderBy);
+            var sort = BuildSort(request.OrderBy, index);
             topDocs = sort != null
                 ? searcher.Search(finalQuery, topN, sort)
                 : searcher.Search(finalQuery, topN);
@@ -95,7 +95,7 @@ public class SearchService : ISearchService
             var filterQuery = BuildFilterQuery(index, request.Filter);
             if (filterQuery != null)
             {
-                var sort = BuildSort(request.OrderBy);
+                var sort = BuildSort(request.OrderBy, index);
                 topDocs = sort != null
                     ? searcher.Search(filterQuery, topN, sort)
                     : searcher.Search(filterQuery, topN);
@@ -105,7 +105,7 @@ public class SearchService : ISearchService
         {
             // Match all documents
             var matchAllQuery = new MatchAllDocsQuery();
-            var sort = BuildSort(request.OrderBy);
+            var sort = BuildSort(request.OrderBy, index);
             topDocs = sort != null
                 ? searcher.Search(matchAllQuery, topN, sort)
                 : searcher.Search(matchAllQuery, topN);
@@ -392,7 +392,7 @@ public class SearchService : ISearchService
         return new MatchAllDocsQuery();
     }
 
-    private Sort? BuildSort(string? orderBy)
+    private Sort? BuildSort(string? orderBy, SearchIndex index)
     {
         if (string.IsNullOrWhiteSpace(orderBy))
         {
@@ -416,12 +416,35 @@ public class SearchService : ISearchService
             }
             else
             {
-                // Use doc values field for sorting
-                sortFields.Add(new SortField(fieldName + "_sort", SortFieldType.STRING, reverse));
+                // Determine the correct sort field type based on the index schema
+                var sortFieldType = GetSortFieldType(fieldName, index);
+                sortFields.Add(new SortField(fieldName + "_sort", sortFieldType, reverse));
             }
         }
 
         return sortFields.Any() ? new Sort(sortFields.ToArray()) : null;
+    }
+
+    private static SortFieldType GetSortFieldType(string fieldName, SearchIndex index)
+    {
+        var field = index.Fields?.FirstOrDefault(f => 
+            f.Name.Equals(fieldName, StringComparison.OrdinalIgnoreCase));
+        
+        if (field == null)
+        {
+            return SortFieldType.STRING;
+        }
+
+        // Map Azure Search field types to Lucene sort field types
+        return field.Type?.ToLowerInvariant() switch
+        {
+            "edm.int32" => SortFieldType.INT32,
+            "edm.int64" => SortFieldType.INT64,
+            "edm.double" => SortFieldType.DOUBLE,
+            "edm.single" => SortFieldType.SINGLE,
+            "edm.datetimeoffset" => SortFieldType.INT64, // Dates stored as ticks
+            _ => SortFieldType.STRING
+        };
     }
 
     private Dictionary<string, double> ExecuteVectorSearch(string indexName, List<VectorQuery> vectors)

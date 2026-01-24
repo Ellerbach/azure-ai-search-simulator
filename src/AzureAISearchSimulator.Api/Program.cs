@@ -45,6 +45,9 @@ try
         {
             options.JsonSerializerOptions.DefaultIgnoreCondition = 
                 System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull;
+            // Allow Infinity and NaN values in JSON (can happen with search scores)
+            options.JsonSerializerOptions.NumberHandling = 
+                System.Text.Json.Serialization.JsonNumberHandling.AllowNamedFloatingPointLiterals;
         });
 
     // Add OpenAPI documentation
@@ -107,7 +110,12 @@ try
     var app = builder.Build();
 
     // Configure the HTTP request pipeline
-    app.UseGlobalExceptionHandler(); // Add global exception handler first
+    // IMPORTANT: OData URL rewriter must run BEFORE routing
+    app.UseODataUrlRewriter(); // Rewrite OData-style URLs early, before routing
+    
+    app.UseRouting(); // Explicitly add routing after URL rewriter
+    
+    app.UseGlobalExceptionHandler(); // Add global exception handler
     app.UseSerilogRequestLogging();
 
     if (app.Environment.IsDevelopment())

@@ -31,6 +31,7 @@ public class DocumentsController : ControllerBase
     /// POST indexes/{indexName}/docs/index
     /// </summary>
     [HttpPost("index")]
+    [HttpPost("search.index")] // Azure SDK uses this format
     [ProducesResponseType(typeof(IndexDocumentsResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(IndexDocumentsResponse), StatusCodes.Status207MultiStatus)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -74,6 +75,8 @@ public class DocumentsController : ControllerBase
     /// POST indexes/{indexName}/docs/search
     /// </summary>
     [HttpPost("search")]
+    [HttpPost("search.post")] // Azure SDK may use this format
+    [HttpPost("search.post.search")] // Azure SDK uses this format for search
     [ProducesResponseType(typeof(SearchResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Search(

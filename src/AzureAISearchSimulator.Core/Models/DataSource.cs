@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using LiteDB;
 
 namespace AzureAISearchSimulator.Core.Models;
 
@@ -7,6 +8,13 @@ namespace AzureAISearchSimulator.Core.Models;
 /// </summary>
 public class DataSource
 {
+    /// <summary>
+    /// Internal ID for LiteDB storage (not serialized to JSON).
+    /// </summary>
+    [BsonId]
+    [JsonIgnore]
+    public int InternalId { get; set; }
+
     /// <summary>
     /// Name of the data source.
     /// </summary>
@@ -30,6 +38,12 @@ public class DataSource
     /// </summary>
     [JsonPropertyName("credentials")]
     public DataSourceCredentials? Credentials { get; set; }
+
+    /// <summary>
+    /// Connection string (alternative to credentials for compatibility).
+    /// </summary>
+    [JsonPropertyName("connectionString")]
+    public string? ConnectionString { get; set; }
 
     /// <summary>
     /// Container information (blob container, table name, etc.).

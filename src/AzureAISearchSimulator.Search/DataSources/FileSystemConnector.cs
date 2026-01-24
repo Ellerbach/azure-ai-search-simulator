@@ -167,14 +167,37 @@ public class FileSystemConnector : IDataSourceConnector
         return Task.FromResult<DataSourceDocument?>(null);
     }
 
-    private static string GetBasePath(DataSource dataSource)
+    private string GetBasePath(DataSource dataSource)
     {
-        // Use container name as folder path
-        // Connection string can be a base path prefix
-        var basePath = dataSource.Credentials?.ConnectionString ?? ".";
+        // Connection string can be in format "path=C:\some\path" or just "C:\some\path"
+        var connectionString = dataSource.Credentials?.ConnectionString 
+            ?? dataSource.ConnectionString  // Also check direct property
+            ?? ".";
+        
+        // Parse "path=" prefix if present
+        if (connectionString.StartsWith("path=", StringComparison.OrdinalIgnoreCase))
+        {
+            connectionString = connectionString.Substring(5);
+        }
+        
         var containerPath = dataSource.Container?.Name ?? "";
         
-        return Path.Combine(basePath, containerPath);
+        // If container is "." treat it as root (no subdirectory)
+        if (containerPath == ".")
+        {
+            containerPath = "";
+        }
+        
+        var basePath = string.IsNullOrEmpty(containerPath) 
+            ? connectionString 
+            : Path.Combine(connectionString, containerPath);
+            
+        _logger.LogInformation("FileSystemConnector.GetBasePath: connectionString={ConnectionString}, container={Container}, result={BasePath}", 
+            dataSource.Credentials?.ConnectionString ?? dataSource.ConnectionString, 
+            dataSource.Container?.Name, 
+            basePath);
+        
+        return basePath;
     }
 
     private static string GenerateKey(string path)
