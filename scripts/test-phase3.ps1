@@ -1,8 +1,21 @@
 #!/usr/bin/env pwsh
 # Phase 3 Testing Script for Azure AI Search Simulator
 
-$BaseUrl = "http://localhost:5250"
+$BaseUrl = "https://localhost:7250"
 $ApiKey = "admin-key-12345"
+
+# Skip SSL certificate validation for local development
+if (-not ([System.Management.Automation.PSTypeName]'TrustAllCertsPolicy').Type) {
+    Add-Type @"
+using System.Net;
+using System.Security.Cryptography.X509Certificates;
+public class TrustAllCertsPolicy : ICertificatePolicy {
+    public bool CheckValidationResult(ServicePoint srvPoint, X509Certificate certificate, WebRequest request, int certificateProblem) { return true; }
+}
+"@
+}
+[System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy
+[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
 
 function Invoke-Api {
     param(
@@ -18,9 +31,9 @@ function Invoke-Api {
     
     try {
         if ($Body) {
-            $result = Invoke-RestMethod -Method $Method -Uri "$BaseUrl$Endpoint" -Headers $headers -Body $Body
+            $result = Invoke-RestMethod -Method $Method -Uri "$BaseUrl$Endpoint" -Headers $headers -Body $Body -SkipCertificateCheck
         } else {
-            $result = Invoke-RestMethod -Method $Method -Uri "$BaseUrl$Endpoint" -Headers $headers
+            $result = Invoke-RestMethod -Method $Method -Uri "$BaseUrl$Endpoint" -Headers $headers -SkipCertificateCheck
         }
         return $result | ConvertTo-Json -Depth 10
     }

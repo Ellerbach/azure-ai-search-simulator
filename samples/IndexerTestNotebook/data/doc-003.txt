@@ -1,0 +1,28 @@
+Indexers in Azure AI Search automate the ingestion of data from external sources into a search index. They crawl data sources, extract content, and populate your index without requiring custom code.
+
+Supported Data Sources:
+
+1. Azure Blob Storage - Index documents stored as blobs (PDF, Office docs, HTML, JSON, CSV, etc.)
+2. Azure Data Lake Storage Gen2 - Hierarchical namespace for big data analytics
+3. Azure SQL Database - Index relational data from SQL tables and views
+4. Azure Cosmos DB - Index documents from NoSQL collections
+5. Azure Table Storage - Index entities from table storage
+
+Indexer Workflow:
+
+Step 1: Create a Data Source connection that points to your external data
+Step 2: Create an Index with the schema matching your documents
+Step 3: Create an Indexer that connects the data source to the index
+Step 4: Run the indexer manually or on a schedule
+
+Change Detection:
+
+Indexers support incremental indexing through change detection:
+- High Water Mark: Uses a timestamp or version field to detect changes
+- Soft Delete: Marks deleted documents instead of physically removing them
+
+Skillsets Integration:
+
+Indexers can include skillsets to enrich content during indexing:
+- Built-in cognitive skills for OCR, entity recognition, sentiment analysis
+- Custom Web API skills for specialized processing

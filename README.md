@@ -69,10 +69,10 @@ cd azure-ai-search-simulator
 # Build the solution
 dotnet build
 
-# Run the simulator
-dotnet run --project src/AzureAISearchSimulator.Api
+# Run the simulator (HTTPS - recommended for Azure SDK compatibility)
+dotnet run --project src/AzureAISearchSimulator.Api --urls "https://localhost:7250"
 
-# API available at http://localhost:5250
+# API available at https://localhost:7250
 ```
 
 ### Running with Docker
@@ -83,9 +83,9 @@ docker-compose up -d
 
 # Or build the image manually
 docker build -t azure-ai-search-simulator .
-docker run -p 5250:8080 -v search-data:/app/data azure-ai-search-simulator
+docker run -p 7250:8443 -p 5250:8080 -v search-data:/app/data azure-ai-search-simulator
 
-# API available at http://localhost:5250
+# API available at https://localhost:7250 (HTTPS) or http://localhost:5250 (HTTP)
 ```
 
 ### Using with Azure SDK
@@ -150,7 +150,7 @@ await foreach (var result in results.Value.GetResultsAsync())
 
 ```http
 ### Create an index
-POST http://localhost:5250/indexes?api-version=2024-07-01
+POST https://localhost:7250/indexes?api-version=2024-07-01
 Content-Type: application/json
 api-key: admin-key-12345
 
@@ -165,7 +165,7 @@ api-key: admin-key-12345
 }
 
 ### Upload documents
-POST http://localhost:5250/indexes/hotels/docs/index?api-version=2024-07-01
+POST https://localhost:7250/indexes/hotels/docs/index?api-version=2024-07-01
 Content-Type: application/json
 api-key: admin-key-12345
 
@@ -182,7 +182,7 @@ api-key: admin-key-12345
 }
 
 ### Search
-POST http://localhost:5250/indexes/hotels/docs/search?api-version=2024-07-01
+POST https://localhost:7250/indexes/hotels/docs/search?api-version=2024-07-01
 Content-Type: application/json
 api-key: query-key-67890
 
@@ -194,7 +194,7 @@ api-key: query-key-67890
 }
 
 ### Vector Search
-POST http://localhost:5250/indexes/hotels/docs/search?api-version=2024-07-01
+POST https://localhost:7250/indexes/hotels/docs/search?api-version=2024-07-01
 Content-Type: application/json
 api-key: query-key-67890
 
@@ -210,7 +210,7 @@ api-key: query-key-67890
 }
 
 ### Hybrid Search (Text + Vector)
-POST http://localhost:5250/indexes/hotels/docs/search?api-version=2024-07-01
+POST https://localhost:7250/indexes/hotels/docs/search?api-version=2024-07-01
 Content-Type: application/json
 api-key: query-key-67890
 
@@ -227,7 +227,7 @@ api-key: query-key-67890
 }
 
 ### Create Data Source (Pull Model)
-PUT http://localhost:5250/datasources/my-files?api-version=2024-07-01
+PUT https://localhost:7250/datasources/my-files?api-version=2024-07-01
 Content-Type: application/json
 api-key: admin-key-12345
 
@@ -243,7 +243,7 @@ api-key: admin-key-12345
 }
 
 ### Create Indexer
-PUT http://localhost:5250/indexers/my-indexer?api-version=2024-07-01
+PUT https://localhost:7250/indexers/my-indexer?api-version=2024-07-01
 Content-Type: application/json
 api-key: admin-key-12345
 
@@ -260,7 +260,7 @@ api-key: admin-key-12345
 }
 
 ### Run Indexer
-POST http://localhost:5250/indexers/my-indexer/run?api-version=2024-07-01
+POST https://localhost:7250/indexers/my-indexer/run?api-version=2024-07-01
 api-key: admin-key-12345
 ```
 
@@ -286,8 +286,18 @@ Edit `appsettings.json` to customize the simulator:
 - [Development Plan](docs/PLAN.md) - Full project plan and architecture
 - [API Reference](docs/API-REFERENCE.md) - Complete REST API documentation
 - [Configuration Guide](docs/CONFIGURATION.md) - Detailed configuration options
-- [Sample HTTP Requests](samples/sample-requests.http) - Ready-to-use REST Client requests
 - [Limitations](docs/LIMITATIONS.md) - Differences from Azure AI Search
+
+## Samples
+
+| Sample | Description |
+| ------ | ----------- |
+| [AzureSdkSample](samples/AzureSdkSample/) | C# console app demonstrating Azure.Search.Documents SDK compatibility |
+| [AzureSearchNotebook](samples/AzureSearchNotebook/) | Python Jupyter notebook with comprehensive search demos and skillset integration |
+| [IndexerTestNotebook](samples/IndexerTestNotebook/) | Python notebook for testing indexers with JSON metadata files |
+| [CustomSkillSample](samples/CustomSkillSample/) | ASP.NET Core API implementing custom Web API skills (text stats, keywords, sentiment, summarization) |
+| [sample-requests.http](samples/sample-requests.http) | REST Client file with comprehensive API examples |
+| [pull-mode-test.http](samples/pull-mode-test.http) | REST Client file for testing indexer pull mode workflow |
 
 ## Project Structure
 

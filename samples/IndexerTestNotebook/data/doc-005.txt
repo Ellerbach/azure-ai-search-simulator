@@ -1,0 +1,36 @@
+Azure AI Search provides multiple layers of security to protect your search service and data.
+
+Authentication Methods:
+
+1. API Keys
+   - Admin keys: Full access to all operations (create, read, update, delete)
+   - Query keys: Read-only access for search operations
+   - Rotate keys regularly for security best practices
+
+2. Azure Active Directory (AAD)
+   - Use managed identities for Azure-to-Azure authentication
+   - RBAC roles: Search Service Contributor, Search Index Data Contributor, Search Index Data Reader
+   - Supports service principals for application authentication
+
+3. Managed Identity
+   - System-assigned: Azure manages the identity lifecycle
+   - User-assigned: You manage the identity, can be shared across resources
+   - Use for connecting to data sources without storing credentials
+
+Network Security:
+
+- Private endpoints: Connect to search service through Azure Private Link
+- IP firewall rules: Restrict access to specific IP ranges
+- Virtual network integration: Deploy in your VNet for isolation
+
+Data Security:
+
+- Encryption at rest: All data is encrypted using Microsoft-managed keys
+- Customer-managed keys (CMK): Bring your own encryption keys from Azure Key Vault
+- Double encryption: Additional layer of encryption for sensitive data
+
+Document-Level Security:
+
+- Security trimming: Filter search results based on user permissions
+- Use security fields to store access control lists (ACLs)
+- Apply filters at query time to enforce document-level permissions

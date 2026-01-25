@@ -1,0 +1,36 @@
+Azure AI Search supports multiple query syntaxes for different search scenarios.
+
+Simple Query Syntax:
+
+The default syntax supports basic search operations:
+- Term search: azure search
+- Phrase search: "azure ai search"
+- Prefix search: azur*
+- Boolean operators: azure AND search, azure OR bing, azure NOT bing
+- Grouping: (azure OR aws) AND search
+
+Full Lucene Syntax:
+
+Enable with queryType=full for advanced queries:
+- Field-scoped search: title:azure
+- Fuzzy search: azrue~1 (matches 'azure' with edit distance 1)
+- Proximity search: "azure search"~5 (words within 5 positions)
+- Boosting: azure^2 search (boost azure term)
+- Regular expressions: /[a-z]+ure/
+- Wildcards: az?re, az*
+
+OData Filter Expressions:
+
+Use $filter for structured filtering:
+- Comparison: price lt 100, rating ge 4
+- Logical operators: price lt 100 and category eq 'Electronics'
+- String functions: search.ismatch('azure*', 'title')
+- Collection operators: tags/any(t: t eq 'featured')
+- Geo-spatial: geo.distance(location, geography'POINT(-122.131577 47.678581)') le 10
+
+Best Practices:
+
+1. Use simple syntax for basic searches, full Lucene for complex needs
+2. Combine search with filters for faceted navigation
+3. Use $select to limit returned fields and improve performance
+4. Enable highlighting to show matching text snippets

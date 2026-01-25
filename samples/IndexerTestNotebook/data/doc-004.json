@@ -1,0 +1,10 @@
+{
+  "id": "doc-004",
+  "title": "Search Query Syntax Guide",
+  "author": "Query Processing Team",
+  "category": "Reference",
+  "tags": ["queries", "lucene", "odata", "filters"],
+  "createdDate": "2024-09-10T16:45:00Z",
+  "language": "en",
+  "contentFile": "doc-004.txt"
+}

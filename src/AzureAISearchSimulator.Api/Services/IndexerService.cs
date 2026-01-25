@@ -291,7 +291,16 @@ public class IndexerService : IIndexerService
 
     private async Task ProcessDocumentAsync(Indexer indexer, DataSourceDocument sourceDoc)
     {
-        // Extract content using document cracker
+        // Check for JSON parsing mode
+        var parsingMode = indexer.Parameters?.Configuration?.ParsingMode?.ToLowerInvariant() ?? "default";
+        
+        if (parsingMode == "json" || parsingMode == "jsonarray")
+        {
+            await ProcessJsonDocumentAsync(indexer, sourceDoc, parsingMode);
+            return;
+        }
+        
+        // Extract content using document cracker (default mode)
         var crackedDoc = await ExtractContentAsync(sourceDoc, indexer.Parameters?.Configuration);
 
         // Create enriched document for skill processing
@@ -515,5 +524,132 @@ public class IndexerService : IIndexerService
 
         var tokens = value.Split([delimiter], StringSplitOptions.RemoveEmptyEntries);
         return position >= 0 && position < tokens.Length ? tokens[position] : value;
+    }
+
+    /// <summary>
+    /// Process a JSON document using JSON parsing mode.
+    /// The JSON content is parsed and its properties are used directly as index fields.
+    /// </summary>
+    private async Task ProcessJsonDocumentAsync(Indexer indexer, DataSourceDocument sourceDoc, string parsingMode)
+    {
+        var jsonContent = System.Text.Encoding.UTF8.GetString(sourceDoc.Content);
+        
+        try
+        {
+            if (parsingMode == "jsonarray")
+            {
+                // Parse as JSON array - each element becomes a separate document
+                var jsonArray = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement[]>(jsonContent);
+                if (jsonArray != null)
+                {
+                    var index = 0;
+                    foreach (var element in jsonArray)
+                    {
+                        await IndexJsonElementAsync(indexer, sourceDoc, element, $"{sourceDoc.Key}_{index}");
+                        index++;
+                    }
+                }
+            }
+            else
+            {
+                // Parse as single JSON object
+                var jsonElement = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(jsonContent);
+                await IndexJsonElementAsync(indexer, sourceDoc, jsonElement, null);
+            }
+        }
+        catch (System.Text.Json.JsonException ex)
+        {
+            _logger.LogWarning(ex, "Failed to parse JSON document {Name}: {Error}", sourceDoc.Name, ex.Message);
+            throw new InvalidOperationException($"Failed to parse JSON document '{sourceDoc.Name}': {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Index a single JSON element as a document.
+    /// </summary>
+    private async Task IndexJsonElementAsync(Indexer indexer, DataSourceDocument sourceDoc, System.Text.Json.JsonElement jsonElement, string? keySuffix)
+    {
+        var document = new IndexAction
+        {
+            ["@search.action"] = "mergeOrUpload"
+        };
+
+        // Extract all properties from the JSON
+        var jsonData = new Dictionary<string, object?>();
+        if (jsonElement.ValueKind == System.Text.Json.JsonValueKind.Object)
+        {
+            foreach (var property in jsonElement.EnumerateObject())
+            {
+                jsonData[property.Name] = ConvertJsonValue(property.Value);
+            }
+        }
+
+        // Add metadata fields
+        jsonData["metadata_storage_path"] = sourceDoc.Key;
+        jsonData["metadata_storage_name"] = sourceDoc.Name;
+        jsonData["metadata_content_type"] = sourceDoc.ContentType;
+
+        // Apply field mappings
+        if (indexer.FieldMappings != null && indexer.FieldMappings.Count > 0)
+        {
+            foreach (var mapping in indexer.FieldMappings)
+            {
+                if (jsonData.TryGetValue(mapping.SourceFieldName, out var value) && value != null)
+                {
+                    var targetField = mapping.TargetFieldName ?? mapping.SourceFieldName;
+                    document[targetField] = ApplyMappingFunction(value, mapping.MappingFunction);
+                }
+            }
+        }
+        else
+        {
+            // No field mappings - use JSON properties directly
+            foreach (var (key, value) in jsonData)
+            {
+                if (!key.StartsWith("metadata_") || key == "metadata_storage_path")
+                {
+                    document[key] = value;
+                }
+            }
+        }
+
+        // Ensure we have a key field - prefer 'id' from JSON, fallback to metadata_storage_path
+        if (!document.ContainsKey("id") && !indexer.FieldMappings?.Any(m => m.TargetFieldName == "id") == true)
+        {
+            var keyValue = sourceDoc.Key;
+            if (!string.IsNullOrEmpty(keySuffix))
+            {
+                keyValue = keySuffix;
+            }
+            document["id"] = keyValue;
+        }
+
+        _logger.LogDebug("Indexing JSON document with fields: {Fields}", 
+            string.Join(", ", document.Keys.Where(k => k != "@search.action")));
+
+        // Upload to index
+        var request = new IndexDocumentsRequest
+        {
+            Value = new List<IndexAction> { document }
+        };
+        await _documentService.IndexDocumentsAsync(indexer.TargetIndexName, request);
+    }
+
+    /// <summary>
+    /// Convert a JSON element to a .NET object.
+    /// </summary>
+    private static object? ConvertJsonValue(System.Text.Json.JsonElement element)
+    {
+        return element.ValueKind switch
+        {
+            System.Text.Json.JsonValueKind.String => element.GetString(),
+            System.Text.Json.JsonValueKind.Number => element.TryGetInt64(out var longValue) ? longValue : element.GetDouble(),
+            System.Text.Json.JsonValueKind.True => true,
+            System.Text.Json.JsonValueKind.False => false,
+            System.Text.Json.JsonValueKind.Null => null,
+            System.Text.Json.JsonValueKind.Array => element.EnumerateArray().Select(ConvertJsonValue).ToList(),
+            System.Text.Json.JsonValueKind.Object => element.EnumerateObject().ToDictionary(p => p.Name, p => ConvertJsonValue(p.Value)),
+            _ => element.ToString()
+        };
     }
 }

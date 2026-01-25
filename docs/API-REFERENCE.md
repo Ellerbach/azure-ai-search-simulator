@@ -18,8 +18,10 @@ This document provides a detailed reference for all REST API endpoints supported
 ## Base URL
 
 ```http
-http://localhost:5250
+https://localhost:7250
 ```
+
+> **Note**: HTTPS is recommended for Azure SDK compatibility. HTTP is also available at `http://localhost:5250`.
 
 ## Authentication
 

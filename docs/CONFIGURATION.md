@@ -183,8 +183,8 @@ dotnet run --launch-profile https
 ```
 
 The simulator listens on:
-- `https://localhost:7250` (HTTPS)
-- `http://localhost:5250` (HTTP)
+- `https://localhost:7250` (HTTPS - **recommended for Azure SDK**)
+- `http://localhost:5250` (HTTP - for direct REST calls)
 
 ### Option 2: Configure in launchSettings.json
 
@@ -300,6 +300,10 @@ var client = new SearchIndexClient(
 ### Check Health Endpoint
 
 ```bash
+# HTTPS (with certificate verification disabled)
+curl -k https://localhost:7250/health
+
+# HTTP
 curl http://localhost:5250/health
 ```
 

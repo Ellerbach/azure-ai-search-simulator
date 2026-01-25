@@ -1,0 +1,14 @@
+# Python dependencies for Indexer Test Notebook
+
+# Azure AI Search SDK
+azure-search-documents>=11.4.0
+
+# HTTP requests
+requests>=2.31.0
+
+# Data display
+pandas>=2.0.0
+
+# Jupyter notebook support
+jupyter>=1.0.0
+ipykernel>=6.0.0
