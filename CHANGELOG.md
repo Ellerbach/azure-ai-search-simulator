@@ -9,6 +9,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Phase 10: CI/CD (In Progress)
+
+- **GitHub Actions Workflow** (`.github/workflows/build.yml`)
+  - Automated build and test on push to main and pull requests
+  - .NET 10 SDK setup
+  - Test results upload as artifacts
+  - Docker image build verification
+  - Sample projects build validation
+
+- **PR Template** (`.github/PULL_REQUEST_TEMPLATE.md`)
+  - Standardized pull request format
+  - Checklist for code quality, testing, and documentation
+  - Type of change classification
+  - Azure AI Search reference links
+
+### Added
+
+#### Phase 9: Python Samples & fixes
+
+- **Python Sample** (`samples/AzureSearchNotebook/`)
+  - Jupyter notebook demonstrating Azure AI Search Simulator usage
+  - Python client integration examples
+  - Interactive search and indexing demonstrations
+
+### Fixed
+
+- Various bug fixes and stability improvements
+- Sample code corrections and enhancements
+
+### Changed
+
+- Enhanced sample documentation
+
+---
+
+### Added
+
 #### Phase 8: Azure Data Source Connectors (Completed)
 
 - **Azure Blob Storage Connector** (`AzureBlobStorageConnector.cs`)
