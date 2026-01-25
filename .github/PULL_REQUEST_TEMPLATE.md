@@ -29,7 +29,7 @@
 
 ### Code Quality
 
-- [ ] My code follows the [coding standards](CONTRIBUTING.md#coding-standards) of this project
+- [ ] My code follows the [coding standards](../CONTRIBUTING.md#coding-standards) of this project
 - [ ] I have used meaningful names for variables, methods, and classes
 - [ ] I have kept methods small and focused (single responsibility)
 - [ ] I have used async/await for I/O operations where appropriate
