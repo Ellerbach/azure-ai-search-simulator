@@ -9,14 +9,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-#### Phase 10: CI/CD (In Progress)
+#### Phase 11: Indexer Enhancements & Samples
+
+- **Indexer Test Notebook** (`samples/IndexerTestNotebook/`)
+  - Simple Jupyter notebook for testing indexer functionality
+  - JSON metadata files with associated TXT content files
+  - Demonstrates data source, index, and indexer creation
+  - Document count verification and search testing
+
+- **JSON Parsing Mode for Indexers**
+  - Support for `parsingMode: json` and `parsingMode: jsonarray`
+  - Automatic extraction of JSON properties as index fields
+  - Field mapping support for JSON documents
+
+- **Samples Documentation**
+  - Added Samples section to main README with table of all samples
+  - Descriptions for each sample project and HTTP file
+
+### Changed
+
+- **HTTPS as Default**
+  - Updated all documentation to recommend HTTPS (`https://localhost:7250`)
+  - Updated Docker configuration for HTTPS support (ports 7250:8443, 5250:8080)
+  - Updated sample files to use HTTPS by default
+  - Added SSL certificate bypass to PowerShell test scripts
+
+---
+
+### Added
+
+#### Phase 10: CI/CD & Documentation (Completed)
 
 - **GitHub Actions Workflow** (`.github/workflows/build.yml`)
   - Automated build and test on push to main and pull requests
   - .NET 10 SDK setup
   - Test results upload as artifacts
   - Docker image build verification
-  - Sample projects build validation
+  - Sample projects build validation (AzureSdkSample, CustomSkillSample)
+  - CHANGELOG.md update reminder on PRs
 
 - **PR Template** (`.github/PULL_REQUEST_TEMPLATE.md`)
   - Standardized pull request format
@@ -24,9 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Type of change classification
   - Azure AI Search reference links
 
-### Added
-
-#### Phase 9: Python Samples & fixes
+#### Phase 9: Python Samples & fixes (Completed)
 
 - **Python Sample** (`samples/AzureSearchNotebook/`)
   - Jupyter notebook demonstrating Azure AI Search Simulator usage
