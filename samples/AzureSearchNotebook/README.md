@@ -8,8 +8,10 @@ This Jupyter notebook demonstrates how to use the **Azure AI Search Python SDK**
 
 ```bash
 cd src/AzureAISearchSimulator.Api
-dotnet run --urls "http://localhost:5250"
+dotnet run --urls "https://localhost:7250"
 ```
+
+> **Note**: HTTPS is required for Azure SDK compatibility. The notebook disables SSL verification for local development.
 
 ### 2. Start the Custom Skills API (Optional)
 
@@ -80,8 +82,10 @@ The notebook integrates with the [CustomSkillSample](../CustomSkillSample/) proj
 
 Make sure the simulator is running:
 ```bash
-curl http://localhost:5250/indexes?api-version=2024-07-01 -H "api-key: admin-key-12345"
+curl -k https://localhost:7250/indexes?api-version=2024-07-01 -H "api-key: admin-key-12345"
 ```
+
+> The `-k` flag skips SSL certificate verification for the self-signed dev certificate.
 
 ### Custom Skills Not Working
 

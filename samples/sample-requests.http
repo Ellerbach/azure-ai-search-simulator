@@ -1,8 +1,8 @@
 ### Azure AI Search Simulator - Sample HTTP Requests
 ### Use with REST Client extension in VS Code or similar tools
-### Base URL: http://localhost:5250
+### Base URL: https://localhost:7250 (HTTPS) or http://localhost:5250 (HTTP)
 
-@baseUrl = http://localhost:5250
+@baseUrl = https://localhost:7250
 @apiVersion = 2024-07-01
 @adminKey = admin-key-12345
 @queryKey = query-key-67890

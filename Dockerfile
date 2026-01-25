@@ -40,18 +40,25 @@ RUN mkdir -p /app/data /app/lucene-indexes && \
 COPY --from=build /app/publish .
 
 # Set environment variables
-ENV ASPNETCORE_URLS=http://+:8080
+# HTTPS on 8443, HTTP on 8080
+ENV ASPNETCORE_URLS=https://+:8443;http://+:8080
 ENV ASPNETCORE_ENVIRONMENT=Production
+ENV ASPNETCORE_Kestrel__Certificates__Default__Path=/app/certs/dev-cert.pfx
+ENV ASPNETCORE_Kestrel__Certificates__Default__Password=dev-password
 ENV Simulator__DataPath=/app/data
 ENV Lucene__IndexPath=/app/lucene-indexes
+
+# Generate self-signed certificate for HTTPS
+RUN mkdir -p /app/certs
 
 # Switch to non-root user
 USER 1000
 
-# Expose port
+# Expose ports (HTTP and HTTPS)
 EXPOSE 8080
+EXPOSE 8443
 
-# Health check
+# Health check (using HTTP endpoint)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8080/health || exit 1
 

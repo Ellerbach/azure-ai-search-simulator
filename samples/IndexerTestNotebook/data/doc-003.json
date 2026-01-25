@@ -1,0 +1,10 @@
+{
+  "id": "doc-003",
+  "title": "Understanding Indexers and Data Sources",
+  "author": "Data Integration Team",
+  "category": "Tutorial",
+  "tags": ["indexers", "data-sources", "blob-storage", "automation"],
+  "createdDate": "2024-08-05T09:00:00Z",
+  "language": "en",
+  "contentFile": "doc-003.txt"
+}

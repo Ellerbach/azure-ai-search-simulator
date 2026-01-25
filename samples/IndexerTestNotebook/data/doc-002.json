@@ -1,0 +1,10 @@
+{
+  "id": "doc-002",
+  "title": "Creating Search Indexes",
+  "author": "Search Engineering Team",
+  "category": "Tutorial",
+  "tags": ["indexes", "schema", "fields", "configuration"],
+  "createdDate": "2024-07-20T14:15:00Z",
+  "language": "en",
+  "contentFile": "doc-002.txt"
+}

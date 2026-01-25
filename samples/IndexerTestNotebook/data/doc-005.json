@@ -1,0 +1,10 @@
+{
+  "id": "doc-005",
+  "title": "Security and Access Control",
+  "author": "Security Team",
+  "category": "Security",
+  "tags": ["security", "api-keys", "rbac", "authentication"],
+  "createdDate": "2024-10-01T11:20:00Z",
+  "language": "en",
+  "contentFile": "doc-005.txt"
+}

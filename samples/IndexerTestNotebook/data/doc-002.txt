@@ -1,0 +1,25 @@
+A search index in Azure AI Search is a persistent store of documents and other constructs used for filtered and full text search.
+
+Index Schema Components:
+
+Fields - Define the structure of documents in your index. Each field has:
+- Name: Unique identifier for the field
+- Type: Data type (Edm.String, Edm.Int32, Edm.DateTimeOffset, Collection(Edm.String), etc.)
+- Attributes: searchable, filterable, sortable, facetable, retrievable
+
+Field Types Supported:
+- Edm.String: Text content for full-text search
+- Edm.Int32, Edm.Int64: Integer numbers
+- Edm.Double: Floating point numbers
+- Edm.Boolean: True/false values
+- Edm.DateTimeOffset: Date and time values
+- Collection(Edm.String): Arrays of strings
+- Edm.GeographyPoint: Geo-location coordinates
+
+Best Practices for Index Design:
+
+1. Plan your schema carefully - changing it later may require reindexing
+2. Use appropriate analyzers for different languages
+3. Enable only the attributes you need to optimize storage
+4. Consider using suggester fields for autocomplete scenarios
+5. Add scoring profiles for relevance tuning

@@ -88,7 +88,7 @@ Use the [test-skills.http](test-skills.http) file to test individual skills.
 
    ```bash
    cd src/AzureAISearchSimulator.Api
-   dotnet run --urls "http://localhost:5250"
+   dotnet run --urls "https://localhost:7250"
    ```
 
 2. Use [integration-example.http](integration-example.http) to:

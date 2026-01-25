@@ -1,0 +1,19 @@
+Azure AI Search is a cloud search service with built-in AI capabilities that enrich all types of information to help you identify and explore relevant content at scale. Use cognitive skills for vision, language, and speech, or use custom machine learning models to uncover insights from all types of content.
+
+Key Features of Azure AI Search:
+
+1. Full Text Search - Powerful search capabilities over indexed content using the Lucene query syntax or simple query syntax.
+
+2. AI Enrichment - Built-in cognitive skills that call Azure AI services APIs to add image analysis, text extraction, natural language processing, and more.
+
+3. Semantic Search - Microsoft's semantic search capability brings semantic relevance and language understanding to search results.
+
+4. Vector Search - Support for vector embeddings enables similarity search scenarios for RAG (Retrieval Augmented Generation) and other AI applications.
+
+5. Hybrid Search - Combine keyword search with vector search for best-of-both-worlds retrieval.
+
+Azure AI Search is commonly used for:
+- Knowledge mining over internal documents
+- E-commerce product catalog search
+- Enterprise search across multiple data sources
+- Building RAG applications with Azure OpenAI

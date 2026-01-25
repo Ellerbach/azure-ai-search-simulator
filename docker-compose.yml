@@ -8,9 +8,13 @@ services:
       dockerfile: Dockerfile
     container_name: azure-ai-search-simulator
     ports:
-      - "5250:8080"
+      - "7250:8443"  # HTTPS (recommended for Azure SDK)
+      - "5250:8080"  # HTTP
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=https://+:8443;http://+:8080
+      - ASPNETCORE_Kestrel__Certificates__Default__Path=/app/certs/dev-cert.pfx
+      - ASPNETCORE_Kestrel__Certificates__Default__Password=dev-password
       - Simulator__AdminApiKey=admin-key-12345
       - Simulator__QueryApiKey=query-key-67890
       - AzureOpenAI__ApiKey=${AZURE_OPENAI_API_KEY:-}
@@ -20,6 +24,8 @@ services:
       - lucene-indexes:/app/lucene-indexes
       # Mount local test data (optional)
       - ./testdata:/app/testdata:ro
+      # Mount dev certificate (generated on first run)
+      - simulator-certs:/app/certs
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
@@ -38,6 +44,8 @@ volumes:
     name: azure-ai-search-simulator-data
   lucene-indexes:
     name: azure-ai-search-simulator-lucene
+  simulator-certs:
+    name: azure-ai-search-simulator-certs
 
 # Development override example:
 # Create docker-compose.override.yml with:
