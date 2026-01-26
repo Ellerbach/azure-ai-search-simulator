@@ -12,7 +12,10 @@ namespace AzureAISearchSimulator.Integration.Tests;
 
 /// <summary>
 /// Integration tests for HNSW vector search with DocumentService and SearchService.
+/// These tests create temp directories and may have resource cleanup issues in CI environments.
+/// Run locally with: dotnet test --filter "FullyQualifiedName~Integration"
 /// </summary>
+[Collection("HNSW Integration Tests")]
 public class HnswIntegrationTests : IDisposable
 {
     private readonly string _testDir;

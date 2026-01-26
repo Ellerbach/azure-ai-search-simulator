@@ -41,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Updated `IndexerService.IndexJsonElementAsync` to execute skillsets for JSON parsing mode
 - Added `ConvertToFloat` helper method for robust float conversion from various types
+- CI workflow now runs integration tests separately with `continue-on-error` (test runner crash investigation pending)
 
 ---
 
