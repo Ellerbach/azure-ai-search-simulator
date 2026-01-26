@@ -408,3 +408,4 @@ FodyWeavers.xsd
 *.db
 appsettings.Development.local.json
 appsettings.Local.json
+/src/AzureAISearchSimulator.Api/data/

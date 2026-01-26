@@ -452,9 +452,7 @@ public class DocumentService : IDocumentService
         if (value is double[] doubleArray)
             return doubleArray.Select(d => (float)d).ToArray();
 
-        if (value is IEnumerable<object> objList)
-            return objList.Select(o => Convert.ToSingle(o)).ToArray();
-
+        // Check for JsonElement BEFORE IEnumerable<object> since JsonElement can match IEnumerable
         if (value is JsonElement je && je.ValueKind == JsonValueKind.Array)
         {
             return je.EnumerateArray()
@@ -462,6 +460,38 @@ public class DocumentService : IDocumentService
                 .ToArray();
         }
 
+        // Handle List<JsonElement> (from deserialization)
+        if (value is IEnumerable<JsonElement> jsonElements)
+        {
+            return jsonElements.Select(e => e.GetSingle()).ToArray();
+        }
+
+        // Handle generic object lists - need to check element types
+        if (value is IEnumerable<object> objList)
+        {
+            var list = objList.ToList();
+            if (list.Count == 0)
+                return Array.Empty<float>();
+            
+            // Check if elements are JsonElement (boxed)
+            if (list[0] is JsonElement firstElement)
+            {
+                return list.Select(o => ((JsonElement)o).GetSingle()).ToArray();
+            }
+            
+            // Try to convert each element individually
+            return list.Select(o => ConvertToFloat(o)).ToArray();
+        }
+
         return null;
+    }
+    
+    private static float ConvertToFloat(object value)
+    {
+        if (value is JsonElement je)
+        {
+            return je.GetSingle();
+        }
+        return Convert.ToSingle(value);
     }
 }
