@@ -295,6 +295,7 @@ Edit `appsettings.json` to customize the simulator:
 | [AzureSdkSample](samples/AzureSdkSample/) | C# console app demonstrating Azure.Search.Documents SDK compatibility |
 | [AzureSearchNotebook](samples/AzureSearchNotebook/) | Python Jupyter notebook with comprehensive search demos and skillset integration |
 | [IndexerTestNotebook](samples/IndexerTestNotebook/) | Python notebook for testing indexers with JSON metadata files |
+| [EmbeddingSkillNotebook](samples/EmbeddingSkillNotebook/) | Python notebook demonstrating Azure OpenAI Embedding skill, vector search, and hybrid search with RRF fusion |
 | [CustomSkillSample](samples/CustomSkillSample/) | ASP.NET Core API implementing custom Web API skills (text stats, keywords, sentiment, summarization) |
 | [sample-requests.http](samples/sample-requests.http) | REST Client file with comprehensive API examples |
 | [pull-mode-test.http](samples/pull-mode-test.http) | REST Client file for testing indexer pull mode workflow |

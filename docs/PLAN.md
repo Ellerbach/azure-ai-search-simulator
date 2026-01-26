@@ -14,6 +14,7 @@ This document outlines the comprehensive plan for building an Azure AI Search Si
 | Phase 4: Document Cracking | ✅ Complete | PDF, Word, Excel, HTML, JSON, CSV, plain text extraction |
 | Phase 5: Skillsets | ✅ Complete | Text skills, embedding skills, custom WebApiSkill, skill pipeline |
 | Phase 6: Polish & Docs | ✅ Complete | Error handling, Docker support, SDK samples, documentation |
+| Phase 7: HNSW Vector Search | 🔄 Planned | HNSWlib.NET integration, filtered vector search, hybrid ranking |
 
 ## 1. Project Overview
 
@@ -59,6 +60,9 @@ This document outlines the comprehensive plan for building an Azure AI Search Si
 
 - Scoring profiles
 - Scheduled indexer runs (Quartz.NET)
+- **HNSW-based vector search (HNSWlib.NET)**
+- **Filtered vector search with post-filtering**
+- **Enhanced hybrid search with score fusion**
 
 #### Future Phases
 
@@ -67,7 +71,6 @@ This document outlines the comprehensive plan for building an Azure AI Search Si
 - Knowledge stores
 - Synonym maps
 - Debug sessions
-- HNSW algorithm for vector search
 
 ---
 
@@ -106,6 +109,13 @@ This document outlines the comprehensive plan for building an Azure AI Search Si
 │  │ Skillset Engine │  │ Data Source Mgr │  │ Security Manager│  │
 │  │                 │  │                 │  │                 │  │
 │  └─────────────────┘  └─────────────────┘  └─────────────────┘  │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │              Vector Search Engine (HNSWlib.NET)             ││
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  ││
+│  │  │ HNSW Index  │  │ Filter Exec │  │ Hybrid Score Fusion │  ││
+│  │  │  Manager    │  │   Engine    │  │                     │  ││
+│  │  └─────────────┘  └─────────────┘  └─────────────────────┘  ││
+│  └─────────────────────────────────────────────────────────────┘│
 └─────────────────────────────────────────────────────────────────┘
                                  │
                                  ▼
@@ -124,6 +134,7 @@ This document outlines the comprehensive plan for building an Azure AI Search Si
 | --------- | ---------- | --------- |
 | Web Framework | ASP.NET Core 10.0 | Modern, cross-platform, high performance |
 | Search Engine | Lucene.NET | Industry-standard full-text search (same as Azure Search) |
+| Vector Search | HNSWlib.NET | High-performance HNSW algorithm for ANN search |
 | Metadata Storage | LiteDB | Embedded NoSQL database, no setup required |
 | PDF Extraction | PdfPig | Free, open-source PDF text extraction |
 | Office Docs | OpenXML SDK | Microsoft's free library for Office formats |
@@ -217,8 +228,11 @@ POST   /indexes/{indexName}/docs/autocomplete - Autocomplete
 - **Vector queries**: Use `vectorQueries` parameter in POST body
 - **Hybrid search**: Combine `search` text query with `vectorQueries`
 - **Vector fields**: Type `Collection(Edm.Single)` with `dimensions` property
-- **Algorithm**: Simple brute-force cosine similarity (no HNSW optimization)
+- **Algorithm**: HNSW (Hierarchical Navigable Small World) via HNSWlib.NET
+- **Fallback**: Simple brute-force cosine similarity for small datasets
 - **Top-K**: Specify `k` parameter for number of nearest neighbors
+- **Filtered Search**: Post-filter pattern with oversampling for accurate results
+- **Hybrid Ranking**: Configurable score fusion (RRF or weighted combination)
 
 ### 3.4 Indexers (Pull Model)
 
@@ -566,6 +580,181 @@ AzureAISearchSimulator/
 - Sample applications
 - Docker deployment option
 
+### Phase 7: HNSW Vector Search (Week 11-12) 🔄 PLANNED
+
+**Goal**: Replace brute-force vector search with efficient HNSW algorithm using HNSWlib.NET
+
+#### Architecture Overview
+
+The HNSW implementation follows a dual-storage pattern:
+
+- **Lucene.NET**: Stores document metadata (id, content, category, tags, dates, etc.)
+- **HNSWlib.NET**: Stores document id → vector mappings for fast ANN search
+
+```text
+┌─────────────────────────────────────────────────────────────────────┐
+│                     Vector Search Flow                              │
+├─────────────────────────────────────────────────────────────────────┤
+│  1. Query embedding → HNSWlib.NET → Top-K × 5 candidate IDs         │
+│  2. Candidate IDs → Lucene.NET → Fetch metadata                     │
+│  3. Apply filters (category, tags, dates, etc.)                     │
+│  4. Re-rank filtered results (optional hybrid scoring)              │
+│  5. Return top-K final results                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+#### Tasks
+
+1. [ ] Add HNSWlib.NET NuGet package
+2. [ ] Create `IHnswIndexManager` interface
+3. [ ] Implement `HnswIndexManager` class
+   - [ ] Index lifecycle management (create, open, close, delete)
+   - [ ] Persist HNSW index to disk alongside Lucene index
+   - [ ] Support multiple vector fields per index
+4. [ ] Create `IVectorSearchService` interface
+5. [ ] Implement `HnswVectorSearchService`
+   - [ ] Basic KNN search
+   - [ ] Oversampling for filtered queries (K × multiplier)
+   - [ ] Distance-to-score conversion (cosine, euclidean, dot product)
+6. [ ] Implement filtered vector search
+   - [ ] Post-filter pattern: Vector search → Metadata fetch → Filter → Return
+   - [ ] Configurable oversampling multiplier
+   - [ ] Support all Lucene-stored metadata fields as filters
+7. [ ] Implement hybrid search with score fusion
+   - [ ] Reciprocal Rank Fusion (RRF) algorithm
+   - [ ] Weighted score combination (configurable weights)
+   - [ ] Normalize vector distances and Lucene scores
+8. [ ] Update `DocumentService` to sync HNSW index
+   - [ ] Add vectors on document upload
+   - [ ] Update vectors on document merge
+   - [ ] Remove vectors on document delete
+9. [ ] Update `IndexerService` for HNSW integration
+   - [ ] Sync HNSW index during indexer runs
+   - [ ] Handle embedding generation with skillsets
+10. [ ] Add HNSW configuration to `VectorSearchSettings`
+    - [ ] `M` parameter (number of connections)
+    - [ ] `EfConstruction` (index build quality)
+    - [ ] `EfSearch` (search quality vs speed)
+    - [ ] Distance metric (cosine, euclidean, inner product)
+11. [ ] Implement index persistence
+    - [ ] Save HNSW index to file on commit
+    - [ ] Load HNSW index on startup
+    - [ ] Handle index corruption gracefully
+12. [ ] Write comprehensive tests
+    - [ ] Basic HNSW CRUD operations
+    - [ ] Filtered vector search accuracy
+    - [ ] Hybrid search scoring
+    - [ ] Performance benchmarks
+
+#### Data Model
+
+```csharp
+// Document stored in both systems
+class SearchDocument
+{
+    public string Id { get; set; }
+    public string Content { get; set; }
+    public string Category { get; set; }
+    public string[] Tags { get; set; }
+    public DateTime CreatedDate { get; set; }
+    public float[] ContentVector { get; set; }  // Stored in HNSW
+}
+
+// Lucene stores: id, content, category, tags, createdDate
+// HNSWlib stores: internal_id → vector (with id mapping)
+```
+
+#### Filtered Vector Search Algorithm
+
+```csharp
+public async Task<List<SearchResult>> FilteredVectorSearchAsync(
+    float[] queryVector,
+    string filter,           // OData filter expression
+    int topK,
+    int oversampleMultiplier = 5)
+{
+    // 1. Vector search with oversampling
+    var (labels, distances) = hnswIndex.SearchKnn(queryVector, k: topK * oversampleMultiplier);
+    
+    // 2. Map HNSW labels to document IDs
+    var candidateIds = labels.Select(l => idMapping[l]).ToList();
+    
+    // 3. Fetch metadata from Lucene
+    var metadata = FetchMetadataFromLucene(candidateIds);
+    
+    // 4. Apply OData filter
+    var filtered = ApplyFilter(metadata, filter);
+    
+    // 5. Sort by vector distance and take top-K
+    return filtered
+        .OrderBy(m => m.Distance)
+        .Take(topK)
+        .ToList();
+}
+```
+
+#### Hybrid Search with Score Fusion
+
+```csharp
+public async Task<List<SearchResult>> HybridSearchAsync(
+    string textQuery,
+    float[] queryVector,
+    string filter,
+    int topK,
+    double vectorWeight = 0.7,
+    double textWeight = 0.3)
+{
+    // 1. Get vector search results
+    var vectorResults = await VectorSearchAsync(queryVector, topK * 3);
+    
+    // 2. Get text search results from Lucene
+    var textResults = await TextSearchAsync(textQuery, topK * 3);
+    
+    // 3. Normalize scores
+    var normalizedVector = NormalizeScores(vectorResults);
+    var normalizedText = NormalizeScores(textResults);
+    
+    // 4. Combine with RRF or weighted fusion
+    var combined = ReciprocaRankFusion(normalizedVector, normalizedText);
+    // OR: WeightedFusion(normalizedVector, normalizedText, vectorWeight, textWeight);
+    
+    // 5. Apply filter and return top-K
+    return ApplyFilter(combined, filter).Take(topK).ToList();
+}
+```
+
+#### Configuration
+
+```json
+{
+  "VectorSearchSettings": {
+    "DefaultDimensions": 1536,
+    "MaxVectorsPerIndex": 100000,
+    "SimilarityMetric": "cosine",
+    "UseHnsw": true,
+    "HnswSettings": {
+      "M": 16,
+      "EfConstruction": 200,
+      "EfSearch": 100,
+      "OversampleMultiplier": 5
+    },
+    "HybridSearchSettings": {
+      "DefaultFusionMethod": "RRF",
+      "DefaultVectorWeight": 0.7,
+      "DefaultTextWeight": 0.3
+    }
+  }
+}
+```
+
+#### Deliverables
+
+- HNSW-based vector search with sub-linear query time
+- Filtered vector search with post-filter pattern
+- Hybrid search with configurable score fusion
+- Persistence of HNSW indexes to disk
+- Comprehensive test coverage
+
 ---
 
 ## 6. API Compatibility
@@ -585,9 +774,10 @@ The simulator will target API version **2024-07-01** as the baseline, with compa
 
 | Feature | Azure AI Search | Simulator | Notes |
 | ------- | --------------- | --------- | ----- |
-| Vector Search | ✅ | ✅ | Simple in-memory, cosine similarity |
+| Vector Search (HNSW) | ✅ | 🔄 | HNSWlib.NET for fast ANN search |
+| Filtered Vector Search | ✅ | 🔄 | Post-filter pattern with oversampling |
 | Azure OpenAI Embedding | ✅ | ✅ | Requires Azure OpenAI endpoint |
-| Hybrid Search | ✅ | ✅ | Text + vector combined |
+| Hybrid Search | ✅ | ✅ | Text + vector with score fusion |
 | Facets | ✅ | ✅ | Count and value facets |
 | Azure Blob Storage | ✅ | ✅ | Full support with connection string, SAS, Managed Identity |
 | ADLS Gen2 | ✅ | ✅ | Full support with hierarchical namespace |
@@ -630,8 +820,20 @@ The simulator will target API version **2024-07-01** as the baseline, with compa
   },
   "VectorSearchSettings": {
     "DefaultDimensions": 1536,
-    "MaxVectorsPerIndex": 50000,
-    "SimilarityMetric": "cosine"
+    "MaxVectorsPerIndex": 100000,
+    "SimilarityMetric": "cosine",
+    "UseHnsw": true,
+    "HnswSettings": {
+      "M": 16,
+      "EfConstruction": 200,
+      "EfSearch": 100,
+      "OversampleMultiplier": 5
+    },
+    "HybridSearchSettings": {
+      "DefaultFusionMethod": "RRF",
+      "DefaultVectorWeight": 0.7,
+      "DefaultTextWeight": 0.3
+    }
   },
   "AzureOpenAISettings": {
     "Endpoint": "",
@@ -663,6 +865,9 @@ The simulator will target API version **2024-07-01** as the baseline, with compa
 <PackageReference Include="Lucene.Net.Facet" Version="4.8.0-beta00016" />
 <PackageReference Include="Lucene.Net.Highlighter" Version="4.8.0-beta00016" />
 <PackageReference Include="Lucene.Net.Suggest" Version="4.8.0-beta00016" />
+
+<!-- Vector Search (HNSW) -->
+<PackageReference Include="HNSWlib.Net" Version="1.*" />
 
 <!-- Storage -->
 <PackageReference Include="LiteDB" Version="5.*" />
@@ -734,11 +939,12 @@ var searchClient = new SearchClient(endpoint, "my-index", credential);
 
 1. **API Compatibility**: Azure Search SDK can connect and perform basic operations
 2. **Search Quality**: Full-text search returns relevant results
-3. **Indexer Reliability**: Scheduled indexers run without errors
-4. **Document Support**: PDF, Word, Excel files can be indexed
-5. **Performance**: <100ms response time for typical searches on 10K documents
-6. **Documentation**: Clear setup and usage instructions
-7. **Test Coverage**: >80% unit test coverage
+3. **Vector Search Performance**: <50ms response time for HNSW vector search on 50K vectors
+4. **Indexer Reliability**: Scheduled indexers run without errors
+5. **Document Support**: PDF, Word, Excel files can be indexed
+6. **Performance**: <100ms response time for typical searches on 10K documents
+7. **Documentation**: Clear setup and usage instructions
+8. **Test Coverage**: >80% unit test coverage
 
 ---
 
@@ -747,6 +953,8 @@ var searchClient = new SearchClient(endpoint, "my-index", credential);
 | Risk | Impact | Mitigation |
 | ---- | ------ | ---------- |
 | Lucene.NET version compatibility | High | Use stable beta version, comprehensive testing |
+| HNSWlib.NET memory usage | Medium | Configure max vectors per index, document limits |
+| Filtered vector search accuracy | Medium | Configurable oversampling multiplier |
 | OData filter complexity | Medium | Implement subset, document limitations |
 | PDF extraction quality | Medium | PdfPig handles most cases, document limitations |
 | SDK compatibility issues | High | Test with official Azure SDK regularly |
@@ -754,7 +962,7 @@ var searchClient = new SearchClient(endpoint, "my-index", credential);
 
 ---
 
-## 12. Future Enhancements (Phase 2+)
+## 12. Future Enhancements (Phase 3+)
 
 1. **Synonym Maps** - Word mappings for search expansion
 2. **More Analyzers** - Language-specific analyzers
@@ -763,8 +971,9 @@ var searchClient = new SearchClient(endpoint, "my-index", credential);
 5. **Admin UI** - Web-based management interface
 6. **Metrics Dashboard** - Search analytics
 7. **Import/Export** - Backup and restore indexes
-8. **HNSW Optimization** - More efficient vector search algorithm
-9. **Local Embedding Models** - ML.NET or ONNX for offline embedding generation
+8. **Local Embedding Models** - ML.NET or ONNX for offline embedding generation
+9. **Pre-filtering for Vector Search** - Build filtered HNSW sub-indexes for common filter values
+10. **Multiple Vector Fields** - Support for multiple vector fields per document
 
 ---
 
@@ -776,7 +985,44 @@ See [API-REFERENCE.md](API-REFERENCE.md) for complete endpoint documentation.
 
 See `samples/scripts/` directory for HTTP request examples.
 
+## Appendix C: HNSW Algorithm Overview
+
+### What is HNSW?
+
+Hierarchical Navigable Small World (HNSW) is a graph-based algorithm for approximate nearest neighbor (ANN) search. It provides:
+
+- **Sub-linear query time**: O(log n) vs O(n) for brute-force
+- **High recall**: Typically 95-99% accuracy
+- **Efficient updates**: Supports incremental insertions
+
+### Key Parameters
+
+| Parameter | Description | Trade-off |
+| --------- | ----------- | --------- |
+| M | Number of connections per node | Higher = better recall, more memory |
+| EfConstruction | Search depth during index build | Higher = better quality, slower build |
+| EfSearch | Search depth during query | Higher = better recall, slower query |
+
+### Recommended Settings
+
+| Use Case | M | EfConstruction | EfSearch |
+| -------- | - | -------------- | -------- |
+| Development | 16 | 100 | 50 |
+| Production (balanced) | 16 | 200 | 100 |
+| Production (high recall) | 32 | 400 | 200 |
+
+### Why Post-filtering?
+
+HNSWlib.NET does not support metadata filtering natively. The post-filter pattern:
+
+1. **Oversample**: Retrieve K × multiplier candidates from HNSW
+2. **Fetch metadata**: Get document metadata from Lucene
+3. **Apply filter**: Filter based on category, tags, dates, etc.
+4. **Return top-K**: Return the filtered results
+
+This is the same pattern used by production vector databases like Elasticsearch.
+
 ---
 
-*Document Version: 1.0*  
-*Last Updated: January 22, 2026*
+*Document Version: 2.0*  
+*Last Updated: January 26, 2026*

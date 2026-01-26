@@ -6,6 +6,7 @@ using AzureAISearchSimulator.DataSources;
 using AzureAISearchSimulator.Search;
 using AzureAISearchSimulator.Search.DataSources;
 using AzureAISearchSimulator.Search.DocumentCracking;
+using AzureAISearchSimulator.Search.Hnsw;
 using AzureAISearchSimulator.Search.Skills;
 using AzureAISearchSimulator.Storage.Repositories;
 using Scalar.AspNetCore;
@@ -62,6 +63,11 @@ try
     // Register Search infrastructure
     builder.Services.AddSingleton<LuceneIndexManager>();
     builder.Services.AddSingleton<VectorStore>();
+    
+    // Register HNSW vector search infrastructure
+    builder.Services.AddSingleton<IHnswIndexManager, HnswIndexManager>();
+    builder.Services.AddSingleton<IVectorSearchService, HnswVectorSearchService>();
+    builder.Services.AddSingleton<IHybridSearchService, HybridSearchService>();
 
     // Register data source connectors
     builder.Services.AddSingleton<IDataSourceConnector, FileSystemConnector>();

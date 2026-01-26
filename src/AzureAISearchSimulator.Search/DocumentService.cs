@@ -3,6 +3,7 @@ using Lucene.Net.Index;
 using Microsoft.Extensions.Logging;
 using AzureAISearchSimulator.Core.Models;
 using AzureAISearchSimulator.Core.Services;
+using AzureAISearchSimulator.Search.Hnsw;
 using System.Text.Json;
 
 namespace AzureAISearchSimulator.Search;
@@ -14,18 +15,18 @@ public class DocumentService : IDocumentService
 {
     private readonly ILogger<DocumentService> _logger;
     private readonly LuceneIndexManager _indexManager;
-    private readonly VectorStore _vectorStore;
+    private readonly IVectorSearchService _vectorSearchService;
     private readonly IIndexService _indexService;
 
     public DocumentService(
         ILogger<DocumentService> logger,
         LuceneIndexManager indexManager,
-        VectorStore vectorStore,
+        IVectorSearchService vectorSearchService,
         IIndexService indexService)
     {
         _logger = logger;
         _indexManager = indexManager;
-        _vectorStore = vectorStore;
+        _vectorSearchService = vectorSearchService;
         _indexService = indexService;
     }
 
@@ -49,6 +50,9 @@ public class DocumentService : IDocumentService
 
         // Commit all changes
         _indexManager.Commit(indexName);
+        
+        // Persist vector indexes to disk
+        _vectorSearchService.SaveAll();
 
         var response = new IndexDocumentsResponse
         {
@@ -336,8 +340,8 @@ public class DocumentService : IDocumentService
     {
         writer.DeleteDocuments(keyTerm);
         
-        // Remove vectors
-        _vectorStore.RemoveDocument(indexName, key);
+        // Remove vectors from HNSW-backed search service
+        _vectorSearchService.RemoveDocument(indexName, key);
 
         return new IndexingResult
         {
@@ -360,7 +364,14 @@ public class DocumentService : IDocumentService
                 var vector = ConvertToFloatArray(value);
                 if (vector != null)
                 {
-                    _vectorStore.AddVector(indexName, field.Name, key, vector);
+                    // Initialize index if needed (auto-detects dimensions from vector)
+                    if (!_vectorSearchService.IndexExists(indexName, field.Name))
+                    {
+                        _vectorSearchService.InitializeIndex(indexName, field.Name, vector.Length);
+                    }
+                    
+                    // Add vector to HNSW-backed search service
+                    _vectorSearchService.AddVector(indexName, field.Name, key, vector);
                 }
             }
         }
@@ -408,7 +419,7 @@ public class DocumentService : IDocumentService
     public Task ClearIndexAsync(string indexName)
     {
         _indexManager.ClearIndex(indexName);
-        _vectorStore.ClearIndex(indexName);
+        _vectorSearchService.DeleteIndex(indexName);
         return Task.CompletedTask;
     }
 
@@ -441,9 +452,7 @@ public class DocumentService : IDocumentService
         if (value is double[] doubleArray)
             return doubleArray.Select(d => (float)d).ToArray();
 
-        if (value is IEnumerable<object> objList)
-            return objList.Select(o => Convert.ToSingle(o)).ToArray();
-
+        // Check for JsonElement BEFORE IEnumerable<object> since JsonElement can match IEnumerable
         if (value is JsonElement je && je.ValueKind == JsonValueKind.Array)
         {
             return je.EnumerateArray()
@@ -451,6 +460,38 @@ public class DocumentService : IDocumentService
                 .ToArray();
         }
 
+        // Handle List<JsonElement> (from deserialization)
+        if (value is IEnumerable<JsonElement> jsonElements)
+        {
+            return jsonElements.Select(e => e.GetSingle()).ToArray();
+        }
+
+        // Handle generic object lists - need to check element types
+        if (value is IEnumerable<object> objList)
+        {
+            var list = objList.ToList();
+            if (list.Count == 0)
+                return Array.Empty<float>();
+            
+            // Check if elements are JsonElement (boxed)
+            if (list[0] is JsonElement firstElement)
+            {
+                return list.Select(o => ((JsonElement)o).GetSingle()).ToArray();
+            }
+            
+            // Try to convert each element individually
+            return list.Select(o => ConvertToFloat(o)).ToArray();
+        }
+
         return null;
+    }
+    
+    private static float ConvertToFloat(object value)
+    {
+        if (value is JsonElement je)
+        {
+            return je.GetSingle();
+        }
+        return Convert.ToSingle(value);
     }
 }

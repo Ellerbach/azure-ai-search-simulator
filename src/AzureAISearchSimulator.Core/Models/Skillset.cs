@@ -198,6 +198,13 @@ public class Skill
     public int? Dimensions { get; set; }
 
     /// <summary>
+    /// For AzureOpenAIEmbeddingSkill: API key for the Azure OpenAI resource.
+    /// If not specified, uses the key from appsettings.json.
+    /// </summary>
+    [JsonPropertyName("apiKey")]
+    public string? ApiKey { get; set; }
+
+    /// <summary>
     /// For ShaperSkill: The shaping definitions.
     /// </summary>
     [JsonPropertyName("output")]

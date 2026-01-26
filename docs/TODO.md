@@ -236,8 +236,94 @@
 - [ ] Admin web UI
 - [ ] Metrics dashboard
 - [ ] Index import/export
-- [ ] HNSW algorithm optimization for vector search
 - [ ] Local embedding models (ML.NET/ONNX)
+
+---
+
+## Phase 7: HNSW Vector Search (Week 11-12) ✅ COMPLETED
+
+### HNSW.NET Integration
+
+- [x] Add HNSW NuGet package to AzureAISearchSimulator.Search
+- [x] Create `IHnswIndexManager` interface
+- [x] Implement `HnswIndexManager` class
+  - [x] Index lifecycle management (create, open, close, delete)
+  - [x] Persist HNSW index to disk alongside Lucene index
+  - [x] Support configurable HNSW parameters (M, EfConstruction, EfSearch)
+  - [x] Handle multiple vector fields per index
+- [x] Create ID mapping system (HNSW internal index ↔ document ID)
+- [x] Add HNSW configuration settings (HnswSettings, HybridSearchSettings)
+
+### Vector Search Service
+
+- [x] Create `IVectorSearchService` interface
+- [x] Implement `HnswVectorSearchService`
+  - [x] Basic KNN search
+  - [x] Oversampling for filtered queries (K × multiplier)
+  - [x] Distance-to-score conversion (cosine → similarity score)
+  - [x] Fallback to brute-force when HNSW disabled
+
+### Filtered Vector Search
+
+- [x] Implement post-filter pattern
+  - [x] Vector search → Filter candidates → Return top-K
+  - [x] Configurable oversampling multiplier (default: 5x)
+- [x] Support candidate document ID filtering
+- [x] Handle edge cases (fallback to brute-force for remaining)
+
+### Hybrid Search Enhancement
+
+- [x] Implement Reciprocal Rank Fusion (RRF) algorithm
+- [x] Implement weighted score fusion
+  - [x] Normalize vector distances (1 / (1 + distance))
+  - [x] Normalize Lucene scores (min-max or sigmoid)
+  - [x] Configurable weights (default: 0.7 vector, 0.3 text)
+- [x] Support query parameter for fusion method selection
+
+### Document Service Integration
+
+- [x] Update `DocumentService` to sync HNSW index
+  - [x] Add vectors on document upload
+  - [x] Update vectors on document merge
+  - [x] Remove vectors on document delete
+- [x] Handle batch operations efficiently
+
+### Indexer Integration
+
+- [x] IndexerService uses DocumentService which now syncs HNSW
+- [x] Handle embedding generation with skillsets
+- [x] Sync HNSW index after skillset execution (via DocumentService)
+
+### Configuration
+
+- [x] Add `HnswSettings` to `VectorSearchSettings`
+  - [x] M parameter (number of connections, default: 16)
+  - [x] EfConstruction (index build quality, default: 200)
+  - [x] EfSearch (search quality vs speed, default: 100)
+  - [x] OversampleMultiplier (for filtered search, default: 5)
+- [x] Add `HybridSearchSettings`
+  - [x] DefaultFusionMethod (RRF or Weighted)
+  - [x] DefaultVectorWeight (0.7)
+  - [x] DefaultTextWeight (0.3)
+- [x] Add `UseHnsw` toggle for fallback to brute-force
+
+### Persistence
+
+- [x] Save HNSW index to file on commit
+- [x] Load HNSW index on startup
+- [x] Handle index corruption gracefully
+- [x] Implement index rebuild capability
+
+### Testing
+
+- [x] Write unit tests for HnswIndexManager (22 tests)
+- [x] Write unit tests for VectorSearchSettings (14 tests)
+- [x] Write unit tests for HnswVectorSearchService (14 tests)
+- [x] Write unit tests for BruteForceVectorSearchService (3 tests)
+- [x] Write unit tests for HybridSearchService (25 tests)
+- [x] Write integration tests for DocumentService + HNSW (10 tests)
+- [ ] Write filtered vector search accuracy tests
+- [ ] Add performance benchmarks (10K, 50K, 100K vectors)
 
 ---
 

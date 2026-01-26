@@ -569,11 +569,6 @@ public class IndexerService : IIndexerService
     /// </summary>
     private async Task IndexJsonElementAsync(Indexer indexer, DataSourceDocument sourceDoc, System.Text.Json.JsonElement jsonElement, string? keySuffix)
     {
-        var document = new IndexAction
-        {
-            ["@search.action"] = "mergeOrUpload"
-        };
-
         // Extract all properties from the JSON
         var jsonData = new Dictionary<string, object?>();
         if (jsonElement.ValueKind == System.Text.Json.JsonValueKind.Object)
@@ -589,12 +584,64 @@ public class IndexerService : IIndexerService
         jsonData["metadata_storage_name"] = sourceDoc.Name;
         jsonData["metadata_content_type"] = sourceDoc.ContentType;
 
+        // Determine the document key
+        var docKey = sourceDoc.Key;
+        if (!string.IsNullOrEmpty(keySuffix))
+        {
+            docKey = keySuffix;
+        }
+        else if (jsonData.TryGetValue("id", out var idValue) && idValue != null)
+        {
+            docKey = idValue.ToString() ?? sourceDoc.Key;
+        }
+
+        // Create enriched document for skill processing
+        var enrichedDoc = new EnrichedDocument(jsonData);
+
+        // Execute skillset if configured
+        if (!string.IsNullOrEmpty(indexer.SkillsetName))
+        {
+            var skillset = await _skillsetService.GetAsync(indexer.SkillsetName);
+            if (skillset != null)
+            {
+                _logger.LogInformation("Executing skillset '{SkillsetName}' for JSON document {Key}", 
+                    skillset.Name, docKey);
+                
+                var pipelineResult = await _skillPipeline.ExecuteAsync(skillset, enrichedDoc);
+                
+                if (!pipelineResult.Success)
+                {
+                    var errorMessage = $"Skillset '{skillset.Name}' failed for document {docKey}: {string.Join("; ", pipelineResult.Errors)}";
+                    _logger.LogWarning(errorMessage);
+                    throw new InvalidOperationException(errorMessage);
+                }
+
+                if (pipelineResult.Warnings.Count > 0)
+                {
+                    _logger.LogWarning("Skillset warnings for {Key}: {Warnings}", 
+                        docKey, string.Join("; ", pipelineResult.Warnings));
+                }
+            }
+            else
+            {
+                _logger.LogWarning("Skillset '{SkillsetName}' not found, skipping skill execution", 
+                    indexer.SkillsetName);
+            }
+        }
+
+        // Build the final document from enriched data
+        var enrichedData = enrichedDoc.ToDictionary();
+        var document = new IndexAction
+        {
+            ["@search.action"] = "mergeOrUpload"
+        };
+
         // Apply field mappings
         if (indexer.FieldMappings != null && indexer.FieldMappings.Count > 0)
         {
             foreach (var mapping in indexer.FieldMappings)
             {
-                if (jsonData.TryGetValue(mapping.SourceFieldName, out var value) && value != null)
+                if (enrichedData.TryGetValue(mapping.SourceFieldName, out var value) && value != null)
                 {
                     var targetField = mapping.TargetFieldName ?? mapping.SourceFieldName;
                     document[targetField] = ApplyMappingFunction(value, mapping.MappingFunction);
@@ -603,8 +650,8 @@ public class IndexerService : IIndexerService
         }
         else
         {
-            // No field mappings - use JSON properties directly
-            foreach (var (key, value) in jsonData)
+            // No field mappings - use enriched data properties directly
+            foreach (var (key, value) in enrichedData)
             {
                 if (!key.StartsWith("metadata_") || key == "metadata_storage_path")
                 {
@@ -613,15 +660,31 @@ public class IndexerService : IIndexerService
             }
         }
 
-        // Ensure we have a key field - prefer 'id' from JSON, fallback to metadata_storage_path
+        // Apply output field mappings (from skillset outputs)
+        if (indexer.OutputFieldMappings != null)
+        {
+            foreach (var mapping in indexer.OutputFieldMappings)
+            {
+                // Source is a path like "/document/contentEmbedding"
+                var sourcePath = mapping.SourceFieldName;
+                var value = enrichedDoc.GetValue(sourcePath);
+                if (value != null)
+                {
+                    var targetField = mapping.TargetFieldName ?? System.IO.Path.GetFileName(sourcePath);
+                    document[targetField] = ApplyMappingFunction(value, mapping.MappingFunction);
+                    _logger.LogDebug("Applied output field mapping: {Source} -> {Target}", sourcePath, targetField);
+                }
+                else
+                {
+                    _logger.LogDebug("Output field mapping source {Source} has no value", sourcePath);
+                }
+            }
+        }
+
+        // Ensure we have a key field
         if (!document.ContainsKey("id") && !indexer.FieldMappings?.Any(m => m.TargetFieldName == "id") == true)
         {
-            var keyValue = sourceDoc.Key;
-            if (!string.IsNullOrEmpty(keySuffix))
-            {
-                keyValue = keySuffix;
-            }
-            document["id"] = keyValue;
+            document["id"] = docKey;
         }
 
         _logger.LogDebug("Indexing JSON document with fields: {Fields}", 

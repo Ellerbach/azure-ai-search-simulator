@@ -7,6 +7,7 @@ using Lucene.Net.Search.Highlight;
 using Microsoft.Extensions.Logging;
 using AzureAISearchSimulator.Core.Models;
 using AzureAISearchSimulator.Core.Services;
+using AzureAISearchSimulator.Search.Hnsw;
 using System.Text.Json;
 
 namespace AzureAISearchSimulator.Search;
@@ -18,18 +19,18 @@ public class SearchService : ISearchService
 {
     private readonly ILogger<SearchService> _logger;
     private readonly LuceneIndexManager _indexManager;
-    private readonly VectorStore _vectorStore;
+    private readonly IVectorSearchService _vectorSearchService;
     private readonly IIndexService _indexService;
 
     public SearchService(
         ILogger<SearchService> logger,
         LuceneIndexManager indexManager,
-        VectorStore vectorStore,
+        IVectorSearchService vectorSearchService,
         IIndexService indexService)
     {
         _logger = logger;
         _indexManager = indexManager;
-        _vectorStore = vectorStore;
+        _vectorSearchService = vectorSearchService;
         _indexService = indexService;
     }
 
@@ -458,22 +459,22 @@ public class SearchService : ISearchService
                 continue;
             }
 
-            var results = _vectorStore.Search(
+            var results = _vectorSearchService.Search(
                 indexName,
-                vectorQuery.Fields,
+                vectorQuery.Fields ?? string.Empty,
                 vectorQuery.Vector.ToArray(),
                 vectorQuery.K > 0 ? vectorQuery.K : 50);
 
-            foreach (var (key, similarity) in results)
+            foreach (var result in results)
             {
-                if (combinedScores.TryGetValue(key, out var existing))
+                if (combinedScores.TryGetValue(result.DocumentId, out var existing))
                 {
                     // Take max similarity if multiple vector queries
-                    combinedScores[key] = Math.Max(existing, similarity);
+                    combinedScores[result.DocumentId] = Math.Max(existing, result.Score);
                 }
                 else
                 {
-                    combinedScores[key] = similarity;
+                    combinedScores[result.DocumentId] = result.Score;
                 }
             }
         }

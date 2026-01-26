@@ -53,8 +53,18 @@ public class AzureOpenAIEmbeddingSkillExecutor : ISkillExecutor
                 return SkillExecutionResult.Failed("AzureOpenAIEmbeddingSkill requires 'text' input");
             }
 
+            // Create HTTP client - use skill's apiKey if provided, otherwise use default from config
             var client = _httpClientFactory.CreateClient("AzureOpenAI");
             client.Timeout = TimeSpan.FromSeconds(60);
+            
+            // If the skill has its own API key, use it (override the default)
+            if (!string.IsNullOrEmpty(skill.ApiKey))
+            {
+                // Remove any existing api-key header and add the skill-specific one
+                client.DefaultRequestHeaders.Remove("api-key");
+                client.DefaultRequestHeaders.Add("api-key", skill.ApiKey);
+                _logger.LogDebug("Using API key from skillset configuration");
+            }
 
             foreach (var ctx in contexts)
             {
@@ -79,12 +89,26 @@ public class AzureOpenAIEmbeddingSkillExecutor : ISkillExecutor
 
                 // Build the embeddings API request
                 var apiUrl = BuildApiUrl(skill.ResourceUri, skill.DeploymentId);
-                var requestBody = new
+                
+                // Build request body - only include dimensions if specified
+                object requestBody;
+                if (skill.Dimensions.HasValue)
                 {
-                    input = text,
-                    model = skill.ModelName ?? "text-embedding-ada-002",
-                    dimensions = skill.Dimensions
-                };
+                    requestBody = new
+                    {
+                        input = text,
+                        model = skill.ModelName ?? "text-embedding-ada-002",
+                        dimensions = skill.Dimensions.Value
+                    };
+                }
+                else
+                {
+                    requestBody = new
+                    {
+                        input = text,
+                        model = skill.ModelName ?? "text-embedding-ada-002"
+                    };
+                }
 
                 _logger.LogDebug("Calling Azure OpenAI embeddings API at {Url}", apiUrl);
 

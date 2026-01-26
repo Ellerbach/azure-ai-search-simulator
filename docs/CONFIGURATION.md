@@ -34,6 +34,7 @@ The simulator uses the standard ASP.NET Core configuration system. Settings can 
 | `EnableDetailedErrors` | Show detailed error messages in development | `true` |
 
 **Environment variables:**
+
 ```bash
 Simulator__AdminApiKey=your-admin-key
 Simulator__QueryApiKey=your-query-key
@@ -59,6 +60,7 @@ Simulator__DataPath=/app/data
 | `RAMBufferSizeMB` | RAM buffer size for indexing (MB) | `16.0` |
 
 **Environment variables:**
+
 ```bash
 Lucene__IndexPath=/app/lucene-indexes
 Lucene__RAMBufferSizeMB=32.0
@@ -88,21 +90,71 @@ Lucene__RAMBufferSizeMB=32.0
 
 ```json
 {
-  "VectorSearch": {
-    "DefaultK": 50,
-    "MaxK": 1000,
+  "VectorSearchSettings": {
     "DefaultDimensions": 1536,
-    "SimilarityMetric": "cosine"
+    "MaxVectorsPerIndex": 100000,
+    "SimilarityMetric": "cosine",
+    "UseHnsw": true,
+    "HnswSettings": {
+      "M": 16,
+      "EfConstruction": 200,
+      "EfSearch": 100,
+      "OversampleMultiplier": 5,
+      "RandomSeed": 42
+    },
+    "HybridSearchSettings": {
+      "DefaultFusionMethod": "RRF",
+      "DefaultVectorWeight": 0.7,
+      "DefaultTextWeight": 0.3,
+      "RrfK": 60
+    }
   }
 }
 ```
 
 | Setting | Description | Default |
 | ------- | ----------- | ------- |
-| `DefaultK` | Default number of nearest neighbors to return | `50` |
-| `MaxK` | Maximum allowed K value | `1000` |
 | `DefaultDimensions` | Default vector dimensions | `1536` |
+| `MaxVectorsPerIndex` | Maximum vectors per index | `100000` |
 | `SimilarityMetric` | Similarity metric (cosine, euclidean, dotProduct) | `cosine` |
+| `UseHnsw` | Use HNSW algorithm (true) or brute-force (false) | `true` |
+
+#### HNSW Settings
+
+The HNSW (Hierarchical Navigable Small World) algorithm provides fast approximate nearest neighbor search.
+
+| Setting | Description | Default | Recommended Range |
+| ------- | ----------- | ------- | ----------------- |
+| `M` | Number of bi-directional links per node | `16` | 12-48 |
+| `EfConstruction` | Search depth during index build | `200` | 100-500 |
+| `EfSearch` | Search depth during query | `100` | 50-500 |
+| `OversampleMultiplier` | Multiplier for filtered search | `5` | 3-10 |
+| `RandomSeed` | Random seed (-1 for random) | `42` | Any integer |
+
+**Performance tuning:**
+
+- Higher `M` = better recall, more memory, slower build
+- Higher `EfConstruction` = better index quality, slower build
+- Higher `EfSearch` = better recall, slower queries
+
+**Environment variables:**
+
+```bash
+VectorSearchSettings__UseHnsw=true
+VectorSearchSettings__HnswSettings__M=16
+VectorSearchSettings__HnswSettings__EfSearch=100
+```
+
+#### Hybrid Search Settings
+
+Configure how text and vector search results are combined.
+
+| Setting | Description | Default |
+| ------- | ----------- | ------- |
+| `DefaultFusionMethod` | Fusion method (RRF or Weighted) | `RRF` |
+| `DefaultVectorWeight` | Vector score weight (0.0-1.0) | `0.7` |
+| `DefaultTextWeight` | Text score weight (0.0-1.0) | `0.3` |
+| `RrfK` | RRF constant k in formula 1/(k+rank) | `60` |
 
 ### Azure OpenAI Settings
 
@@ -125,6 +177,7 @@ Lucene__RAMBufferSizeMB=32.0
 | `Timeout` | HTTP timeout for API calls | `00:01:00` |
 
 **Environment variables:**
+
 ```bash
 AzureOpenAI__ApiKey=your-azure-openai-key
 ```
@@ -183,6 +236,7 @@ dotnet run --launch-profile https
 ```
 
 The simulator listens on:
+
 - `https://localhost:7250` (HTTPS - **recommended for Azure SDK**)
 - `http://localhost:5250` (HTTP - for direct REST calls)
 
@@ -228,6 +282,7 @@ var client = new SearchIndexClient(
 ### API Keys
 
 1. **Change default keys** in production:
+
    ```bash
    Simulator__AdminApiKey=$(openssl rand -hex 32)
    Simulator__QueryApiKey=$(openssl rand -hex 32)
