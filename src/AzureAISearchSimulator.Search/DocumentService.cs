@@ -3,6 +3,7 @@ using Lucene.Net.Index;
 using Microsoft.Extensions.Logging;
 using AzureAISearchSimulator.Core.Models;
 using AzureAISearchSimulator.Core.Services;
+using AzureAISearchSimulator.Search.Hnsw;
 using System.Text.Json;
 
 namespace AzureAISearchSimulator.Search;
@@ -14,18 +15,18 @@ public class DocumentService : IDocumentService
 {
     private readonly ILogger<DocumentService> _logger;
     private readonly LuceneIndexManager _indexManager;
-    private readonly VectorStore _vectorStore;
+    private readonly IVectorSearchService _vectorSearchService;
     private readonly IIndexService _indexService;
 
     public DocumentService(
         ILogger<DocumentService> logger,
         LuceneIndexManager indexManager,
-        VectorStore vectorStore,
+        IVectorSearchService vectorSearchService,
         IIndexService indexService)
     {
         _logger = logger;
         _indexManager = indexManager;
-        _vectorStore = vectorStore;
+        _vectorSearchService = vectorSearchService;
         _indexService = indexService;
     }
 
@@ -49,6 +50,9 @@ public class DocumentService : IDocumentService
 
         // Commit all changes
         _indexManager.Commit(indexName);
+        
+        // Persist vector indexes to disk
+        _vectorSearchService.SaveAll();
 
         var response = new IndexDocumentsResponse
         {
@@ -336,8 +340,8 @@ public class DocumentService : IDocumentService
     {
         writer.DeleteDocuments(keyTerm);
         
-        // Remove vectors
-        _vectorStore.RemoveDocument(indexName, key);
+        // Remove vectors from HNSW-backed search service
+        _vectorSearchService.RemoveDocument(indexName, key);
 
         return new IndexingResult
         {
@@ -360,7 +364,14 @@ public class DocumentService : IDocumentService
                 var vector = ConvertToFloatArray(value);
                 if (vector != null)
                 {
-                    _vectorStore.AddVector(indexName, field.Name, key, vector);
+                    // Initialize index if needed (auto-detects dimensions from vector)
+                    if (!_vectorSearchService.IndexExists(indexName, field.Name))
+                    {
+                        _vectorSearchService.InitializeIndex(indexName, field.Name, vector.Length);
+                    }
+                    
+                    // Add vector to HNSW-backed search service
+                    _vectorSearchService.AddVector(indexName, field.Name, key, vector);
                 }
             }
         }
@@ -408,7 +419,7 @@ public class DocumentService : IDocumentService
     public Task ClearIndexAsync(string indexName)
     {
         _indexManager.ClearIndex(indexName);
-        _vectorStore.ClearIndex(indexName);
+        _vectorSearchService.DeleteIndex(indexName);
         return Task.CompletedTask;
     }
 

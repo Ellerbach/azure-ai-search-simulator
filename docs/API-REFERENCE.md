@@ -40,7 +40,7 @@ api-key: <your-api-key>
 
 All requests require the `api-version` query parameter:
 
-```
+```text
 ?api-version=2024-07-01
 ```
 
@@ -59,6 +59,7 @@ api-key: <admin-key>
 ```
 
 **Request Body:**
+
 ```json
 {
   "name": "hotels",
@@ -168,6 +169,7 @@ api-key: <admin-key>
 ```
 
 **Response:**
+
 ```json
 {
   "@odata.context": "https://localhost:7001/$metadata#indexes",
@@ -214,6 +216,7 @@ api-key: <admin-key>
 ```
 
 **Request Body:**
+
 ```json
 {
   "value": [
@@ -241,12 +244,14 @@ api-key: <admin-key>
 ```
 
 **Actions:**
+
 - `upload` - Insert new document (fails if exists)
 - `merge` - Update existing document fields
 - `mergeOrUpload` - Update if exists, otherwise insert
 - `delete` - Remove document
 
 **Response:**
+
 ```json
 {
   "value": [
@@ -299,6 +304,7 @@ api-key: <query-key>
 ```
 
 **Request Body:**
+
 ```json
 {
   "search": "luxury hotel pool",
@@ -363,6 +369,130 @@ Add `vectorQueries` to perform vector or hybrid search:
 
 **Hybrid Search:** Include both `search` (text) and `vectorQueries` (vector) to combine results.
 
+#### HNSW Vector Search Algorithm
+
+The simulator uses HNSW (Hierarchical Navigable Small World) for efficient approximate nearest neighbor search:
+
+- **O(log n) query time** instead of O(n) brute-force
+- **High recall** (typically 95-99% accuracy)
+- **Configurable parameters** (M, efConstruction, efSearch)
+- **Automatic fallback** to brute-force when HNSW is disabled
+
+**Vector Search Architecture:**
+
+The simulator implements a dual-layer vector search system:
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│                    IVectorSearchService                     │
+├─────────────────────────────────────────────────────────────┤
+│  ┌─────────────────────┐  ┌─────────────────────────────┐   │
+│  │   HnswIndexManager  │  │      VectorStore            │   │
+│  │   (HNSW algorithm)  │  │   (Brute-force fallback)    │   │
+│  └─────────────────────┘  └─────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Filtered Vector Search:**
+
+When filters are applied, the simulator uses post-filtering with oversampling:
+
+1. Retrieve `k × oversampleMultiplier` candidates from HNSW
+2. Filter candidates to those matching the OData filter
+3. Return top-k filtered results
+4. Fall back to brute-force if insufficient results
+
+This ensures good recall even with selective filters.
+
+**Score Calculation:**
+
+Vector search results include both distance and score:
+
+- **Distance**: Raw distance from HNSW (lower = closer)
+- **Score**: Similarity score computed as `1 / (1 + distance)` (0-1 range, higher = more similar)
+
+**Performance Considerations:**
+
+| Use Case | Recommended Settings |
+| -------- | -------------------- |
+| Development | M=16, efConstruction=100, efSearch=50 |
+| Balanced | M=16, efConstruction=200, efSearch=100 |
+| High Recall | M=32, efConstruction=400, efSearch=200 |
+
+**Disabling HNSW:**
+
+To use brute-force cosine similarity instead of HNSW:
+
+```json
+{
+  "VectorSearchSettings": {
+    "UseHnsw": false
+  }
+}
+```
+
+#### Hybrid Search Score Fusion
+
+When combining text and vector search results, the simulator supports two fusion methods:
+
+**Reciprocal Rank Fusion (RRF)** (default)
+
+RRF combines results based on their ranks rather than scores:
+
+```text
+RRF_score(d) = Σ 1 / (k + rank(d))
+```
+
+Where:
+
+- `k` is a constant (default: 60) that controls rank-score distribution
+- `rank(d)` is the document's position in each result list (1-indexed)
+- Documents appearing in both text and vector results get higher scores
+
+**Benefits of RRF:**
+
+- No score normalization needed
+- Works well when score distributions differ
+- Documents in both result sets are boosted
+- Simple and robust
+
+**Weighted Score Fusion**
+
+Alternatively, combine normalized scores with configurable weights:
+
+```text
+final_score = (text_weight × norm_text_score) + (vector_weight × norm_vector_score)
+```
+
+Text scores are normalized using min-max normalization. Vector scores are already in 0-1 range.
+
+**Default weights:**
+
+- `vectorWeight`: 0.7 (semantic similarity prioritized)
+- `textWeight`: 0.3 (keyword matches)
+
+**Configuration:**
+
+```json
+{
+  "VectorSearchSettings": {
+    "HybridSearchSettings": {
+      "DefaultFusionMethod": "RRF",
+      "RrfK": 60,
+      "DefaultVectorWeight": 0.7,
+      "DefaultTextWeight": 0.3
+    }
+  }
+}
+```
+
+**Fusion Method Selection:**
+
+| Method | Best For | Notes |
+| ------ | -------- | ----- |
+| RRF | General use | Robust, no tuning needed |
+| Weighted | Score transparency | Requires weight tuning |
+
 **Response:**
 ```json
 {
@@ -403,6 +533,7 @@ api-key: <query-key>
 ```
 
 **Request Body:**
+
 ```json
 {
   "search": "sea",
@@ -414,6 +545,7 @@ api-key: <query-key>
 ```
 
 **Response:**
+
 ```json
 {
   "value": [
@@ -437,6 +569,7 @@ api-key: <query-key>
 ```
 
 **Request Body:**
+
 ```json
 {
   "search": "sea",
@@ -459,6 +592,7 @@ api-key: <admin-key>
 ```
 
 **Request Body:**
+
 ```json
 {
   "name": "hotel-indexer",
@@ -514,6 +648,7 @@ api-key: <admin-key>
 ```
 
 **Response:**
+
 ```json
 {
   "name": "hotel-indexer",
@@ -553,6 +688,7 @@ api-key: <admin-key>
 ```
 
 **Request Body:**
+
 ```json
 {
   "name": "hotel-datasource",
@@ -573,6 +709,7 @@ api-key: <admin-key>
 ```
 
 **Note:** The simulator uses a special connection string format for local files:
+
 - `DefaultEndpointsProtocol=file;LocalPath=<path>` - Maps to local file system
 
 ---
@@ -614,6 +751,7 @@ When cracking documents, the following metadata is automatically extracted when 
 ### Content Type Detection
 
 The cracker is selected based on:
+
 1. **Content-Type header** (when available from the data source)
 2. **File extension** (fallback)
 
@@ -651,6 +789,7 @@ api-key: <admin-key>
 ```
 
 **Request Body:**
+
 ```json
 {
   "name": "hotel-skillset",
@@ -787,6 +926,7 @@ api-key: <admin-key>
 ```
 
 **Response:**
+
 ```json
 {
   "value": [
@@ -932,6 +1072,7 @@ api-key: <admin-key>
 ```
 
 **Request Body:**
+
 ```json
 {
   "name": "local-files",
@@ -964,6 +1105,7 @@ api-key: <admin-key>
 ```
 
 **Response:**
+
 ```json
 {
   "name": "local-files",
@@ -1020,6 +1162,7 @@ api-key: <admin-key>
 ### Data Source Examples
 
 **Local File System:**
+
 ```json
 {
   "name": "local-files",
@@ -1035,6 +1178,7 @@ api-key: <admin-key>
 ```
 
 **Azure Blob Storage (Connection String):**
+
 ```json
 {
   "name": "blob-datasource",
@@ -1050,6 +1194,7 @@ api-key: <admin-key>
 ```
 
 **Azure Blob Storage (Managed Identity):**
+
 ```json
 {
   "name": "blob-managed-identity",
@@ -1064,6 +1209,7 @@ api-key: <admin-key>
 ```
 
 **ADLS Gen2 (Connection String):**
+
 ```json
 {
   "name": "adls-datasource",
@@ -1079,6 +1225,7 @@ api-key: <admin-key>
 ```
 
 **ADLS Gen2 (Managed Identity with DFS endpoint):**
+
 ```json
 {
   "name": "adls-managed-identity",
@@ -1107,6 +1254,7 @@ api-key: <admin-key>
 ```
 
 **Request Body:**
+
 ```json
 {
   "name": "my-indexer",
@@ -1198,6 +1346,7 @@ api-key: <admin-key>
 ```
 
 **Response:**
+
 ```json
 {
   "status": "unknown",

@@ -18,8 +18,9 @@ The simulator is designed for **development, learning, and testing purposes only
 | Document operations | upload, merge, mergeOrUpload, delete |
 | Simple query syntax | Standard search queries |
 | Full Lucene syntax | Wildcards, fuzzy, proximity, boosting |
-| **Vector search** | Simple cosine similarity (not optimized HNSW) |
-| **Hybrid search** | Combined text + vector search |
+| **Vector search (HNSW)** | HNSW algorithm for fast ANN search |
+| **Hybrid search** | Combined text + vector with RRF/weighted fusion |
+| **Filtered vector search** | Post-filter pattern with oversampling |
 | OData filters | Comparison, logical, and collection operators |
 | Sorting | Single and multi-field sorting |
 | Paging | Top and skip parameters |
@@ -50,7 +51,7 @@ The simulator is designed for **development, learning, and testing purposes only
 | ------- | ------ |
 | **Semantic search** | Requires Azure AI models |
 | **Semantic ranking** | Requires Azure AI models |
-| **HNSW algorithm** | Vector search uses brute-force cosine similarity |
+| **Pre-filtering for vectors** | HNSW does not support native filtering; uses post-filter |
 | **Knowledge stores** | Complex Azure Storage integration |
 | **AI enrichment skills** | OCR, Entity Recognition, etc. require Azure AI Services |
 | **Managed Identity** | Azure-specific security feature |
