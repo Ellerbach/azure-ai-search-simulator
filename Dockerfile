@@ -33,8 +33,19 @@ RUN getent group 1000 || groupadd --gid 1000 appuser && \
     id -u 1000 >/dev/null 2>&1 || useradd --uid 1000 --gid 1000 --shell /bin/bash --create-home appuser
 
 # Create directories for data persistence
-RUN mkdir -p /app/data /app/lucene-indexes && \
+RUN mkdir -p /app/data /app/lucene-indexes /app/certs && \
     chown -R 1000:1000 /app
+
+# Generate self-signed certificate for HTTPS
+RUN openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+    -keyout /app/certs/dev-cert.key \
+    -out /app/certs/dev-cert.crt \
+    -subj "/CN=localhost/O=AzureAISearchSimulator/C=US" && \
+    openssl pkcs12 -export -out /app/certs/dev-cert.pfx \
+    -inkey /app/certs/dev-cert.key \
+    -in /app/certs/dev-cert.crt \
+    -password pass:dev-password && \
+    chown -R 1000:1000 /app/certs
 
 # Copy published application
 COPY --from=build /app/publish .
@@ -47,9 +58,6 @@ ENV ASPNETCORE_Kestrel__Certificates__Default__Path=/app/certs/dev-cert.pfx
 ENV ASPNETCORE_Kestrel__Certificates__Default__Password=dev-password
 ENV Simulator__DataPath=/app/data
 ENV Lucene__IndexPath=/app/lucene-indexes
-
-# Generate self-signed certificate for HTTPS
-RUN mkdir -p /app/certs
 
 # Switch to non-root user
 USER 1000

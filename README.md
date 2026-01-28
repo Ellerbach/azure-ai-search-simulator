@@ -88,6 +88,8 @@ docker run -p 7250:8443 -p 5250:8080 -v search-data:/app/data azure-ai-search-si
 # API available at https://localhost:7250 (HTTPS) or http://localhost:5250 (HTTP)
 ```
 
+> **Note**: The Docker image generates a self-signed certificate for HTTPS. You'll need to skip certificate validation in your client (see Azure SDK example below).
+
 ### Using with Azure SDK
 
 The simulator is compatible with the official **Azure.Search.Documents** SDK. Note that the SDK requires HTTPS.
