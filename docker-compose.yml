@@ -24,8 +24,6 @@ services:
       - lucene-indexes:/app/lucene-indexes
       # Mount local test data (optional)
       - ./testdata:/app/testdata:ro
-      # Mount dev certificate (generated on first run)
-      - simulator-certs:/app/certs
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
@@ -44,15 +42,3 @@ volumes:
     name: azure-ai-search-simulator-data
   lucene-indexes:
     name: azure-ai-search-simulator-lucene
-  simulator-certs:
-    name: azure-ai-search-simulator-certs
-
-# Development override example:
-# Create docker-compose.override.yml with:
-#
-# services:
-#   search-simulator:
-#     environment:
-#       - ASPNETCORE_ENVIRONMENT=Development
-#     ports:
-#       - "5250:8080"
