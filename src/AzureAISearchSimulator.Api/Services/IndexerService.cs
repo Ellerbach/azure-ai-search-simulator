@@ -158,6 +158,7 @@ public class IndexerService : IIndexerService
             var failedCount = 0;
             var batchSize = indexer.Parameters?.BatchSize ?? 1000;
             var maxFailedItems = indexer.Parameters?.MaxFailedItems ?? -1;
+            var progressUpdateInterval = 50; // Update progress every N documents
 
             foreach (var batch in documentList.Chunk(batchSize))
             {
@@ -186,6 +187,14 @@ public class IndexerService : IIndexerService
                             throw new InvalidOperationException(
                                 $"Maximum failed items ({maxFailedItems}) exceeded.");
                         }
+                    }
+
+                    // Live progress update every N documents
+                    if ((processedCount + failedCount) % progressUpdateInterval == 0)
+                    {
+                        executionResult.ItemsProcessed = processedCount;
+                        executionResult.ItemsFailed = failedCount;
+                        await _repository.SaveStatusAsync(name, status);
                     }
                 }
             }

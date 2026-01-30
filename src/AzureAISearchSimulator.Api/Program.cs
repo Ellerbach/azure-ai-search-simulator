@@ -113,6 +113,10 @@ try
     builder.Services.AddScoped<IIndexerService, IndexerService>();
     builder.Services.AddScoped<ISkillsetService, SkillsetService>();
 
+    // Register background services
+    builder.Services.AddSingleton<IndexerSchedulerService>();
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<IndexerSchedulerService>());
+
     var app = builder.Build();
 
     // Configure the HTTP request pipeline

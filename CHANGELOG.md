@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+### Added
+
+- **Indexer Scheduler Service**: Background service that automatically runs indexers based on their schedule
+  - Runs indexers immediately when `startTime` is in the past
+  - Supports ISO 8601 duration intervals (e.g., `PT5M`, `PT1H`)
+  - Configurable via `IndexerSettings:EnableScheduler`
+
+- **Live Progress Updates**: Indexer status now reports real-time `itemsProcessed` and `itemsFailed` during execution
+
 ### Fixed
 
 - **Docker HTTPS Support**: Dockerfile now generates a self-signed certificate at build time for HTTPS on port 8443
