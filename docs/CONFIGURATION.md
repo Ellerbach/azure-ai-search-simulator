@@ -229,8 +229,8 @@ The simulator supports multiple authentication modes that can be enabled simulta
 | Mode | Description | Azure Required |
 | ---- | ----------- | -------------- |
 | `ApiKey` | API key in `api-key` header | No |
-| `EntraId` | Real Azure AD tokens (planned) | Yes |
-| `Simulated` | Mock JWT tokens for local dev (planned) | No |
+| `EntraId` | Real Azure AD tokens | Yes |
+| `Simulated` | Mock JWT tokens for local dev | No |
 
 #### API Key Settings
 
@@ -238,6 +238,76 @@ The simulator supports multiple authentication modes that can be enabled simulta
 | ------- | ----------- | ------- |
 | `AdminApiKey` | Admin key override (falls back to SimulatorSettings) | `null` |
 | `QueryApiKey` | Query key override (falls back to SimulatorSettings) | `null` |
+
+#### Entra ID Settings
+
+| Setting | Description | Default |
+| ------- | ----------- | ------- |
+| `Instance` | Azure AD instance URL | `https://login.microsoftonline.com/` |
+| `TenantId` | Your Azure AD tenant ID | *(required)* |
+| `ClientId` | Application (client) ID | *(optional)* |
+| `Audience` | Expected token audience | `https://search.azure.com` |
+| `ValidIssuers` | List of valid token issuers | *(auto-derived from TenantId)* |
+| `RequireHttpsMetadata` | Require HTTPS for metadata endpoints | `true` |
+| `AllowMultipleTenants` | Accept tokens from any tenant | `false` |
+
+**Sovereign Cloud Instances:**
+
+| Cloud | Instance URL |
+| ----- | ------------ |
+| Azure Public | `https://login.microsoftonline.com/` |
+| Azure Government (US) | `https://login.microsoftonline.us/` |
+| Azure China | `https://login.chinacloudapi.cn/` |
+| Azure Germany | `https://login.microsoftonline.de/` |
+
+**Enabling Real Entra ID:**
+
+```json
+{
+  "Authentication": {
+    "EnabledModes": ["ApiKey", "EntraId"],
+    "EntraId": {
+      "Instance": "https://login.microsoftonline.com/",
+      "TenantId": "your-tenant-id-here",
+      "ClientId": "your-app-client-id-here",
+      "Audience": "https://search.azure.com",
+      "RequireHttpsMetadata": true,
+      "AllowMultipleTenants": false
+    }
+  }
+}
+```
+
+**Getting a Token with Azure CLI:**
+
+```bash
+# Get an access token for Azure AI Search
+az account get-access-token --resource https://search.azure.com --query accessToken -o tsv
+```
+
+#### Simulated Token Settings
+
+| Setting | Description | Default |
+| ------- | ----------- | ------- |
+| `Enabled` | Enable simulated token authentication | `true` |
+| `Issuer` | Issuer claim for generated tokens | `https://simulator.local/` |
+| `Audience` | Audience claim for generated tokens | `https://search.azure.com` |
+| `SigningKey` | HMAC key for signing tokens (min 32 chars) | *(default key)* |
+| `TokenLifetimeMinutes` | Default token expiration | `60` |
+
+**Enabling Simulated Tokens:**
+
+```json
+{
+  "Authentication": {
+    "EnabledModes": ["ApiKey", "Simulated"],
+    "Simulated": {
+      "Enabled": true,
+      "SigningKey": "YourSecureSigningKey-AtLeast32Characters!"
+    }
+  }
+}
+```
 
 #### Role Mapping
 

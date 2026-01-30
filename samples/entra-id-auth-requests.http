@@ -422,6 +422,48 @@ api-key: {{adminKey}}
 }
 
 # ============================================
+# SECTION 11: REAL ENTRA ID AUTHENTICATION
+# ============================================
+# When connecting to the simulator with a real Azure AD token
+
+### Using real Azure AD token for query
+# First, obtain a token from Azure AD:
+#   az account get-access-token --resource https://search.azure.com --query accessToken -o tsv
+# Then use it here:
+@realEntraIdToken = YOUR_REAL_AZURE_AD_TOKEN_HERE
+
+POST {{baseUrl}}/indexes/hotels/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{realEntraIdToken}}
+
+{
+  "search": "*",
+  "top": 5
+}
+
+### Configuration for Real Entra ID
+# To enable real Entra ID authentication, update appsettings.json:
+#
+# {
+#   "Authentication": {
+#     "EnabledModes": ["ApiKey", "EntraId"],
+#     "EntraId": {
+#       "Instance": "https://login.microsoftonline.com/",
+#       "TenantId": "YOUR-TENANT-ID",
+#       "ClientId": "YOUR-APP-CLIENT-ID",
+#       "Audience": "https://search.azure.com",
+#       "RequireHttpsMetadata": true,
+#       "AllowMultipleTenants": false
+#     }
+#   }
+# }
+#
+# Sovereign Clouds:
+# - Azure Government: Instance = "https://login.microsoftonline.us/"
+# - Azure China: Instance = "https://login.chinacloudapi.cn/"
+# - Azure Germany: Instance = "https://login.microsoftonline.de/"
+
+# ============================================
 # QUICK REFERENCE: ROLE PERMISSIONS
 # ============================================
 #

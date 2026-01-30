@@ -48,10 +48,15 @@ try
     // Register authentication handlers
     builder.Services.AddSingleton<IAuthenticationHandler, ApiKeyAuthenticationHandler>();
     builder.Services.AddSingleton<IAuthenticationHandler, SimulatedAuthenticationHandler>();
+    builder.Services.AddSingleton<IAuthenticationHandler, EntraIdAuthenticationHandler>();
     
     // Register authentication and authorization services
     builder.Services.AddSingleton<ISimulatedTokenService, SimulatedTokenService>();
+    builder.Services.AddSingleton<IEntraIdTokenValidator, EntraIdTokenValidator>();
     builder.Services.AddSingleton<IAuthorizationService, AuthorizationService>();
+    
+    // Add memory cache for OpenID Connect configuration caching
+    builder.Services.AddMemoryCache();
 
     // Add services
     builder.Services.AddControllers()

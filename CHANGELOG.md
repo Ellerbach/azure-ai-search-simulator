@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Real Entra ID Authentication (Phase 3)**: Support for validating real Azure AD tokens
+  - `EntraIdAuthenticationHandler` for authenticating with real Azure AD Bearer tokens
+  - `EntraIdTokenValidator` service for token validation against Azure AD metadata endpoints
+  - OpenID Connect configuration retrieval with 24-hour caching
+  - Support for multiple valid audiences (including sovereign clouds)
+  - Support for multiple valid issuers (v1.0 and v2.0 token formats)
+  - Multi-tenant support via `AllowMultipleTenants` configuration
+  - Sovereign cloud support: Azure Public, Azure Government (US), Azure China, Azure Germany
+  - Claims extraction: oid, tid, appid/azp, roles, scp, idtyp, name/preferred_username
+  - Role-to-AccessLevel mapping matching simulated authentication
+  - 61 new unit tests for Entra ID authentication (253 total for API tests)
+
 - **Simulated Token Authentication (Phase 2)**: Local JWT token generation and validation
   - `SimulatedTokenService` for generating JWT tokens that mimic Azure AD structure
   - `SimulatedAuthenticationHandler` for validating Bearer tokens

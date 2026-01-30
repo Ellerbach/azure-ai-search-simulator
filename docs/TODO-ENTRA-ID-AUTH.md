@@ -120,57 +120,75 @@ This checklist tracks the implementation progress of Entra ID authentication for
 
 ---
 
-## Phase 3: Real Entra ID (Week 3)
+## Phase 3: Real Entra ID (Week 3) ✅ COMPLETED
 
 ### NuGet Packages
 
 - [x] Add `Microsoft.IdentityModel.Tokens` package (added in Phase 2)
 - [x] Add `System.IdentityModel.Tokens.Jwt` package (added in Phase 2)
-- [ ] Add `Microsoft.Identity.Web` package
-- [ ] Add `Microsoft.AspNetCore.Authentication.JwtBearer` package
+- [x] Add `Microsoft.Identity.Web` package
+- [x] Add `Microsoft.AspNetCore.Authentication.JwtBearer` package
+- [x] Add `Microsoft.IdentityModel.Protocols.OpenIdConnect` package
 
 ### Entra ID Handler
 
-- [ ] Create `EntraIdAuthenticationHandler.cs`
-- [ ] Implement `IAuthenticationHandler` interface
-- [ ] Configure JWT bearer authentication
-- [ ] Validate tokens against Azure AD metadata endpoint
-- [ ] Support multiple valid audiences (sovereign clouds)
-- [ ] Support multiple valid issuers
+- [x] Create `EntraIdAuthenticationHandler.cs`
+- [x] Implement `IAuthenticationHandler` interface
+- [x] Configure JWT bearer authentication
+- [x] Validate tokens against Azure AD metadata endpoint
+- [x] Support multiple valid audiences (sovereign clouds)
+- [x] Support multiple valid issuers
+
+### Token Validator Service
+
+- [x] Create `EntraIdTokenValidator.cs`
+- [x] Create `IEntraIdTokenValidator` interface
+- [x] Implement OpenID Connect configuration retrieval
+- [x] Cache configuration with 24-hour expiration
+- [x] Support signing key refresh from Azure AD
 
 ### Claims Extraction
 
-- [ ] Extract `aud` (audience)
-- [ ] Extract `iss` (issuer)
-- [ ] Extract `oid` (object ID)
-- [ ] Extract `tid` (tenant ID)
-- [ ] Extract `appid` / `azp` (application ID)
-- [ ] Extract `roles` (app roles)
-- [ ] Extract `scp` (scopes for delegated tokens)
-- [ ] Extract `idtyp` (identity type)
-- [ ] Extract `name` / `preferred_username`
+- [x] Extract `aud` (audience)
+- [x] Extract `iss` (issuer)
+- [x] Extract `oid` (object ID)
+- [x] Extract `tid` (tenant ID)
+- [x] Extract `appid` / `azp` (application ID)
+- [x] Extract `roles` (app roles)
+- [x] Extract `scp` (scopes for delegated tokens)
+- [x] Extract `idtyp` (identity type)
+- [x] Extract `name` / `preferred_username`
 
 ### Multi-Tenant Support
 
-- [ ] Configure tenant validation
-- [ ] Support single-tenant mode
-- [ ] Support multi-tenant mode (optional)
+- [x] Configure tenant validation
+- [x] Support single-tenant mode
+- [x] Support multi-tenant mode (optional via `AllowMultipleTenants`)
 
-### Testing with Real Azure
+### Sovereign Cloud Support
 
-- [ ] Create Azure AD app registration for testing
-- [ ] Configure app roles in Azure AD
-- [ ] Test with real Azure AD tokens
-- [ ] Document app registration steps
+- [x] Azure Public Cloud
+- [x] Azure Government (US)
+- [x] Azure China
+- [x] Azure Germany
 
 ### Unit Tests
 
-- [ ] Create `EntraIdAuthenticationHandlerTests.cs`
-- [ ] Test valid token acceptance
-- [ ] Test expired token rejection
-- [ ] Test invalid audience rejection
-- [ ] Test invalid issuer rejection
-- [ ] Test role extraction
+- [x] Create `EntraIdAuthenticationHandlerTests.cs` (30+ tests)
+- [x] Create `EntraIdTokenValidatorTests.cs` (30+ tests)
+- [x] Test valid token acceptance
+- [x] Test expired token rejection
+- [x] Test invalid audience rejection
+- [x] Test invalid issuer rejection
+- [x] Test role extraction
+- [x] Test all access level mappings
+
+### Testing with Real Azure (Documentation)
+
+- [ ] Create Azure AD app registration for testing (see CONFIGURATION.md)
+- [ ] Configure app roles in Azure AD
+- [ ] Test with real Azure AD tokens
+- [ ] Document app registration steps
 
 ---
 
