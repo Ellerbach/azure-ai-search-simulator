@@ -188,6 +188,11 @@ public class IndexerService : IIndexerService
                         }
                     }
                 }
+
+                // Live progress update after each batch
+                executionResult.ItemsProcessed = processedCount;
+                executionResult.ItemsFailed = failedCount;
+                await _repository.SaveStatusAsync(name, status);
             }
 
             // Update execution result

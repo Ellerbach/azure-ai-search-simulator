@@ -1,3 +1,4 @@
+using AzureAISearchSimulator.Api.Services;
 using AzureAISearchSimulator.Core.Models;
 using AzureAISearchSimulator.Core.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -13,13 +14,16 @@ namespace AzureAISearchSimulator.Api.Controllers;
 public class IndexersController : ControllerBase
 {
     private readonly IIndexerService _indexerService;
+    private readonly IndexerSchedulerService _schedulerService;
     private readonly ILogger<IndexersController> _logger;
 
     public IndexersController(
         IIndexerService indexerService,
+        IndexerSchedulerService schedulerService,
         ILogger<IndexersController> logger)
     {
         _indexerService = indexerService;
+        _schedulerService = schedulerService;
         _logger = logger;
     }
 
@@ -35,6 +39,10 @@ public class IndexersController : ControllerBase
         try
         {
             var created = await _indexerService.CreateAsync(indexer);
+            
+            // Notify scheduler about new indexer with potential schedule
+            _schedulerService.InvalidateSchedule(created.Name);
+            
             return CreatedAtAction(nameof(Get), new { indexerName = created.Name }, created);
         }
         catch (InvalidOperationException ex) when (ex.Message.Contains("already exists"))
@@ -62,6 +70,9 @@ public class IndexersController : ControllerBase
         {
             var exists = await _indexerService.ExistsAsync(indexerName);
             var result = await _indexerService.CreateOrUpdateAsync(indexerName, indexer);
+            
+            // Notify scheduler about updated schedule
+            _schedulerService.InvalidateSchedule(result.Name);
             
             if (exists)
             {
