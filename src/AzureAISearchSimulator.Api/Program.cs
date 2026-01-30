@@ -57,6 +57,9 @@ try
     builder.Services.AddSingleton<IEntraIdTokenValidator, EntraIdTokenValidator>();
     builder.Services.AddSingleton<IAuthorizationService, AuthorizationService>();
     
+    // Register configuration validator
+    builder.Services.AddHostedService<AuthenticationConfigurationValidator>();
+    
     // Add memory cache for OpenID Connect configuration caching
     builder.Services.AddMemoryCache();
 

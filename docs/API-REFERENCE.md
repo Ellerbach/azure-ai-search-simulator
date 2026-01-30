@@ -25,16 +25,41 @@ https://localhost:7250
 
 ## Authentication
 
-All API requests require an API key in the header:
+The simulator supports three authentication methods. See [AUTHENTICATION.md](AUTHENTICATION.md) for details.
 
-```text
-api-key: <your-api-key>
+### API Key (Default)
+
+```http
+api-key: admin-key-12345
 ```
 
-| Key Type | Header Value | Permissions |
+| Key Type | Default Value | Permissions |
 | -------- | ------------ | ----------- |
-| Admin Key | `admin-key-12345` (default) | Full read/write access |
-| Query Key | `query-key-67890` (default) | Read-only search operations |
+| Admin Key | `admin-key-12345` | Full read/write access |
+| Query Key | `query-key-67890` | Read-only search operations |
+
+### Bearer Token (Simulated or Entra ID)
+
+```http
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+| Role | Permissions |
+| ---- | ----------- |
+| Search Service Contributor | Manage indexes, indexers, data sources, skillsets |
+| Search Index Data Contributor | Upload/merge/delete documents |
+| Search Index Data Reader | Search, suggest, autocomplete |
+
+### Quick Token Generation
+
+```http
+GET /admin/token/quick/data-contributor
+api-key: admin-key-12345
+```
+
+Returns a JWT with the specified role for local testing.
+
+> **Note:** If both `api-key` and `Authorization: Bearer` are present, the API key takes precedence (matching Azure AI Search behavior).
 
 ## API Version
 
@@ -1433,6 +1458,141 @@ api-key: <admin-key>
 | `configuration.dataToExtract` | string | `contentAndMetadata`, `storageMetadata` |
 | `configuration.indexedFileNameExtensions` | string | Comma-separated extensions to include |
 | `configuration.excludedFileNameExtensions` | string | Comma-separated extensions to exclude |
+
+---
+
+## Admin Endpoints
+
+Administrative endpoints for token management and diagnostics.
+
+### Generate Token
+
+Generates a simulated JWT token for local testing.
+
+```http
+POST /admin/token?api-version=2024-07-01
+Content-Type: application/json
+api-key: <admin-key>
+```
+
+**Request Body:**
+
+```json
+{
+  "roles": ["Search Index Data Contributor", "Search Index Data Reader"],
+  "subject": "test-app",
+  "identityType": "app",
+  "expiresInMinutes": 60
+}
+```
+
+**Response:**
+
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "expiresAt": "2024-01-15T11:00:00Z",
+  "tokenType": "Bearer"
+}
+```
+
+### Quick Token Generation
+
+Generates a token with a predefined role using shortcuts.
+
+```http
+GET /admin/token/quick/{role}?api-version=2024-07-01
+api-key: <admin-key>
+```
+
+**Available Role Shortcuts:**
+
+| Shortcut | Role |
+| -------- | ---- |
+| `owner` | Owner |
+| `contributor` | Contributor |
+| `reader` | Reader |
+| `service-contributor` | Search Service Contributor |
+| `data-contributor` | Search Index Data Contributor |
+| `data-reader` | Search Index Data Reader |
+
+### Validate Token
+
+Validates and inspects a JWT token.
+
+```http
+POST /admin/token/validate?api-version=2024-07-01
+Content-Type: application/json
+api-key: <admin-key>
+```
+
+**Request Body:**
+
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```
+
+**Response:**
+
+```json
+{
+  "isValid": true,
+  "claims": {
+    "sub": "test-app",
+    "roles": ["Search Index Data Contributor"],
+    "exp": 1705316400,
+    "iss": "https://simulator.local/"
+  },
+  "accessLevel": "IndexDataContributor"
+}
+```
+
+### Get Auth Configuration Info
+
+Returns current authentication configuration (non-sensitive).
+
+```http
+GET /admin/token/info?api-version=2024-07-01
+api-key: <admin-key>
+```
+
+### Test Outbound Credentials
+
+Tests the configured outbound credential settings.
+
+```http
+GET /admin/diagnostics/credentials/test?api-version=2024-07-01
+api-key: <admin-key>
+```
+
+### Get Auth Diagnostics
+
+Returns authentication configuration status.
+
+```http
+GET /admin/diagnostics/auth?api-version=2024-07-01
+api-key: <admin-key>
+```
+
+### Acquire Token for Scope
+
+Acquires a token for an external Azure resource.
+
+```http
+POST /admin/diagnostics/credentials/token?api-version=2024-07-01
+Content-Type: application/json
+api-key: <admin-key>
+```
+
+**Request Body:**
+
+```json
+{
+  "scope": "https://storage.azure.com/.default"
+}
+```
 
 ---
 

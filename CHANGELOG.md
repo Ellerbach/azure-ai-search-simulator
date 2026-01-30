@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Documentation & Polish (Phase 6)**: Comprehensive authentication documentation and improvements
+  - Created `docs/AUTHENTICATION.md` comprehensive authentication guide
+  - Updated `README.md` with authentication section and feature updates
+  - Updated `docs/API-REFERENCE.md` with Admin endpoints documentation
+  - Enhanced 401/403 error responses with troubleshooting hints
+  - Added `AuthenticationConfigurationValidator` for startup validation
+  - Configuration warnings for default keys, simulated mode in production
+  - Improved authentication logging with path, remote IP, and access level
+  - Updated feature comparison tables and documentation links
+
 - **Resource-Level Identity (Phase 5)**: Per-resource managed identity configuration
   - `ResourceIdentity` model matching Azure AI Search identity patterns
   - Support for `#Microsoft.Azure.Search.DataNone` (no identity)

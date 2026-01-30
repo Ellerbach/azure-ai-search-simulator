@@ -96,8 +96,13 @@ public class AuthenticationMiddleware
 
             if (result.IsAuthenticated)
             {
-                _logger.LogDebug("Authenticated successfully via {Handler} as {Identity}", 
-                    handler.AuthenticationMode, result.IdentityName);
+                // Log successful authentication with identity info (without sensitive data)
+                _logger.LogInformation(
+                    "Authentication succeeded. Mode: {AuthMode}, Identity: {IdentityName}, AccessLevel: {AccessLevel}, Path: {Path}",
+                    handler.AuthenticationMode, 
+                    result.IdentityName ?? result.IdentityId ?? "unknown",
+                    result.AccessLevel,
+                    context.Request.Path);
                 
                 SetAuthenticationContext(context, result);
                 await _next(context);
@@ -108,15 +113,21 @@ public class AuthenticationMiddleware
             // stop trying other handlers and return the error
             if (result.ErrorCode != null && result.ErrorCode != "NoCredentials")
             {
-                _logger.LogDebug("Authentication failed via {Handler}: {Error}", 
-                    handler.AuthenticationMode, result.ErrorMessage);
+                _logger.LogWarning(
+                    "Authentication failed. Mode: {AuthMode}, ErrorCode: {ErrorCode}, Path: {Path}, RemoteIP: {RemoteIP}",
+                    handler.AuthenticationMode, 
+                    result.ErrorCode,
+                    context.Request.Path,
+                    context.Connection.RemoteIpAddress);
                 await WriteUnauthorizedResponse(context, result);
                 return;
             }
         }
 
         // No handler could authenticate the request
-        _logger.LogWarning("No authentication credentials provided from {RemoteIp}", 
+        _logger.LogWarning(
+            "No authentication credentials provided. Path: {Path}, RemoteIP: {RemoteIP}", 
+            context.Request.Path,
             context.Connection.RemoteIpAddress);
 
         await WriteUnauthorizedResponse(context, 
@@ -156,25 +167,90 @@ public class AuthenticationMiddleware
         context.Response.StatusCode = StatusCodes.Status401Unauthorized;
         context.Response.ContentType = "application/json";
 
+        // Build helpful error message with troubleshooting hints
+        var message = result.ErrorMessage ?? "Authentication failed.";
+        var hints = GetTroubleshootingHints(result.ErrorCode);
+        if (!string.IsNullOrEmpty(hints))
+        {
+            message = $"{message} {hints}";
+        }
+
         var error = new ODataError
         {
             Error = new ODataErrorBody
             {
                 Code = result.ErrorCode ?? "Unauthorized",
-                Message = result.ErrorMessage ?? "Authentication failed."
+                Message = message
             }
         };
 
-        // Add details about authentication mode if available
+        // Add details about authentication mode and configuration
+        var details = new List<ODataErrorDetail>();
+        
         if (result.AuthenticationMode != null)
         {
-            error.Error.Details = new List<ODataErrorDetail>
+            details.Add(new ODataErrorDetail 
+            { 
+                Code = "AuthMode", 
+                Message = $"Authentication method attempted: {result.AuthenticationMode}" 
+            });
+        }
+
+        // Add specific guidance based on error type
+        if (result.ErrorCode == "InvalidApiKey")
+        {
+            details.Add(new ODataErrorDetail
             {
-                new() { Code = "AuthMode", Message = $"Attempted: {result.AuthenticationMode}" }
-            };
+                Code = "Hint",
+                Message = "Verify the api-key header value matches the configured AdminApiKey or QueryApiKey."
+            });
+        }
+        else if (result.ErrorCode == "TokenExpired")
+        {
+            details.Add(new ODataErrorDetail
+            {
+                Code = "Hint",
+                Message = "Request a new token from /admin/token/quick/{role} or refresh your Entra ID token."
+            });
+        }
+        else if (result.ErrorCode == "InvalidToken" || result.ErrorCode == "InvalidSignature")
+        {
+            details.Add(new ODataErrorDetail
+            {
+                Code = "Hint",
+                Message = "For simulated tokens, ensure the signing key matches. For Entra ID, verify tenant and audience configuration."
+            });
+        }
+        else if (result.ErrorCode == "MissingApiKey" || result.ErrorCode == "NoCredentials")
+        {
+            details.Add(new ODataErrorDetail
+            {
+                Code = "Hint",
+                Message = "Provide authentication via 'api-key' header or 'Authorization: Bearer <token>' header."
+            });
+        }
+
+        if (details.Count > 0)
+        {
+            error.Error.Details = details;
         }
 
         await context.Response.WriteAsJsonAsync(error);
+    }
+
+    private static string? GetTroubleshootingHints(string? errorCode)
+    {
+        return errorCode switch
+        {
+            "InvalidApiKey" => "Check that you are using the correct admin or query key.",
+            "TokenExpired" => "Your authentication token has expired.",
+            "InvalidAudience" => "Token audience does not match expected value (https://search.azure.com).",
+            "InvalidIssuer" => "Token issuer is not trusted. Check Entra ID configuration.",
+            "InvalidSignature" => "Token signature validation failed.",
+            "MissingApiKey" => "No API key was provided in the request.",
+            "NoCredentials" => "No authentication credentials were found.",
+            _ => null
+        };
     }
 }
 
