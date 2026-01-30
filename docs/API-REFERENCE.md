@@ -6,12 +6,12 @@ This document provides a detailed reference for all REST API endpoints supported
 
 | Endpoint Category | Status | Notes |
 | ----------------- | ------ | ----- |
-| Index Operations | ✅ Implemented | Full CRUD support |
+| Index Operations | ✅ Implemented | Full CRUD support, statistics |
 | Document Operations | ✅ Implemented | Upload, merge, mergeOrUpload, delete |
 | Search | ✅ Implemented | Simple & Lucene syntax, vector search, hybrid search |
 | Suggest/Autocomplete | ✅ Implemented | Basic prefix matching |
 | Data Sources | ✅ Implemented | File system connector |
-| Indexers | ✅ Implemented | Full CRUD, run, reset, status |
+| Indexers | ✅ Implemented | Full CRUD, run, reset, status, scheduled execution |
 | Document Cracking | ✅ Implemented | PDF, Word, Excel, HTML, JSON, CSV, TXT |
 | Skillsets | ✅ Implemented | Text skills, embedding skill, custom Web API skill |
 
@@ -202,6 +202,34 @@ api-key: <admin-key>
 ```
 
 **Response:** `204 No Content`
+
+---
+
+### Get Index Statistics
+
+Returns statistics for a search index including document count and storage size.
+
+```http
+GET /indexes/{indexName}/stats?api-version=2024-07-01
+api-key: <admin-key>
+```
+
+**Response:**
+
+```json
+{
+  "@odata.context": "https://localhost:7250/$metadata#Microsoft.Azure.Search.V2024_07_01.IndexStatistics",
+  "documentCount": 153951,
+  "storageSize": 274189410,
+  "vectorIndexSize": 0
+}
+```
+
+| Field | Description |
+| ----- | ----------- |
+| `documentCount` | Number of documents in the index |
+| `storageSize` | Size of the Lucene index storage in bytes |
+| `vectorIndexSize` | Size of the HNSW vector index storage in bytes |
 
 ---
 
