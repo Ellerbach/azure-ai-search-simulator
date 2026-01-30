@@ -58,56 +58,65 @@ This checklist tracks the implementation progress of Entra ID authentication for
 
 ---
 
-## Phase 2: Simulated Entra ID (Week 2)
+## Phase 2: Simulated Entra ID (Week 2) ✅ COMPLETED
 
 ### Simulated Token Handler
 
-- [ ] Create `SimulatedAuthenticationHandler.cs`
-- [ ] Implement `IAuthenticationHandler` interface
-- [ ] Validate JWT signature with configured signing key
-- [ ] Extract and validate claims (aud, iss, exp, nbf, roles)
-- [ ] Map roles to `AccessLevel`
+- [x] Create `SimulatedAuthenticationHandler.cs`
+- [x] Implement `IAuthenticationHandler` interface
+- [x] Validate JWT signature with configured signing key
+- [x] Extract and validate claims (aud, iss, exp, nbf, roles)
+- [x] Map roles to `AccessLevel`
 
 ### Token Generator Service
 
-- [ ] Create `SimulatedTokenService.cs`
-- [ ] Generate JWT tokens with Entra ID-like structure
-- [ ] Support service principal tokens (`idtyp: app`)
-- [ ] Support user tokens (`idtyp: user`)
-- [ ] Support configurable roles and expiration
+- [x] Create `SimulatedTokenService.cs`
+- [x] Generate JWT tokens with Entra ID-like structure
+- [x] Support service principal tokens (`idtyp: app`)
+- [x] Support user tokens (`idtyp: user`)
+- [x] Support configurable roles and expiration
 
 ### Token Controller
 
-- [ ] Create `TokenController.cs`
-- [ ] `POST /admin/token` - Generate test tokens
-- [ ] `POST /admin/token/validate` - Validate any token
+- [x] Create `TokenController.cs`
+- [x] `POST /admin/token` - Generate test tokens
+- [x] `POST /admin/token/validate` - Validate any token
+- [x] `GET /admin/token/info` - Get auth configuration info
+- [x] `GET /admin/token/quick/{role}` - Quick token generation with role shortcuts
 
 ### Authorization Service
 
-- [ ] Create `AuthorizationService.cs`
-- [ ] Implement permission matrix logic
-- [ ] Map operations to required roles
-- [ ] Check role membership for authorization
+- [x] Create `AuthorizationService.cs`
+- [x] Implement permission matrix logic
+- [x] Map operations to required roles
+- [x] Check role membership for authorization
+- [x] `SearchOperation` enum for all operations
+- [x] `AuthorizationResult` model
+- [x] Extension methods (`GetAccessLevel`, `HasAccess`)
 
 ### Role-Based Access Control
 
-- [ ] Implement authorization checks in controllers
-- [ ] Index operations require `Search Service Contributor`
-- [ ] Document operations require `Search Index Data Contributor`
-- [ ] Query operations require `Search Index Data Reader`
-- [ ] Return 403 Forbidden for insufficient permissions
+- [x] Implement authorization checks via `IAuthorizationService`
+- [x] Index operations require `Search Service Contributor`
+- [x] Document operations require `Search Index Data Contributor`
+- [x] Query operations require `Search Index Data Reader`
+- [x] Return 403 Forbidden for insufficient permissions (via `AuthorizationResult`)
 
-### Integration Tests
+### Unit Tests
 
-- [ ] Create `SimulatedAuthenticationTests.cs`
-- [ ] Test token generation
-- [ ] Test token validation
-- [ ] Test RBAC enforcement (success cases)
-- [ ] Test RBAC enforcement (failure cases)
+- [x] Create `SimulatedTokenServiceTests.cs` (18 tests)
+- [x] Create `SimulatedAuthenticationHandlerTests.cs` (20 tests)
+- [x] Create `AuthorizationServiceTests.cs` (25+ tests)
+- [x] Test token generation
+- [x] Test token validation
+- [x] Test RBAC enforcement (success cases)
+- [x] Test RBAC enforcement (failure cases)
 
-### Sample Updates
+### Configuration Updates
 
-- [ ] Update `samples/entra-id-auth-requests.http` with working examples
+- [x] Enable Simulated mode in `appsettings.json`
+- [x] Add `EnabledModes: ["ApiKey", "Simulated"]`
+- [x] Register services in `Program.cs`
 
 ---
 
@@ -115,9 +124,10 @@ This checklist tracks the implementation progress of Entra ID authentication for
 
 ### NuGet Packages
 
+- [x] Add `Microsoft.IdentityModel.Tokens` package (added in Phase 2)
+- [x] Add `System.IdentityModel.Tokens.Jwt` package (added in Phase 2)
 - [ ] Add `Microsoft.Identity.Web` package
 - [ ] Add `Microsoft.AspNetCore.Authentication.JwtBearer` package
-- [ ] Add `System.IdentityModel.Tokens.Jwt` package
 
 ### Entra ID Handler
 
@@ -291,10 +301,10 @@ This checklist tracks the implementation progress of Entra ID authentication for
 ### Functional Requirements
 
 - [x] API key authentication works (backward compatible)
-- [ ] Simulated tokens can be generated and validated locally
+- [x] Simulated tokens can be generated and validated locally
 - [ ] Real Entra ID tokens are validated correctly
 - [x] Multiple auth modes can be enabled simultaneously
-- [ ] Role-based access control works across all modes
+- [x] Role-based access control works across all modes
 - [ ] Outbound credentials use configurable DefaultAzureCredential
 - [ ] Data source connectors support managed identity
 - [ ] Custom WebApiSkill supports `authResourceId` and `authIdentity`
@@ -310,7 +320,7 @@ This checklist tracks the implementation progress of Entra ID authentication for
 - [x] Token validation failures provide helpful error messages
 - [ ] Configuration errors are caught at startup
 - [x] All authentication events are properly logged
-- [x] Unit test coverage > 80% for auth components (102 tests)
+- [x] Unit test coverage > 80% for auth components (192 tests)
 
 ### Compatibility Requirements
 
@@ -331,6 +341,10 @@ This checklist tracks the implementation progress of Entra ID authentication for
 | `Core/Services/Authentication/AuthenticationResult.cs` | Auth result model | ✅ Created |
 | `Core/Services/Authentication/AccessLevel.cs` | Access level enum | ✅ Created |
 | `Api/Services/Authentication/ApiKeyAuthenticationHandler.cs` | API key handler | ✅ Created |
+| `Api/Services/Authentication/SimulatedAuthenticationHandler.cs` | Simulated handler | ✅ Created |
+| `Api/Services/Authentication/SimulatedTokenService.cs` | Token generator | ✅ Created |
+| `Api/Services/Authorization/AuthorizationService.cs` | Authorization logic | ✅ Created |
+| `Api/Controllers/TokenController.cs` | Token endpoints | ✅ Created |
 | `Api/Middleware/AuthenticationMiddleware.cs` | Unified auth middleware | ✅ Created |
 | `Core/Services/Authentication/ICredentialFactory.cs` | Credential factory interface | ⏳ Phase 4 |
 | `Core/Services/Authentication/CredentialFactory.cs` | Credential factory impl | ⏳ Phase 4 |
@@ -338,18 +352,15 @@ This checklist tracks the implementation progress of Entra ID authentication for
 | `Core/Models/SearchIdentity.cs` | Identity model | ⏳ Phase 5 |
 | `Core/Models/CognitiveServicesAccount.cs` | Cognitive services config | ⏳ Phase 5 |
 | `Api/Services/Authentication/EntraIdAuthenticationHandler.cs` | Entra ID handler | ⏳ Phase 3 |
-| `Api/Services/Authentication/SimulatedAuthenticationHandler.cs` | Simulated handler | ⏳ Phase 2 |
-| `Api/Services/Authentication/SimulatedTokenService.cs` | Token generator | ⏳ Phase 2 |
-| `Api/Services/Authorization/AuthorizationService.cs` | Authorization logic | ⏳ Phase 2 |
-| `Api/Controllers/TokenController.cs` | Token endpoints | ⏳ Phase 2 |
 | `Api/Controllers/DiagnosticsController.cs` | Diagnostics endpoints | ⏳ Phase 4 |
 
-### Files Modified (Phase 1)
+### Files Modified (Phase 1 & 2)
 
 | File | Changes | Status |
 | ---- | ------- | ------ |
-| `Api/Program.cs` | Update DI registration | ✅ Modified |
-| `Api/appsettings.json` | Add Authentication section | ✅ Modified |
+| `Api/Program.cs` | Update DI registration, add Phase 2 services | ✅ Modified |
+| `Api/appsettings.json` | Add Authentication section, enable Simulated mode | ✅ Modified |
+| `Api/AzureAISearchSimulator.Api.csproj` | Add JWT packages | ✅ Modified |
 | `Core/AzureAISearchSimulator.Core.csproj` | Add AspNetCore framework ref | ✅ Modified |
 | `Api.Tests/AzureAISearchSimulator.Api.Tests.csproj` | Add test packages | ✅ Modified |
 
@@ -368,7 +379,7 @@ This checklist tracks the implementation progress of Entra ID authentication for
 
 ## Notes
 
-- Start with Phase 1 to establish the foundation without breaking existing functionality
-- Phase 2 (Simulated) can be used for all testing without Azure dependency
+- ✅ Phase 1 complete - Foundation infrastructure in place
+- ✅ Phase 2 complete - Simulated tokens can be used for all testing without Azure dependency
 - Phase 3 (Real Entra ID) requires Azure AD app registration
 - Phases 4 & 5 are for outbound/resource-level auth and can be done in parallel

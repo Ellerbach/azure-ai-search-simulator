@@ -1,6 +1,7 @@
 using AzureAISearchSimulator.Api.Middleware;
 using AzureAISearchSimulator.Api.Services;
 using AzureAISearchSimulator.Api.Services.Authentication;
+using AzureAISearchSimulator.Api.Services.Authorization;
 using AzureAISearchSimulator.Core.Configuration;
 using AzureAISearchSimulator.Core.Services;
 using AzureAISearchSimulator.Core.Services.Authentication;
@@ -46,6 +47,11 @@ try
 
     // Register authentication handlers
     builder.Services.AddSingleton<IAuthenticationHandler, ApiKeyAuthenticationHandler>();
+    builder.Services.AddSingleton<IAuthenticationHandler, SimulatedAuthenticationHandler>();
+    
+    // Register authentication and authorization services
+    builder.Services.AddSingleton<ISimulatedTokenService, SimulatedTokenService>();
+    builder.Services.AddSingleton<IAuthorizationService, AuthorizationService>();
 
     // Add services
     builder.Services.AddControllers()

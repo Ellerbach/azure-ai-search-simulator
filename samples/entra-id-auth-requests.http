@@ -49,7 +49,7 @@ api-key: {{adminKey}}
 {
   "identityType": "ServicePrincipal",
   "appId": "test-app-1",
-  "displayName": "Test Application",
+  "name": "Test Application",
   "roles": ["Search Index Data Reader", "Search Index Data Contributor"],
   "expiresInMinutes": 60
 }
@@ -97,8 +97,8 @@ api-key: {{adminKey}}
 
 {
   "identityType": "ServicePrincipal",
-  "appId": "reader-app",
-  "displayName": "Query-Only Application",
+  "appId": "test-app-1",
+  "name": "Query-Only Application",
   "roles": ["Search Index Data Reader"],
   "expiresInMinutes": 30
 }
@@ -111,8 +111,8 @@ api-key: {{adminKey}}
 
 {
   "identityType": "ServicePrincipal",
-  "appId": "contributor-app",
-  "displayName": "Index Manager Application",
+  "appId": "test-app-1",
+  "name": "Index Manager Application",
   "roles": ["Search Service Contributor"],
   "expiresInMinutes": 30
 }
@@ -125,8 +125,8 @@ api-key: {{adminKey}}
 
 {
   "identityType": "ServicePrincipal",
-  "appId": "full-access-app",
-  "displayName": "Full Access Application",
+  "appId": "test-app-1",
+  "name": "Full Access Application",
   "roles": [
     "Search Service Contributor",
     "Search Index Data Contributor", 
@@ -144,8 +144,8 @@ api-key: {{adminKey}}
 {
   "identityType": "User",
   "objectId": "00000000-0000-0000-0000-000000000001",
-  "displayName": "Test User",
-  "email": "testuser@contoso.com",
+  "name": "Test User",
+  "preferredUsername": "testuser@contoso.com",
   "roles": ["Search Index Data Reader"],
   "scopes": ["user_impersonation"],
   "expiresInMinutes": 60
@@ -218,7 +218,63 @@ Authorization: Bearer {{contributorOnlyToken}}
 }
 
 # ============================================
-# SECTION 5: REAL ENTRA ID TOKENS
+# SECTION 5: QUICK TOKEN GENERATION
+# ============================================
+# Use shortcuts to quickly generate test tokens
+
+### Get auth configuration info
+GET {{baseUrl}}/admin/token/info
+api-key: {{adminKey}}
+
+### Quick token for admin (Owner + all data roles)
+GET {{baseUrl}}/admin/token/quick/admin
+api-key: {{adminKey}}
+
+### Quick token for query only
+GET {{baseUrl}}/admin/token/quick/query
+api-key: {{adminKey}}
+
+### Quick token for index/document operations
+GET {{baseUrl}}/admin/token/quick/index
+api-key: {{adminKey}}
+
+### Quick token for Search Service Contributor
+GET {{baseUrl}}/admin/token/quick/service-contributor
+api-key: {{adminKey}}
+
+### Quick token for Search Index Data Contributor
+GET {{baseUrl}}/admin/token/quick/data-contributor
+api-key: {{adminKey}}
+
+### Quick token for Search Index Data Reader
+GET {{baseUrl}}/admin/token/quick/data-reader
+api-key: {{adminKey}}
+
+# ============================================
+# SECTION 6: VALIDATE TOKEN
+# ============================================
+# Check what a token contains and if it's valid
+
+### Validate a simulated token
+POST {{baseUrl}}/admin/token/validate
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "token": "{{bearerToken}}"
+}
+
+### Validate token with Bearer prefix (also works)
+POST {{baseUrl}}/admin/token/validate
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "token": "Bearer {{bearerToken}}"
+}
+
+# ============================================
+# SECTION 7: REAL ENTRA ID TOKENS
 # ============================================
 # When using real Azure AD, get a token first:
 #
@@ -241,13 +297,6 @@ Authorization: Bearer {{realEntraToken}}
   "search": "*",
   "top": 10
 }
-
-# ============================================
-# SECTION 6: VALIDATE TOKEN
-# ============================================
-# Check what a token contains and if it's valid
-
-### Validate a token
 POST {{baseUrl}}/admin/token/validate
 Content-Type: application/json
 api-key: {{adminKey}}

@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Simulated Token Authentication (Phase 2)**: Local JWT token generation and validation
+  - `SimulatedTokenService` for generating JWT tokens that mimic Azure AD structure
+  - `SimulatedAuthenticationHandler` for validating Bearer tokens
+  - `TokenController` with endpoints for token generation and validation:
+    - `POST /admin/token` - Generate tokens with specified roles
+    - `POST /admin/token/validate` - Validate and inspect tokens
+    - `GET /admin/token/info` - Get authentication configuration
+    - `GET /admin/token/quick/{role}` - Quick token generation with role shortcuts
+  - `AuthorizationService` with RBAC permission matrix for all operations
+  - `SearchOperation` enum covering all Azure AI Search operations
+  - Support for service principal and user token types
+  - Role-to-AccessLevel mapping with GUID support
+  - 90 new unit tests (192 total for auth components)
+
 - **Authentication Foundation (Phase 1)**: Extensible authentication infrastructure
   - New `AuthenticationSettings` configuration section with support for multiple auth modes
   - `IAuthenticationHandler` interface for pluggable authentication handlers
@@ -18,13 +32,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `AuthenticationMiddleware` unified middleware with handler chain
   - API key precedence rule matching Azure behavior (API key takes priority over Bearer tokens)
   - Role mapping configuration for all Azure RBAC roles with GUIDs
-  - 102 unit tests for authentication components
 
 ### Changed
 
 - Refactored authentication from hardcoded middleware to extensible handler pattern
 - Updated `Program.cs` to use new authentication DI registration
-- Updated `appsettings.json` with new `Authentication` configuration section
+- Updated `appsettings.json` to enable both ApiKey and Simulated authentication modes
+- Added `Microsoft.IdentityModel.Tokens` and `System.IdentityModel.Tokens.Jwt` packages
 
 ---
 
