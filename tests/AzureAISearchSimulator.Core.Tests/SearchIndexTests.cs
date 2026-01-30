@@ -151,4 +151,83 @@ public class SearchIndexTests
         Assert.Single(index.Suggesters);
         Assert.Equal("sg", index.Suggesters[0].Name);
     }
+
+    [Fact]
+    public void SearchIndex_Description_ShouldBeConfigurable()
+    {
+        // Arrange - API 2025-09-01 feature
+        var index = new SearchIndex
+        {
+            Name = "test-index",
+            Description = "An index for testing hotel data with semantic search capabilities",
+            Fields = new List<SearchField>
+            {
+                new() { Name = "id", Type = "Edm.String", Key = true }
+            }
+        };
+
+        // Assert
+        Assert.Equal("An index for testing hotel data with semantic search capabilities", index.Description);
+    }
+
+    [Fact]
+    public void SearchField_Normalizer_ShouldBeConfigurable()
+    {
+        // Arrange - API 2025-09-01 feature
+        var field = new SearchField
+        {
+            Name = "category",
+            Type = "Edm.String",
+            Filterable = true,
+            Sortable = true,
+            Facetable = true,
+            Normalizer = "lowercase"
+        };
+
+        // Assert
+        Assert.Equal("lowercase", field.Normalizer);
+    }
+
+    [Fact]
+    public void SearchIndex_WithNormalizers_ShouldBeConfigurable()
+    {
+        // Arrange - API 2025-09-01 feature
+        var index = new SearchIndex
+        {
+            Name = "normalizer-index",
+            Fields = new List<SearchField>
+            {
+                new() { Name = "id", Type = "Edm.String", Key = true },
+                new() { Name = "category", Type = "Edm.String", Filterable = true, Normalizer = "my_normalizer" }
+            },
+            Normalizers = new List<CustomNormalizer>
+            {
+                new()
+                {
+                    Name = "my_normalizer",
+                    ODataType = "#Microsoft.Azure.Search.CustomNormalizer",
+                    TokenFilters = new List<string> { "lowercase", "asciifolding" }
+                }
+            }
+        };
+
+        // Assert
+        Assert.NotNull(index.Normalizers);
+        Assert.Single(index.Normalizers);
+        Assert.Equal("my_normalizer", index.Normalizers[0].Name);
+        Assert.Contains("lowercase", index.Normalizers[0].TokenFilters);
+        Assert.Contains("asciifolding", index.Normalizers[0].TokenFilters);
+    }
+
+    [Fact]
+    public void NormalizerName_IsBuiltIn_ShouldRecognizeBuiltInNormalizers()
+    {
+        // Arrange & Act & Assert
+        Assert.True(NormalizerName.IsBuiltIn("lowercase"));
+        Assert.True(NormalizerName.IsBuiltIn("LOWERCASE")); // Case insensitive
+        Assert.True(NormalizerName.IsBuiltIn("uppercase"));
+        Assert.True(NormalizerName.IsBuiltIn("standard"));
+        Assert.False(NormalizerName.IsBuiltIn("custom_normalizer"));
+        Assert.False(NormalizerName.IsBuiltIn(null));
+    }
 }

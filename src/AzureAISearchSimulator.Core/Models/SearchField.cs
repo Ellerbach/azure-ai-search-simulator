@@ -74,6 +74,14 @@ public class SearchField
     public string? SearchAnalyzer { get; set; }
 
     /// <summary>
+    /// Normalizer name for filtering, sorting, and faceting.
+    /// Applies case-insensitive or accent-insensitive operations.
+    /// Added in API version 2025-09-01.
+    /// </summary>
+    [JsonPropertyName("normalizer")]
+    public string? Normalizer { get; set; }
+
+    /// <summary>
     /// Synonym map names associated with this field.
     /// </summary>
     [JsonPropertyName("synonymMaps")]

@@ -6,6 +6,26 @@ This document outlines the differences and limitations between the Azure AI Sear
 
 The simulator is designed for **development, learning, and testing purposes only**. It is not intended to replace Azure AI Search for production workloads.
 
+## API Version Compatibility
+
+| API Version | Support Level | Notes |
+| ----------- | ------------- | ----- |
+| `2025-09-01` | 🔄 In Progress | Latest stable - partial support |
+| `2024-07-01` | ✅ Full | Primary development target |
+| `2023-11-01` | ⚠️ Partial | Basic compatibility |
+
+### 2025-09-01 Features Status
+
+| Feature | Status |
+| ------- | ------ |
+| Index description property | ✅ Implemented |
+| Search debug parameter | 🔄 Planned |
+| Normalizers | ✅ Implemented (see below for details) |
+| Truncated dimensions (MRL) | 🔄 Planned |
+| Rescoring options | 🔄 Planned |
+| OneLake indexer | ❌ Not planned |
+| Document Layout skill | 🔄 Planned |
+
 ## Feature Comparison
 
 ### ✅ Fully Supported
@@ -218,6 +238,57 @@ The following table lists **all skills available in Azure AI Search** and their 
 | Incremental enrichment | ❌ | Not supported |
 | Enrichment cache | ❌ | Not supported |
 
+## Normalizer Limitations
+
+Normalizers apply text transformations to keyword fields during filtering, sorting, and faceting. The simulator implements most of the Azure AI Search normalizers.
+
+### Predefined Normalizers
+
+| Normalizer | Azure | Simulator | Notes |
+| ---------- | ----- | --------- | ----- |
+| `standard` | ✅ | ✅ | Lowercase + ASCII folding |
+| `lowercase` | ✅ | ✅ | Converts to lowercase |
+| `uppercase` | ✅ | ✅ | Converts to uppercase |
+| `asciifolding` | ✅ | ✅ | Removes diacritics (keeps case) |
+| `elision` | ✅ | ✅ | English contraction removal ('s, 't, 'll, etc.) |
+
+### Token Filters (for Custom Normalizers)
+
+| Filter | Azure | Simulator | Notes |
+| ------ | ----- | --------- | ----- |
+| `lowercase` | ✅ | ✅ | - |
+| `uppercase` | ✅ | ✅ | - |
+| `asciifolding` | ✅ | ✅ | Removes diacritics |
+| `trim` | ✅ | ✅ | Removes leading/trailing whitespace |
+| `elision` | ✅ | ✅ | English contraction removal |
+| `arabic_normalization` | ✅ | ❌ | Language-specific |
+| `german_normalization` | ✅ | ❌ | Language-specific |
+| `hindi_normalization` | ✅ | ❌ | Language-specific |
+| `indic_normalization` | ✅ | ❌ | Language-specific |
+| `persian_normalization` | ✅ | ❌ | Language-specific |
+| `scandinavian_normalization` | ✅ | ❌ | Language-specific |
+| `scandinavian_folding` | ✅ | ❌ | Language-specific |
+| `sorani_normalization` | ✅ | ❌ | Language-specific |
+| `cjk_width` | ✅ | ❌ | CJK width normalization |
+
+### Character Filters (for Custom Normalizers)
+
+| Filter | Azure | Simulator | Notes |
+| ------ | ----- | --------- | ----- |
+| `html_strip` | ✅ | ✅ | Removes HTML tags |
+| `mapping` | ✅ | ✅ | Custom character mappings (source=>target) |
+| `pattern_replace` | ✅ | ✅ | Regex-based replacements |
+
+### Custom Normalizers
+
+The simulator supports custom normalizers with the following configuration:
+
+- **Token filters**: `lowercase`, `uppercase`, `asciifolding`, `trim`, `elision`
+- **Character filters**: `html_strip`, `mapping`, `pattern_replace`
+- Custom normalizers can be defined in the index schema and will be validated
+
+**Note**: Language-specific normalizers (Arabic, German, Hindi, etc.) are not implemented. For these languages, consider pre-processing your data before indexing.
+
 ## Search Query Limitations
 
 ### OData Filter Limitations
@@ -288,4 +359,4 @@ When moving from the simulator to Azure AI Search:
 
 ---
 
-*Last updated: January 23, 2026*
+*Last updated: January 30, 2026*

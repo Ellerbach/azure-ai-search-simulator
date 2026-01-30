@@ -41,8 +41,16 @@ api-key: <your-api-key>
 All requests require the `api-version` query parameter:
 
 ```text
-?api-version=2024-07-01
+?api-version=2025-09-01
 ```
+
+### Supported API Versions
+
+| Version | Status | Notes |
+| ------- | ------ | ----- |
+| `2025-09-01` | ✅ Supported | Latest stable - includes index description, debug subscores |
+| `2024-07-01` | ✅ Supported | Previous stable - vector search, quantization |
+| `2023-11-01` | ⚠️ Partial | Vector search, semantic ranking basics |
 
 ---
 
