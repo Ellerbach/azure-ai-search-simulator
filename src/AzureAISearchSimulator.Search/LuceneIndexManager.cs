@@ -131,6 +131,21 @@ public class LuceneIndexManager : IDisposable
                System.IO.Directory.GetFiles(indexPath).Length > 0;
     }
 
+    /// <summary>
+    /// Gets the storage size in bytes for the specified index.
+    /// </summary>
+    public long GetStorageSize(string indexName)
+    {
+        var indexPath = GetIndexPath(indexName);
+        if (!System.IO.Directory.Exists(indexPath))
+        {
+            return 0;
+        }
+
+        return System.IO.Directory.GetFiles(indexPath, "*", SearchOption.AllDirectories)
+            .Sum(f => new FileInfo(f).Length);
+    }
+
     private IndexHolder GetOrCreateHolder(string indexName)
     {
         return _indexes.GetOrAdd(indexName, name =>

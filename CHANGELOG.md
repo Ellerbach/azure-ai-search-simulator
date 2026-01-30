@@ -7,7 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Index Statistics API**: `GET /indexes/{indexName}/stats` returns document count, storage size, and vector index size
 - **Indexer Scheduler Service**: Background service that automatically runs indexers based on their schedule
+- **Live Progress Updates**: Indexer status reports real-time progress during execution
+- **Document Key Validation**: Invalid keys now return Azure-compatible 400 errors with detailed messages
+
+### Added
+
+- **Indexer Scheduler Service**: Background service that automatically runs indexers based on their schedule
+
   - Runs indexers immediately when `startTime` is in the past
   - Supports ISO 8601 duration intervals (e.g., `PT5M`, `PT1H`)
   - Configurable via `IndexerSettings:EnableScheduler`
