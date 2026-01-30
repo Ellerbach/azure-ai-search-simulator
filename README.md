@@ -31,7 +31,7 @@ The Azure AI Search Simulator provides a local implementation of the Azure AI Se
 - **Suggestions**: Prefix-based suggestions
 - **Vector Search**: Cosine similarity with `Collection(Edm.Single)` fields
 - **Hybrid Search**: Combined text and vector search scoring
-- **Authentication**: API key-based authentication (admin and query keys)
+- **Authentication**: API key-based authentication (admin and query keys), with Entra ID support planned
 - **Storage**: LiteDB for index metadata, Lucene.NET for document indexing
 - **Data Sources**: Azure Blob Storage, ADLS Gen2, and file system connectors
 - **Indexers**: Automated document ingestion with field mappings and status tracking (Pull Mode)

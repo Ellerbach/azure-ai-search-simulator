@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Authentication Foundation (Phase 1)**: Extensible authentication infrastructure
+  - New `AuthenticationSettings` configuration section with support for multiple auth modes
+  - `IAuthenticationHandler` interface for pluggable authentication handlers
+  - `AccessLevel` enum matching Azure AI Search RBAC model with 6 roles
+  - `AuthenticationResult` model for unified authentication responses
+  - `ApiKeyAuthenticationHandler` implementing the handler pattern
+  - `AuthenticationMiddleware` unified middleware with handler chain
+  - API key precedence rule matching Azure behavior (API key takes priority over Bearer tokens)
+  - Role mapping configuration for all Azure RBAC roles with GUIDs
+  - 102 unit tests for authentication components
+
+### Changed
+
+- Refactored authentication from hardcoded middleware to extensible handler pattern
+- Updated `Program.cs` to use new authentication DI registration
+- Updated `appsettings.json` with new `Authentication` configuration section
+
+---
+
 ### Added
 
 - **Normalizers (API 2025-09-01)**: Support for text normalization on keyword fields

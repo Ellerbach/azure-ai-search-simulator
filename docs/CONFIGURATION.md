@@ -182,6 +182,84 @@ Configure how text and vector search results are combined.
 AzureOpenAI__ApiKey=your-azure-openai-key
 ```
 
+### Authentication Settings
+
+The simulator supports multiple authentication modes that can be enabled simultaneously.
+
+```json
+{
+  "Authentication": {
+    "EnabledModes": ["ApiKey"],
+    "DefaultMode": "ApiKey",
+    "ApiKeyTakesPrecedence": true,
+    "ApiKey": {
+      "AdminApiKey": null,
+      "QueryApiKey": null
+    },
+    "EntraId": {
+      "Instance": "https://login.microsoftonline.com/",
+      "TenantId": "",
+      "ClientId": "",
+      "Audience": "https://search.azure.com",
+      "ValidIssuers": [],
+      "RequireHttpsMetadata": true,
+      "AllowMultipleTenants": false
+    },
+    "Simulated": {
+      "Enabled": false,
+      "Issuer": "https://simulator.local/",
+      "Audience": "https://search.azure.com",
+      "SigningKey": "SimulatorSigningKey-Change-This-In-Production-12345678",
+      "TokenLifetimeMinutes": 60
+    },
+    "RoleMapping": {
+      "OwnerRoles": ["Owner", "8e3af657-a8ff-443c-a75c-2fe8c4bcb635"],
+      "ContributorRoles": ["Contributor", "b24988ac-6180-42a0-ab88-20f7382dd24c"],
+      "ReaderRoles": ["Reader", "acdd72a7-3385-48ef-bd42-f606fba81ae7"],
+      "ServiceContributorRoles": ["Search Service Contributor", "7ca78c08-252a-4471-8644-bb5ff32d4ba0"],
+      "IndexDataContributorRoles": ["Search Index Data Contributor", "8ebe5a00-799e-43f5-93ac-243d3dce84a7"],
+      "IndexDataReaderRoles": ["Search Index Data Reader", "1407120a-92aa-4202-b7e9-c0e197c71c8f"]
+    }
+  }
+}
+```
+
+#### Authentication Modes
+
+| Mode | Description | Azure Required |
+| ---- | ----------- | -------------- |
+| `ApiKey` | API key in `api-key` header | No |
+| `EntraId` | Real Azure AD tokens (planned) | Yes |
+| `Simulated` | Mock JWT tokens for local dev (planned) | No |
+
+#### API Key Settings
+
+| Setting | Description | Default |
+| ------- | ----------- | ------- |
+| `AdminApiKey` | Admin key override (falls back to SimulatorSettings) | `null` |
+| `QueryApiKey` | Query key override (falls back to SimulatorSettings) | `null` |
+
+#### Role Mapping
+
+The simulator maps Azure RBAC roles to access levels. Default mappings include the role name and Azure role GUID.
+
+| Role | Role GUID | Permissions |
+| ---- | --------- | ----------- |
+| Owner | `8e3af657-a8ff-443c-a75c-2fe8c4bcb635` | Full control |
+| Contributor | `b24988ac-6180-42a0-ab88-20f7382dd24c` | Full control minus role assignment |
+| Reader | `acdd72a7-3385-48ef-bd42-f606fba81ae7` | Read service info |
+| Search Service Contributor | `7ca78c08-252a-4471-8644-bb5ff32d4ba0` | Manage indexes, indexers |
+| Search Index Data Contributor | `8ebe5a00-799e-43f5-93ac-243d3dce84a7` | Upload/delete documents |
+| Search Index Data Reader | `1407120a-92aa-4202-b7e9-c0e197c71c8f` | Query only |
+
+**Environment variables:**
+
+```bash
+Authentication__EnabledModes__0=ApiKey
+Authentication__ApiKey__AdminApiKey=custom-admin-key
+Authentication__ApiKey__QueryApiKey=custom-query-key
+```
+
 ### Logging Settings (Serilog)
 
 ```json

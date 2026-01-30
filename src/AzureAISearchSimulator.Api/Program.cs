@@ -1,7 +1,9 @@
 using AzureAISearchSimulator.Api.Middleware;
 using AzureAISearchSimulator.Api.Services;
+using AzureAISearchSimulator.Api.Services.Authentication;
 using AzureAISearchSimulator.Core.Configuration;
 using AzureAISearchSimulator.Core.Services;
+using AzureAISearchSimulator.Core.Services.Authentication;
 using AzureAISearchSimulator.DataSources;
 using AzureAISearchSimulator.Search;
 using AzureAISearchSimulator.Search.DataSources;
@@ -31,6 +33,8 @@ try
     // Bind configuration sections
     builder.Services.Configure<SimulatorSettings>(
         builder.Configuration.GetSection(SimulatorSettings.SectionName));
+    builder.Services.Configure<AuthenticationSettings>(
+        builder.Configuration.GetSection(AuthenticationSettings.SectionName));
     builder.Services.Configure<LuceneSettings>(
         builder.Configuration.GetSection(LuceneSettings.SectionName));
     builder.Services.Configure<IndexerSettings>(
@@ -39,6 +43,9 @@ try
         builder.Configuration.GetSection(VectorSearchSettings.SectionName));
     builder.Services.Configure<AzureOpenAISettings>(
         builder.Configuration.GetSection(AzureOpenAISettings.SectionName));
+
+    // Register authentication handlers
+    builder.Services.AddSingleton<IAuthenticationHandler, ApiKeyAuthenticationHandler>();
 
     // Add services
     builder.Services.AddControllers()
@@ -138,8 +145,8 @@ try
         });
     }
 
-    // Add API key authentication middleware
-    app.UseApiKeyAuthentication();
+    // Add API key authentication middleware (unified authentication)
+    app.UseUnifiedAuthentication();
 
     app.MapControllers();
 
