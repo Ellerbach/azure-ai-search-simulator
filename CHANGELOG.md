@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Resource-Level Identity (Phase 5)**: Per-resource managed identity configuration
+  - `ResourceIdentity` model matching Azure AI Search identity patterns
+  - Support for `#Microsoft.Azure.Search.DataNone` (no identity)
+  - Support for `#Microsoft.Azure.Search.DataUserAssignedIdentity` (user-assigned managed identity)
+  - Factory methods: `ResourceIdentity.None()`, `SystemAssigned()`, `UserAssigned(resourceId)`
+  - Helper properties: `IsNone`, `IsUserAssigned`, `IsSystemAssigned`
+  - `Identity` property on `DataSource` model for data source authentication
+  - `Identity` property on `Indexer` model for indexer authentication
+  - `AuthResourceId` and `AuthIdentity` properties on `Skill` model for custom skill authentication
+  - Updated `CognitiveServicesAccount` with `SubdomainUrl`, `Identity`, and new type constants
+  - `CognitiveServicesAccountTypes` constants: `ByKey`, `AIServicesByKey`, `AIServicesByIdentity`
+  - Updated `CustomWebApiSkillExecutor` to acquire Bearer tokens using `authResourceId` and `authIdentity`
+  - Updated `AzureBlobStorageConnector` to use `DataSource.Identity` for credential selection
+  - Updated `AdlsGen2Connector` to use `DataSource.Identity` for credential selection
+  - 23 new unit tests for `ResourceIdentity` model and related classes
+
 - **Outbound Authentication (Phase 4)**: Credential management for external Azure services
   - `OutboundAuthenticationSettings` configuration for credential types
   - `ICredentialFactory` interface and `CredentialFactory` implementation

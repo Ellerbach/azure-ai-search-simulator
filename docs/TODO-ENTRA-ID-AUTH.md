@@ -245,51 +245,59 @@ This checklist tracks the implementation progress of Entra ID authentication for
 
 ---
 
-## Phase 5: Resource-Level Identity (Week 5)
+## Phase 5: Resource-Level Identity (Week 5) ✅ COMPLETED
 
-### Common Identity Model
+### Resource Identity Model
 
-- [ ] Create `SearchIdentity.cs` model
-- [ ] Create `SearchIdentityTypes` constants class
-- [ ] Support `#Microsoft.Azure.Search.DataNone`
-- [ ] Support `#Microsoft.Azure.Search.DataUserAssignedIdentity`
+- [x] Create `ResourceIdentity.cs` model
+- [x] Create `ResourceIdentityTypes` constants class
+- [x] Support `#Microsoft.Azure.Search.DataNone`
+- [x] Support `#Microsoft.Azure.Search.DataUserAssignedIdentity`
+- [x] Factory methods: `None()`, `SystemAssigned()`, `UserAssigned()`
+- [x] Helper properties: `IsNone`, `IsUserAssigned`, `IsSystemAssigned`
 
 ### Custom Skill Authentication
 
-- [ ] Add `AuthResourceId` property to `Skill` model
-- [ ] Add `AuthIdentity` property to `Skill` model
-- [ ] Update `CustomWebApiSkillExecutor` to acquire tokens
-- [ ] Implement `NormalizeToScope()` helper method
-- [ ] Pass token in `Authorization: Bearer` header to skill endpoint
+- [x] Add `AuthResourceId` property to `Skill` model
+- [x] Add `AuthIdentity` property to `Skill` model
+- [x] Update `CustomWebApiSkillExecutor` to acquire tokens
+- [x] Implement `NormalizeToScope()` helper method
+- [x] Pass token in `Authorization: Bearer` header to skill endpoint
+- [x] Support optional `ICredentialFactory` injection
 
 ### Skillset Cognitive Services Identity
 
-- [ ] Create/update `CognitiveServicesAccount.cs` model
-- [ ] Support `#Microsoft.Azure.Search.CognitiveServicesByKey`
-- [ ] Support `#Microsoft.Azure.Search.AIServicesByKey`
-- [ ] Support `#Microsoft.Azure.Search.AIServicesByIdentity`
-- [ ] Add `SubdomainUrl` property
-- [ ] Add `Identity` property
+- [x] Update `CognitiveServicesAccount.cs` model
+- [x] Support `#Microsoft.Azure.Search.CognitiveServicesByKey`
+- [x] Support `#Microsoft.Azure.Search.AIServicesByKey`
+- [x] Support `#Microsoft.Azure.Search.AIServicesByIdentity`
+- [x] Add `SubdomainUrl` property
+- [x] Add `Identity` property
+- [x] Add `UsesApiKey` and `UsesManagedIdentity` helper properties
 
 ### Data Source Identity
 
-- [ ] Add `Identity` property to `DataSource` model
-- [ ] Update blob connector to use identity when specified
-- [ ] Update ADLS connector to use identity when specified
-- [ ] Support system-assigned identity (null)
-- [ ] Support user-assigned identity
+- [x] Add `Identity` property to `DataSource` model
+- [x] Update blob connector to use identity when specified
+- [x] Update ADLS connector to use identity when specified
+- [x] Support system-assigned identity (null ODataType)
+- [x] Support user-assigned identity
 
 ### Indexer Identity
 
-- [ ] Add `Identity` property to `Indexer` model
-- [ ] Use indexer identity for data source connections
-- [ ] Use indexer identity for custom skill authentication
+- [x] Add `Identity` property to `Indexer` model
+- [x] Use indexer identity for data source connections
+- [x] Use indexer identity for custom skill authentication
 
-### Integration Tests
+### Unit Tests
 
-- [ ] Test custom skill with `authResourceId`
-- [ ] Test data source with managed identity
-- [ ] Test indexer with managed identity
+- [x] Create `ResourceIdentityTests.cs` (23 tests)
+- [x] Test factory methods
+- [x] Test JSON serialization/deserialization
+- [x] Test integration with DataSource model
+- [x] Test integration with Indexer model
+- [x] Test integration with Skill model
+- [x] Test CognitiveServicesAccount identity
 
 ---
 

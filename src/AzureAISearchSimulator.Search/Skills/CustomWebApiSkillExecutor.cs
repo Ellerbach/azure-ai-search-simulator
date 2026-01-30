@@ -1,4 +1,5 @@
 using AzureAISearchSimulator.Core.Models;
+using AzureAISearchSimulator.Core.Services.Credentials;
 using Microsoft.Extensions.Logging;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -7,20 +8,24 @@ namespace AzureAISearchSimulator.Search.Skills;
 
 /// <summary>
 /// CustomWebApiSkill - Calls an external web API for processing.
+/// Supports authentication via authResourceId and authIdentity properties.
 /// </summary>
 public class CustomWebApiSkillExecutor : ISkillExecutor
 {
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly ICredentialFactory? _credentialFactory;
     private readonly ILogger<CustomWebApiSkillExecutor> _logger;
 
     public string ODataType => "#Microsoft.Skills.Custom.WebApiSkill";
 
     public CustomWebApiSkillExecutor(
         IHttpClientFactory httpClientFactory,
-        ILogger<CustomWebApiSkillExecutor> logger)
+        ILogger<CustomWebApiSkillExecutor> logger,
+        ICredentialFactory? credentialFactory = null)
     {
         _httpClientFactory = httpClientFactory;
         _logger = logger;
+        _credentialFactory = credentialFactory;
     }
 
     public async Task<SkillExecutionResult> ExecuteAsync(
@@ -57,6 +62,26 @@ public class CustomWebApiSkillExecutor : ISkillExecutor
                 foreach (var header in skill.HttpHeaders)
                 {
                     client.DefaultRequestHeaders.TryAddWithoutValidation(header.Key, header.Value);
+                }
+            }
+
+            // Add authentication if authResourceId is specified
+            if (!string.IsNullOrEmpty(skill.AuthResourceId) && _credentialFactory != null)
+            {
+                try
+                {
+                    var token = await AcquireTokenAsync(skill.AuthResourceId, skill.AuthIdentity, cancellationToken);
+                    if (!string.IsNullOrEmpty(token))
+                    {
+                        client.DefaultRequestHeaders.Authorization = 
+                            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+                        _logger.LogDebug("Added Bearer token for authResourceId: {ResourceId}", skill.AuthResourceId);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to acquire token for authResourceId: {ResourceId}", skill.AuthResourceId);
+                    warnings.Add($"Failed to acquire authentication token: {ex.Message}");
                 }
             }
 
@@ -165,6 +190,75 @@ public class CustomWebApiSkillExecutor : ISkillExecutor
             _logger.LogError(ex, "Error executing custom skill");
             return SkillExecutionResult.Failed($"CustomWebApiSkill error: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Acquires a token for the specified resource using the credential factory.
+    /// </summary>
+    private async Task<string?> AcquireTokenAsync(
+        string authResourceId, 
+        ResourceIdentity? authIdentity, 
+        CancellationToken cancellationToken)
+    {
+        if (_credentialFactory == null)
+        {
+            _logger.LogWarning("CredentialFactory not available, cannot acquire token");
+            return null;
+        }
+
+        // Convert authResourceId to a scope
+        var scope = NormalizeToScope(authResourceId);
+        
+        // Convert ResourceIdentity to SearchIdentity
+        SearchIdentity? searchIdentity = null;
+        if (authIdentity != null)
+        {
+            searchIdentity = new SearchIdentity
+            {
+                ODataType = authIdentity.ODataType,
+                UserAssignedIdentity = authIdentity.UserAssignedIdentity
+            };
+        }
+
+        var token = await _credentialFactory.GetTokenAsync(scope, searchIdentity, cancellationToken);
+        return token.Token;
+    }
+
+    /// <summary>
+    /// Converts an Azure resource ID or URI to a scope for token acquisition.
+    /// </summary>
+    private static string NormalizeToScope(string resourceId)
+    {
+        // If it already ends with /.default, return as-is
+        if (resourceId.EndsWith("/.default", StringComparison.OrdinalIgnoreCase))
+        {
+            return resourceId;
+        }
+
+        // If it's a URI without /.default, add it
+        if (Uri.TryCreate(resourceId, UriKind.Absolute, out var uri))
+        {
+            var baseUri = $"{uri.Scheme}://{uri.Host}";
+            return $"{baseUri}/.default";
+        }
+
+        // If it's an Azure resource ID, convert to scope
+        // Format: /subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.CognitiveServices/accounts/{name}
+        if (resourceId.StartsWith("/subscriptions/", StringComparison.OrdinalIgnoreCase))
+        {
+            // For Cognitive Services, use the cognitive services scope
+            if (resourceId.Contains("/Microsoft.CognitiveServices/", StringComparison.OrdinalIgnoreCase))
+            {
+                return "https://cognitiveservices.azure.com/.default";
+            }
+            
+            // For other resources, try to infer the scope
+            // This is a simplified implementation
+            return "https://management.azure.com/.default";
+        }
+
+        // Otherwise, assume it's a scope and add /.default
+        return $"{resourceId.TrimEnd('/')}/.default";
     }
 
     private static object? ConvertJsonElement(JsonElement element)

@@ -307,10 +307,18 @@ public class AdlsGen2Connector : IDataSourceConnector
 
     private static SearchIdentity? ParseIdentity(DataSource dataSource)
     {
-        // Check if data source has identity configuration
-        // This would typically come from the data source's Identity property
-        // For now, we return null to use default credential
-        return null;
+        // Convert ResourceIdentity from the model to SearchIdentity for the credential factory
+        var resourceIdentity = dataSource.Identity;
+        if (resourceIdentity == null)
+        {
+            return null; // Use default credential
+        }
+
+        return new SearchIdentity
+        {
+            ODataType = resourceIdentity.ODataType,
+            UserAssignedIdentity = resourceIdentity.UserAssignedIdentity
+        };
     }
 
     private static string ConvertToDfsEndpoint(string url)

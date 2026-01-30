@@ -64,6 +64,13 @@ public class DataSource
     public DataDeletionDetectionPolicy? DataDeletionDetectionPolicy { get; set; }
 
     /// <summary>
+    /// Identity configuration for accessing the data source.
+    /// When set, uses managed identity instead of connection string credentials.
+    /// </summary>
+    [JsonPropertyName("identity")]
+    public ResourceIdentity? Identity { get; set; }
+
+    /// <summary>
     /// ETag for optimistic concurrency.
     /// </summary>
     [JsonPropertyName("@odata.etag")]
