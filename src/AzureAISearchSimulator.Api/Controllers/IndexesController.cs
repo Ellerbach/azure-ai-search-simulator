@@ -1,5 +1,8 @@
 using AzureAISearchSimulator.Core.Models;
 using AzureAISearchSimulator.Core.Services;
+using AzureAISearchSimulator.Search;
+using AzureAISearchSimulator.Search.Hnsw;
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace AzureAISearchSimulator.Api.Controllers;
@@ -13,13 +16,22 @@ namespace AzureAISearchSimulator.Api.Controllers;
 public class IndexesController : ControllerBase
 {
     private readonly IIndexService _indexService;
+    private readonly IDocumentService _documentService;
+    private readonly LuceneIndexManager _luceneManager;
+    private readonly IHnswIndexManager _hnswManager;
     private readonly ILogger<IndexesController> _logger;
 
     public IndexesController(
         IIndexService indexService,
+        IDocumentService documentService,
+        LuceneIndexManager luceneManager,
+        IHnswIndexManager hnswManager,
         ILogger<IndexesController> logger)
     {
         _indexService = indexService;
+        _documentService = documentService;
+        _luceneManager = luceneManager;
+        _hnswManager = hnswManager;
         _logger = logger;
     }
 
@@ -189,6 +201,38 @@ public class IndexesController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>
+    /// Gets statistics for a search index.
+    /// </summary>
+    [HttpGet("{indexName}/stats")]
+    [ProducesResponseType(typeof(IndexStatistics), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ODataError), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetIndexStatistics(
+        string indexName,
+        [FromQuery(Name = "api-version")] string apiVersion,
+        CancellationToken cancellationToken)
+    {
+        var index = await _indexService.GetIndexAsync(indexName, cancellationToken);
+        if (index == null)
+        {
+            return NotFound(CreateError("IndexNotFound", $"Index '{indexName}' not found"));
+        }
+
+        var documentCount = await _documentService.GetDocumentCountAsync(indexName);
+        var storageSize = _luceneManager.GetStorageSize(indexName);
+        var vectorIndexSize = _hnswManager.GetVectorIndexSize(indexName);
+
+        var stats = new IndexStatistics
+        {
+            ODataContext = $"{Request.Scheme}://{Request.Host}/$metadata#Microsoft.Azure.Search.V2024_07_01.IndexStatistics",
+            DocumentCount = documentCount,
+            StorageSize = storageSize,
+            VectorIndexSize = vectorIndexSize
+        };
+
+        return Ok(stats);
+    }
+
     private static ODataError CreateError(string code, string message)
     {
         return new ODataError
@@ -228,4 +272,34 @@ public class AnalyzeToken
     public int StartOffset { get; set; }
     public int EndOffset { get; set; }
     public int Position { get; set; }
+}
+
+/// <summary>
+/// Statistics for a search index.
+/// </summary>
+public class IndexStatistics
+{
+    /// <summary>
+    /// OData context URL.
+    /// </summary>
+    [JsonPropertyName("@odata.context")]
+    public string? ODataContext { get; set; }
+
+    /// <summary>
+    /// Number of documents in the index.
+    /// </summary>
+    [JsonPropertyName("documentCount")]
+    public long DocumentCount { get; set; }
+
+    /// <summary>
+    /// Size of the index storage in bytes.
+    /// </summary>
+    [JsonPropertyName("storageSize")]
+    public long StorageSize { get; set; }
+
+    /// <summary>
+    /// Size of the vector index storage in bytes.
+    /// </summary>
+    [JsonPropertyName("vectorIndexSize")]
+    public long VectorIndexSize { get; set; }
 }

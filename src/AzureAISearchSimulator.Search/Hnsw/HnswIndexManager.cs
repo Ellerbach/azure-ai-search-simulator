@@ -580,6 +580,19 @@ public class HnswIndexManager : IHnswIndexManager
     private string GetMappingPath(string indexName, string fieldName) => 
         Path.Combine(_dataDirectory, indexName, $"{fieldName}.mapping");
 
+    /// <inheritdoc />
+    public long GetVectorIndexSize(string indexName)
+    {
+        var indexDir = Path.Combine(_dataDirectory, indexName);
+        if (!Directory.Exists(indexDir))
+        {
+            return 0;
+        }
+
+        return Directory.GetFiles(indexDir, "*", SearchOption.AllDirectories)
+            .Sum(f => new FileInfo(f).Length);
+    }
+
     public void Dispose()
     {
         if (_disposed) return;

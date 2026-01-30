@@ -132,4 +132,11 @@ public interface IHnswIndexManager : IDisposable
     /// <param name="fieldName">Name of the vector field.</param>
     /// <param name="documents">Collection of (documentId, vector) tuples.</param>
     void RebuildIndex(string indexName, string fieldName, IEnumerable<(string DocumentId, float[] Vector)> documents);
+
+    /// <summary>
+    /// Gets the total storage size in bytes for all vector indexes for the specified search index.
+    /// </summary>
+    /// <param name="indexName">Name of the search index.</param>
+    /// <returns>Total storage size in bytes.</returns>
+    long GetVectorIndexSize(string indexName);
 }

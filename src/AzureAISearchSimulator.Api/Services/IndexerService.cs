@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using AzureAISearchSimulator.Core.Models;
 using AzureAISearchSimulator.Core.Services;
 using AzureAISearchSimulator.Search.DataSources;
@@ -9,10 +10,32 @@ using Microsoft.Extensions.Logging;
 namespace AzureAISearchSimulator.Api.Services;
 
 /// <summary>
+/// Exception thrown when a document key contains invalid characters.
+/// </summary>
+public partial class InvalidDocumentKeyException : Exception
+{
+    public string Key { get; }
+    public string? DocumentName { get; }
+    public string? DataSourceName { get; }
+
+    public InvalidDocumentKeyException(string key, string? documentName = null, string? dataSourceName = null)
+        : base($"Invalid document key: '{key}'. Keys can only contain letters, digits, underscore (_), dash (-), or equal sign (=). Please see https://docs.microsoft.com/azure/search/search-howto-indexing-azure-blob-storage#DocumentKeys")
+    {
+        Key = key;
+        DocumentName = documentName;
+        DataSourceName = dataSourceName;
+    }
+}
+
+/// <summary>
 /// Service for managing indexers.
 /// </summary>
-public class IndexerService : IIndexerService
+public partial class IndexerService : IIndexerService
 {
+    // Regex pattern for valid document keys: letters, digits, underscore, dash, equal sign
+    [GeneratedRegex(@"^[a-zA-Z0-9_\-=]+$")]
+    private static partial Regex ValidKeyPattern();
+
     private readonly IIndexerRepository _repository;
     private readonly IDataSourceService _dataSourceService;
     private readonly ISkillsetService _skillsetService;
@@ -169,6 +192,27 @@ public class IndexerService : IIndexerService
                         await ProcessDocumentAsync(indexer, doc);
                         processedCount++;
                     }
+                    catch (InvalidDocumentKeyException keyEx)
+                    {
+                        failedCount++;
+                        _logger.LogWarning(keyEx, "Invalid document key: {Key}", keyEx.Key);
+                        
+                        executionResult.Errors.Add(new IndexerExecutionError
+                        {
+                            Key = $"localId={doc.Key}&documentKey={keyEx.Key}",
+                            ErrorMessage = keyEx.Message,
+                            StatusCode = 400,
+                            Name = $"DocumentExtraction.azureblob.{indexer.DataSourceName}",
+                            Details = $"Target field 'id' is either not present, doesn't have a value set, or no data could be extracted from the document for it.Failed document: '{doc.Key}'",
+                            DocumentationLink = "https://go.microsoft.com/fwlink/?linkid=2049388"
+                        });
+
+                        if (maxFailedItems >= 0 && failedCount > maxFailedItems)
+                        {
+                            throw new InvalidOperationException(
+                                $"Maximum failed items ({maxFailedItems}) exceeded.");
+                        }
+                    }
                     catch (Exception ex)
                     {
                         failedCount++;
@@ -298,8 +342,23 @@ public class IndexerService : IIndexerService
         }
     }
 
+    /// <summary>
+    /// Validates that a document key contains only valid characters.
+    /// Valid characters are: letters, digits, underscore (_), dash (-), or equal sign (=).
+    /// </summary>
+    private static void ValidateDocumentKey(string key, string? documentName, string? dataSourceName)
+    {
+        if (string.IsNullOrEmpty(key) || !ValidKeyPattern().IsMatch(key))
+        {
+            throw new InvalidDocumentKeyException(key, documentName, dataSourceName);
+        }
+    }
+
     private async Task ProcessDocumentAsync(Indexer indexer, DataSourceDocument sourceDoc)
     {
+        // Validate document key before processing
+        ValidateDocumentKey(sourceDoc.Key, sourceDoc.Name, indexer.DataSourceName);
+
         // Check for JSON parsing mode
         var parsingMode = indexer.Parameters?.Configuration?.ParsingMode?.ToLowerInvariant() ?? "default";
         
@@ -603,6 +662,9 @@ public class IndexerService : IIndexerService
         {
             docKey = idValue.ToString() ?? sourceDoc.Key;
         }
+
+        // Validate document key
+        ValidateDocumentKey(docKey, sourceDoc.Name, indexer.DataSourceName);
 
         // Create enriched document for skill processing
         var enrichedDoc = new EnrichedDocument(jsonData);
