@@ -1,0 +1,397 @@
+### Azure AI Search Simulator - Entra ID Authentication Samples
+### Use with REST Client extension in VS Code
+### This file demonstrates different authentication methods supported by the simulator
+
+@baseUrl = https://localhost:7250
+@apiVersion = 2025-09-01
+@adminKey = admin-key-12345
+@queryKey = query-key-67890
+
+# ============================================
+# SECTION 1: API KEY AUTHENTICATION (Current)
+# ============================================
+# The traditional way to authenticate - still supported
+
+### Query with Query API Key
+POST {{baseUrl}}/indexes/hotels/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "pool",
+  "select": "hotelId,hotelName,description"
+}
+
+### Create index with Admin API Key
+POST {{baseUrl}}/indexes?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "name": "test-index",
+  "fields": [
+    { "name": "id", "type": "Edm.String", "key": true },
+    { "name": "content", "type": "Edm.String", "searchable": true }
+  ]
+}
+
+# ============================================
+# SECTION 2: BEARER TOKEN AUTHENTICATION
+# ============================================
+# Use for Entra ID or Simulated tokens
+
+### Step 1: Get a token (Simulated mode - local development)
+# @name getToken
+POST {{baseUrl}}/admin/token
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "identityType": "ServicePrincipal",
+  "appId": "test-app-1",
+  "displayName": "Test Application",
+  "roles": ["Search Index Data Reader", "Search Index Data Contributor"],
+  "expiresInMinutes": 60
+}
+
+### Store the token from the response
+@bearerToken = {{getToken.response.body.token}}
+
+### Step 2: Query index with Bearer Token (Search Index Data Reader role)
+POST {{baseUrl}}/indexes/hotels/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{bearerToken}}
+
+{
+  "search": "*",
+  "top": 5,
+  "select": "hotelId,hotelName,rating"
+}
+
+### Step 3: Upload documents with Bearer Token (Search Index Data Contributor role)
+POST {{baseUrl}}/indexes/hotels/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{bearerToken}}
+
+{
+  "value": [
+    {
+      "@search.action": "upload",
+      "hotelId": "auth-test-1",
+      "hotelName": "Authenticated Hotel",
+      "description": "A hotel added using bearer token authentication"
+    }
+  ]
+}
+
+# ============================================
+# SECTION 3: SIMULATED TOKENS BY ROLE
+# ============================================
+# Generate tokens with specific roles for testing RBAC
+
+### Generate token with Search Index Data Reader ONLY (query only)
+# @name readerToken
+POST {{baseUrl}}/admin/token
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "identityType": "ServicePrincipal",
+  "appId": "reader-app",
+  "displayName": "Query-Only Application",
+  "roles": ["Search Index Data Reader"],
+  "expiresInMinutes": 30
+}
+
+### Generate token with Search Service Contributor (manage objects, no data access)
+# @name contributorToken
+POST {{baseUrl}}/admin/token
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "identityType": "ServicePrincipal",
+  "appId": "contributor-app",
+  "displayName": "Index Manager Application",
+  "roles": ["Search Service Contributor"],
+  "expiresInMinutes": 30
+}
+
+### Generate token with Full Access (all three roles)
+# @name fullAccessToken
+POST {{baseUrl}}/admin/token
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "identityType": "ServicePrincipal",
+  "appId": "full-access-app",
+  "displayName": "Full Access Application",
+  "roles": [
+    "Search Service Contributor",
+    "Search Index Data Contributor", 
+    "Search Index Data Reader"
+  ],
+  "expiresInMinutes": 60
+}
+
+### Generate USER token (delegated authentication)
+# @name userToken
+POST {{baseUrl}}/admin/token
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "identityType": "User",
+  "objectId": "00000000-0000-0000-0000-000000000001",
+  "displayName": "Test User",
+  "email": "testuser@contoso.com",
+  "roles": ["Search Index Data Reader"],
+  "scopes": ["user_impersonation"],
+  "expiresInMinutes": 60
+}
+
+# ============================================
+# SECTION 4: RBAC TESTING SCENARIOS
+# ============================================
+# Test that roles are properly enforced
+
+### This should SUCCEED - Reader can query
+@readerOnlyToken = {{readerToken.response.body.token}}
+
+POST {{baseUrl}}/indexes/hotels/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{readerOnlyToken}}
+
+{
+  "search": "pool"
+}
+
+### This should FAIL (403) - Reader cannot upload documents
+POST {{baseUrl}}/indexes/hotels/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{readerOnlyToken}}
+
+{
+  "value": [
+    {
+      "@search.action": "upload",
+      "hotelId": "should-fail"
+    }
+  ]
+}
+
+### This should FAIL (403) - Reader cannot create indexes
+@contributorOnlyToken = {{contributorToken.response.body.token}}
+
+POST {{baseUrl}}/indexes?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{readerOnlyToken}}
+
+{
+  "name": "should-fail-index",
+  "fields": [
+    { "name": "id", "type": "Edm.String", "key": true }
+  ]
+}
+
+### This should SUCCEED - Service Contributor can create indexes
+POST {{baseUrl}}/indexes?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{contributorOnlyToken}}
+
+{
+  "name": "contributor-created-index",
+  "fields": [
+    { "name": "id", "type": "Edm.String", "key": true },
+    { "name": "title", "type": "Edm.String", "searchable": true }
+  ]
+}
+
+### This should FAIL (403) - Service Contributor cannot query
+POST {{baseUrl}}/indexes/hotels/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{contributorOnlyToken}}
+
+{
+  "search": "*"
+}
+
+# ============================================
+# SECTION 5: REAL ENTRA ID TOKENS
+# ============================================
+# When using real Azure AD, get a token first:
+#
+# Azure CLI:
+#   az account get-access-token --scope https://search.azure.com/.default --query accessToken -o tsv
+#
+# PowerShell:
+#   (Get-AzAccessToken -ResourceUrl https://search.azure.com).Token
+#
+# Then paste below:
+
+@realEntraToken = YOUR_REAL_ENTRA_ID_TOKEN_HERE
+
+### Query with real Entra ID token
+POST {{baseUrl}}/indexes/hotels/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{realEntraToken}}
+
+{
+  "search": "*",
+  "top": 10
+}
+
+# ============================================
+# SECTION 6: VALIDATE TOKEN
+# ============================================
+# Check what a token contains and if it's valid
+
+### Validate a token
+POST {{baseUrl}}/admin/token/validate
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "token": "{{bearerToken}}"
+}
+
+# ============================================
+# SECTION 7: DIAGNOSTICS
+# ============================================
+# Check authentication configuration and status
+
+### Get current authentication configuration
+GET {{baseUrl}}/diagnostics/auth
+api-key: {{adminKey}}
+
+### Test outbound credentials (for data source connections)
+GET {{baseUrl}}/diagnostics/credentials
+api-key: {{adminKey}}
+
+# ============================================
+# SECTION 8: CUSTOM SKILL WITH AUTH
+# ============================================
+# Create a skillset that authenticates to a protected Azure Function
+
+### Create skillset with authenticated custom skill
+PUT {{baseUrl}}/skillsets/secure-skillset?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "name": "secure-skillset",
+  "description": "Skillset that calls a protected Azure Function",
+  "skills": [
+    {
+      "@odata.type": "#Microsoft.Skills.Custom.WebApiSkill",
+      "name": "secure-enrichment",
+      "description": "Calls an Azure Function protected with Entra ID",
+      "uri": "https://my-function-app.azurewebsites.net/api/enrich",
+      "httpMethod": "POST",
+      "timeout": "PT60S",
+      "batchSize": 10,
+      "authResourceId": "api://my-function-app-client-id",
+      "authIdentity": null,
+      "context": "/document",
+      "inputs": [
+        { "name": "text", "source": "/document/content" },
+        { "name": "language", "source": "/document/language" }
+      ],
+      "outputs": [
+        { "name": "enrichedText", "targetName": "enrichedContent" },
+        { "name": "sentiment", "targetName": "sentimentScore" }
+      ]
+    }
+  ]
+}
+
+# ============================================
+# SECTION 9: DATA SOURCE WITH MANAGED IDENTITY
+# ============================================
+# Create data source that uses managed identity instead of connection string
+
+### Create data source with system-assigned managed identity
+PUT {{baseUrl}}/datasources/mi-blob-source?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "name": "mi-blob-source",
+  "type": "azureblob",
+  "credentials": {
+    "connectionString": "ResourceId=/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/my-rg/providers/Microsoft.Storage/storageAccounts/mystorageaccount;"
+  },
+  "container": {
+    "name": "documents"
+  },
+  "identity": null
+}
+
+### Create data source with user-assigned managed identity
+PUT {{baseUrl}}/datasources/uami-blob-source?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "name": "uami-blob-source",
+  "type": "azureblob",
+  "credentials": {
+    "connectionString": "ResourceId=/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/my-rg/providers/Microsoft.Storage/storageAccounts/mystorageaccount;"
+  },
+  "container": {
+    "name": "documents"
+  },
+  "identity": {
+    "@odata.type": "#Microsoft.Azure.Search.DataUserAssignedIdentity",
+    "userAssignedIdentity": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/my-rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/my-search-identity"
+  }
+}
+
+# ============================================
+# SECTION 10: INDEXER WITH IDENTITY
+# ============================================
+
+### Create indexer that uses managed identity
+PUT {{baseUrl}}/indexers/mi-indexer?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "name": "mi-indexer",
+  "dataSourceName": "mi-blob-source",
+  "targetIndexName": "documents",
+  "skillsetName": "secure-skillset",
+  "parameters": {
+    "maxFailedItems": 10,
+    "maxFailedItemsPerBatch": 5
+  },
+  "identity": {
+    "@odata.type": "#Microsoft.Azure.Search.DataUserAssignedIdentity",
+    "userAssignedIdentity": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/my-rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/my-search-identity"
+  }
+}
+
+# ============================================
+# QUICK REFERENCE: ROLE PERMISSIONS
+# ============================================
+#
+# Search Index Data Reader (1407120a-92aa-4202-b7e9-c0e197c71c8f):
+#   ✅ Query indexes (search, suggest, autocomplete)
+#   ❌ Upload/delete documents
+#   ❌ Create/manage indexes
+#
+# Search Index Data Contributor (8ebe5a00-799e-43f5-93ac-243d3dce84a7):
+#   ✅ Query indexes
+#   ✅ Upload/merge/delete documents
+#   ❌ Create/manage indexes
+#
+# Search Service Contributor (7ca78c08-252a-4471-8644-bb5ff32d4ba0):
+#   ❌ Query indexes
+#   ❌ Upload/delete documents  
+#   ✅ Create/update/delete indexes, indexers, skillsets, data sources
+#   ✅ Get service statistics
+#
+# Full Development Access:
+#   Search Service Contributor + Search Index Data Contributor + Search Index Data Reader
+#
