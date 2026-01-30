@@ -14,6 +14,13 @@ public class SearchIndex
     public string Name { get; set; } = string.Empty;
 
     /// <summary>
+    /// Description of the index. Helpful for prompt engineering in RAG workloads.
+    /// Added in API version 2025-09-01.
+    /// </summary>
+    [JsonPropertyName("description")]
+    public string? Description { get; set; }
+
+    /// <summary>
     /// Fields defined in the index.
     /// </summary>
     [JsonPropertyName("fields")]
@@ -60,6 +67,13 @@ public class SearchIndex
     /// </summary>
     [JsonPropertyName("charFilters")]
     public List<CustomCharFilter>? CharFilters { get; set; }
+
+    /// <summary>
+    /// Normalizers defined for the index. Used for case-insensitive filtering, faceting, and sorting.
+    /// Added in API version 2025-09-01.
+    /// </summary>
+    [JsonPropertyName("normalizers")]
+    public List<CustomNormalizer>? Normalizers { get; set; }
 
     /// <summary>
     /// Vector search configuration.
@@ -238,6 +252,7 @@ public class CustomTokenFilter
 
 /// <summary>
 /// Custom character filter definition.
+/// Supports mapping and pattern_replace types.
 /// </summary>
 public class CustomCharFilter
 {
@@ -246,6 +261,96 @@ public class CustomCharFilter
 
     [JsonPropertyName("name")]
     public string Name { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Mappings for mapping char filter. Format: "a=>b" or "abc=>xyz".
+    /// Used when @odata.type is "#Microsoft.Azure.Search.MappingCharFilter".
+    /// </summary>
+    [JsonPropertyName("mappings")]
+    public List<string>? Mappings { get; set; }
+
+    /// <summary>
+    /// Pattern to match for pattern_replace char filter (regex).
+    /// Used when @odata.type is "#Microsoft.Azure.Search.PatternReplaceCharFilter".
+    /// </summary>
+    [JsonPropertyName("pattern")]
+    public string? Pattern { get; set; }
+
+    /// <summary>
+    /// Replacement string for pattern_replace char filter.
+    /// Used when @odata.type is "#Microsoft.Azure.Search.PatternReplaceCharFilter".
+    /// </summary>
+    [JsonPropertyName("replacement")]
+    public string? Replacement { get; set; }
+}
+
+/// <summary>
+/// Custom normalizer definition for case-insensitive filtering, faceting, and sorting.
+/// Added in API version 2025-09-01.
+/// </summary>
+public class CustomNormalizer
+{
+    [JsonPropertyName("@odata.type")]
+    public string ODataType { get; set; } = "#Microsoft.Azure.Search.CustomNormalizer";
+
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Token filters to apply (e.g., "lowercase", "asciifolding").
+    /// </summary>
+    [JsonPropertyName("tokenFilters")]
+    public List<string>? TokenFilters { get; set; }
+
+    /// <summary>
+    /// Character filters to apply.
+    /// </summary>
+    [JsonPropertyName("charFilters")]
+    public List<string>? CharFilters { get; set; }
+}
+
+/// <summary>
+/// Built-in normalizer names supported by Azure AI Search.
+/// </summary>
+public static class NormalizerName
+{
+    /// <summary>
+    /// Converts text to lowercase.
+    /// </summary>
+    public const string Lowercase = "lowercase";
+
+    /// <summary>
+    /// Converts text to uppercase.
+    /// </summary>
+    public const string Uppercase = "uppercase";
+
+    /// <summary>
+    /// Standard normalizer that lowercases and removes accents.
+    /// </summary>
+    public const string Standard = "standard";
+
+    /// <summary>
+    /// Removes diacritics and converts to ASCII equivalents.
+    /// </summary>
+    public const string AsciiFolding = "asciifolding";
+
+    /// <summary>
+    /// Removes elisions (articles like l', d', etc.) from text.
+    /// Commonly used for French and other Romance languages.
+    /// </summary>
+    public const string Elision = "elision";
+
+    /// <summary>
+    /// Checks if the normalizer name is a built-in normalizer.
+    /// </summary>
+    public static bool IsBuiltIn(string? name)
+    {
+        return name?.ToLowerInvariant() switch
+        {
+            "lowercase" or "uppercase" or "standard" or "asciifolding" or "elision" => true,
+            _ => false
+        };
+    }
 }
 
 /// <summary>

@@ -14,7 +14,8 @@ This document outlines the comprehensive plan for building an Azure AI Search Si
 | Phase 4: Document Cracking | ✅ Complete | PDF, Word, Excel, HTML, JSON, CSV, plain text extraction |
 | Phase 5: Skillsets | ✅ Complete | Text skills, embedding skills, custom WebApiSkill, skill pipeline |
 | Phase 6: Polish & Docs | ✅ Complete | Error handling, Docker support, SDK samples, documentation |
-| Phase 7: HNSW Vector Search | 🔄 Planned | HNSWlib.NET integration, filtered vector search, hybrid ranking |
+| Phase 7: HNSW Vector Search | ✅ Complete | HNSWlib.NET integration, filtered vector search, hybrid ranking |
+| Phase 8: API 2025-09-01 | 🔄 In Progress | Index description, debug subscores, normalizers |
 
 ## 1. Project Overview
 
@@ -58,14 +59,19 @@ This document outlines the comprehensive plan for building an Azure AI Search Si
 
 #### In Progress 🔄
 
+- **API version 2025-09-01 features:**
+  - Index description property
+  - Search debug parameter (query subscores)
+  - Normalizers for case-insensitive filtering
+  - Truncated dimensions for MRL models
+  - Rescoring options for compressed vectors
 - Scoring profiles
 - Scheduled indexer runs (Quartz.NET)
-- **HNSW-based vector search (HNSWlib.NET)**
-- **Filtered vector search with post-filtering**
-- **Enhanced hybrid search with score fusion**
 
 #### Future Phases
 
+- OneLake indexer (2025-09-01)
+- Document Layout skill (2025-09-01)
 - Semantic search/ranking
 - Azure-hosted AI skills (OCR, Entity Recognition, etc.)
 - Knowledge stores

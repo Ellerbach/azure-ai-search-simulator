@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Normalizers (API 2025-09-01)**: Support for text normalization on keyword fields
+  - Predefined normalizers: `standard`, `lowercase`, `uppercase`, `asciifolding`, `elision`
+  - Custom normalizers with token filters and character filters
+  - Character filters: `mapping`, `pattern_replace`, `html_strip`
+
+### Added
+
 - **Index Statistics API**: `GET /indexes/{indexName}/stats` returns document count, storage size, and vector index size
 - **Indexer Scheduler Service**: Background service that automatically runs indexers based on their schedule
 - **Live Progress Updates**: Indexer status reports real-time progress during execution

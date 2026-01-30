@@ -328,3 +328,50 @@
 ---
 
 *Track progress by checking off completed items*
+
+---
+
+## Phase 8: API Version 2025-09-01 Support
+
+### Index Schema Enhancements
+
+- [x] Add `description` property to SearchIndex model
+- [x] Update IndexesController to handle description
+- [x] Add `normalizer` property to SearchField model
+- [x] Implement built-in normalizers (lowercase, uppercase, standard)
+- [x] Add normalizer support to Lucene field mapping
+- [x] Create NormalizerFactory for applying normalizations
+- [x] Support custom normalizers with token filters
+
+### Vector Search Enhancements
+
+- [ ] Add `truncationDimension` property to vector fields
+- [ ] Implement dimension truncation for MRL models (text-embedding-3-*)
+- [ ] Add `rescoringOptions` to vector search configuration
+- [ ] Implement rescoring with original vectors after compression
+
+### Search Debug Features
+
+- [ ] Add `debug` query parameter to search API
+- [ ] Implement subscore breakdown for hybrid queries
+- [ ] Return RRF component scores in response
+- [ ] Return individual vector/text match scores
+
+### Data Source Connectors
+
+- [ ] Create OneLake indexer data source
+- [ ] Implement OneLake lakehouse connector
+- [ ] Add OneLake authentication (service principal, managed identity)
+
+### Skills
+
+- [ ] Implement DocumentLayoutSkill
+- [ ] Integrate with document structure analysis
+- [ ] Support structure-aware chunking
+
+### Testing
+
+- [x] Write tests for index description property
+- [x] Write tests for normalizers
+- [ ] Write tests for search debug output
+- [ ] Write tests for truncated dimensions

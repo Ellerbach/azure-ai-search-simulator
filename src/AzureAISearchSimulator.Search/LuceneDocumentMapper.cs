@@ -33,7 +33,7 @@ public static class LuceneDocumentMapper
                 continue;
             }
 
-            var luceneFields = CreateLuceneFields(field, value);
+            var luceneFields = CreateLuceneFields(field, value, schema.Normalizers, schema.CharFilters);
             foreach (var luceneField in luceneFields)
             {
                 doc.Add(luceneField);
@@ -84,14 +84,18 @@ public static class LuceneDocumentMapper
         return result;
     }
 
-    private static IEnumerable<IIndexableField> CreateLuceneFields(SearchField field, object value)
+    private static IEnumerable<IIndexableField> CreateLuceneFields(
+        SearchField field, 
+        object value, 
+        IEnumerable<CustomNormalizer>? normalizers = null,
+        IEnumerable<CustomCharFilter>? charFilters = null)
     {
         var fields = new List<IIndexableField>();
 
         switch (field.Type.ToLowerInvariant())
         {
             case "edm.string":
-                fields.AddRange(CreateStringFields(field, value));
+                fields.AddRange(CreateStringFields(field, value, normalizers, charFilters));
                 break;
 
             case "edm.int32":
@@ -119,7 +123,7 @@ public static class LuceneDocumentMapper
                 break;
 
             case "collection(edm.string)":
-                fields.AddRange(CreateCollectionStringFields(field, value));
+                fields.AddRange(CreateCollectionStringFields(field, value, normalizers, charFilters));
                 break;
 
             case "collection(edm.single)":
@@ -136,40 +140,50 @@ public static class LuceneDocumentMapper
         return fields;
     }
 
-    private static IEnumerable<IIndexableField> CreateStringFields(SearchField field, object value)
+    private static IEnumerable<IIndexableField> CreateStringFields(
+        SearchField field, 
+        object value, 
+        IEnumerable<CustomNormalizer>? normalizers = null,
+        IEnumerable<CustomCharFilter>? charFilters = null)
     {
         var strValue = ConvertToString(value);
         var fields = new List<IIndexableField>();
 
+        // Apply normalizer for filtering, sorting, and faceting
+        var normalizedValue = !string.IsNullOrEmpty(field.Normalizer)
+            ? NormalizerFactory.Normalize(strValue, field.Normalizer, normalizers, charFilters)
+            : strValue;
+
         if (field.Key == true)
         {
-            // Key field - store and index exactly
+            // Key field - store and index exactly (no normalization)
             fields.Add(new StringField(field.Name, strValue, Field.Store.YES));
         }
         else if (field.Searchable == true)
         {
-            // Searchable - use TextField for full-text search
+            // Searchable - use TextField for full-text search (analyzer handles normalization)
             fields.Add(new TextField(field.Name, strValue, field.Retrievable != false ? Field.Store.YES : Field.Store.NO));
         }
         else if (field.Filterable == true || field.Sortable == true)
         {
-            // Filterable/Sortable - use StringField for exact matching
-            fields.Add(new StringField(field.Name, strValue, field.Retrievable != false ? Field.Store.YES : Field.Store.NO));
+            // Filterable/Sortable - use normalized value for exact matching
+            fields.Add(new StringField(field.Name, normalizedValue, field.Retrievable != false ? Field.Store.YES : Field.Store.NO));
             
             if (field.Sortable == true)
             {
-                fields.Add(new SortedDocValuesField(field.Name, new BytesRef(strValue)));
+                fields.Add(new SortedDocValuesField(field.Name, new BytesRef(normalizedValue)));
             }
         }
         else if (field.Retrievable != false)
         {
-            // Just store for retrieval
+            // Just store for retrieval (original value)
             fields.Add(new StoredField(field.Name, strValue));
         }
 
         if (field.Facetable == true)
         {
-            fields.Add(new SortedSetDocValuesField(field.Name + "_facet", new BytesRef(strValue)));
+            // Facets use normalized value for case-insensitive grouping
+            fields.Add(new SortedSetDocValuesField(field.Name + "_facet", new BytesRef(normalizedValue)));
         }
 
         return fields;
@@ -331,7 +345,11 @@ public static class LuceneDocumentMapper
         return fields;
     }
 
-    private static IEnumerable<IIndexableField> CreateCollectionStringFields(SearchField field, object value)
+    private static IEnumerable<IIndexableField> CreateCollectionStringFields(
+        SearchField field, 
+        object value, 
+        IEnumerable<CustomNormalizer>? normalizers = null,
+        IEnumerable<CustomCharFilter>? charFilters = null)
     {
         var fields = new List<IIndexableField>();
         
@@ -351,23 +369,31 @@ public static class LuceneDocumentMapper
 
         foreach (var strValue in values)
         {
+            // Apply normalizer for filtering and faceting
+            var normalizedValue = !string.IsNullOrEmpty(field.Normalizer)
+                ? NormalizerFactory.Normalize(strValue, field.Normalizer, normalizers, charFilters)
+                : strValue;
+
             if (field.Searchable == true)
             {
+                // Full-text search uses original value (analyzer handles normalization)
                 fields.Add(new TextField(field.Name, strValue, Field.Store.NO));
             }
             
             if (field.Filterable == true)
             {
-                fields.Add(new StringField(field.Name, strValue, Field.Store.NO));
+                // Filtering uses normalized value
+                fields.Add(new StringField(field.Name, normalizedValue, Field.Store.NO));
             }
 
             if (field.Facetable == true)
             {
-                fields.Add(new SortedSetDocValuesField(field.Name + "_facet", new BytesRef(strValue)));
+                // Faceting uses normalized value for case-insensitive grouping
+                fields.Add(new SortedSetDocValuesField(field.Name + "_facet", new BytesRef(normalizedValue)));
             }
         }
 
-        // Store the entire collection as JSON
+        // Store the entire collection as JSON (original values)
         if (field.Retrievable != false)
         {
             fields.Add(new StoredField(field.Name, JsonSerializer.Serialize(values)));
