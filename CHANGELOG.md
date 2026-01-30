@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Outbound Authentication (Phase 4)**: Credential management for external Azure services
+  - `OutboundAuthenticationSettings` configuration for credential types
+  - `ICredentialFactory` interface and `CredentialFactory` implementation
+  - Support for DefaultAzureCredential, ServicePrincipal, and ManagedIdentity
+  - Service principal authentication via client secret or certificate
+  - User-assigned and system-assigned managed identity support
+  - Token caching with configurable refresh buffer
+  - `SearchIdentity` model matching Azure AI Search identity patterns
+  - `DiagnosticsController` with endpoints:
+    - `GET /admin/diagnostics/auth` - View auth configuration
+    - `GET /admin/diagnostics/credentials/test` - Test credential acquisition
+    - `POST /admin/diagnostics/credentials/token` - Acquire token for scope
+  - Updated `AzureBlobStorageConnector` to use credential factory
+  - Updated `AdlsGen2Connector` to use credential factory
+  - 39 new unit tests (292 total for API tests)
+
 - **Real Entra ID Authentication (Phase 3)**: Support for validating real Azure AD tokens
   - `EntraIdAuthenticationHandler` for authenticating with real Azure AD Bearer tokens
   - `EntraIdTokenValidator` service for token validation against Azure AD metadata endpoints

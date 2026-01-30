@@ -192,45 +192,56 @@ This checklist tracks the implementation progress of Entra ID authentication for
 
 ---
 
-## Phase 4: Outbound Authentication (Week 4)
+## Phase 4: Outbound Authentication (Week 4) ✅ COMPLETED
 
 ### Configuration
 
-- [ ] Create `OutboundAuthenticationSettings.cs`
-- [ ] Add `DefaultCredentialSettings` class
-- [ ] Add `ServicePrincipalSettings` class
-- [ ] Add `TokenCacheSettings` class
+- [x] Create `OutboundAuthenticationSettings.cs`
+- [x] Add `DefaultCredentialSettings` class
+- [x] Add `ServicePrincipalSettings` class
+- [x] Add `ManagedIdentitySettings` class
+- [x] Add `TokenCacheSettings` class
 
 ### Credential Factory
 
-- [ ] Create `ICredentialFactory.cs` interface
-- [ ] Create `CredentialFactory.cs` implementation
-- [ ] Implement `DefaultAzureCredential` mode
-- [ ] Implement `ServicePrincipal` mode
-- [ ] Implement `ManagedIdentity` mode
-- [ ] Add credential caching
+- [x] Create `ICredentialFactory.cs` interface
+- [x] Create `CredentialFactory.cs` implementation
+- [x] Implement `DefaultAzureCredential` mode
+- [x] Implement `ServicePrincipal` mode (client secret and certificate)
+- [x] Implement `ManagedIdentity` mode (system and user-assigned)
+- [x] Add token caching with configurable expiration buffer
+
+### Search Identity Model
+
+- [x] Create `SearchIdentity` class
+- [x] Create `SearchIdentityTypes` constants (`None`, `UserAssignedIdentity`)
+- [x] Support `IsNone`, `IsUserAssigned`, `IsSystemAssigned` properties
+- [x] Create `CredentialInfo` and `CredentialTestResult` models
 
 ### Update Data Source Connectors
 
-- [ ] Inject `ICredentialFactory` into `AzureBlobStorageConnector`
-- [ ] Inject `ICredentialFactory` into `AdlsGen2Connector`
-- [ ] Use factory instead of inline credential creation
-- [ ] Add detailed logging for credential resolution
+- [x] Inject `ICredentialFactory` into `AzureBlobStorageConnector`
+- [x] Inject `ICredentialFactory` into `AdlsGen2Connector`
+- [x] Use factory instead of inline `DefaultAzureCredential` creation
+- [x] Add detailed logging for credential resolution
+- [x] Support identity-based authentication per data source
 
 ### Diagnostics Endpoint
 
-- [ ] Create `DiagnosticsController.cs`
-- [ ] `GET /diagnostics/auth` - Show auth configuration
-- [ ] `GET /diagnostics/credentials` - Test outbound credentials
-- [ ] Show which credential type is being used
-- [ ] Test token acquisition
+- [x] Create `DiagnosticsController.cs`
+- [x] `GET /admin/diagnostics/auth` - Show auth configuration
+- [x] `GET /admin/diagnostics/credentials/test` - Test outbound credentials
+- [x] `POST /admin/diagnostics/credentials/token` - Acquire token for scope
+- [x] Show which credential type is being used
 
-### Testing
+### Unit Tests
 
-- [ ] Test with Azure CLI credentials
-- [ ] Test with environment variables
-- [ ] Test with managed identity (if available)
-- [ ] Test credential caching
+- [x] Create `CredentialFactoryTests.cs` (18 tests)
+- [x] Create `OutboundAuthenticationSettingsTests.cs` (21 tests)
+- [x] Test credential creation for all types
+- [x] Test identity-based credential selection
+- [x] Test credential info masking
+- [x] Test configuration defaults
 
 ---
 

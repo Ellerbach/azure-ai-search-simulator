@@ -330,6 +330,81 @@ Authentication__ApiKey__AdminApiKey=custom-admin-key
 Authentication__ApiKey__QueryApiKey=custom-query-key
 ```
 
+### Outbound Authentication Settings
+
+Configuration for authenticating to external Azure services (Blob Storage, ADLS Gen2, etc.).
+
+```json
+{
+  "OutboundAuthentication": {
+    "DefaultCredentialType": "DefaultAzureCredential",
+    "ServicePrincipal": {
+      "TenantId": "",
+      "ClientId": "",
+      "ClientSecret": null
+    },
+    "ManagedIdentity": {
+      "Enabled": true,
+      "ClientId": null,
+      "ResourceId": null
+    },
+    "TokenCache": {
+      "Enabled": true,
+      "RefreshBeforeExpirationMinutes": 5,
+      "MaxCacheSize": 100
+    },
+    "DefaultCredential": {
+      "ExcludeInteractiveBrowserCredential": true
+    }
+  }
+}
+```
+
+#### Credential Types
+
+| Type | Description | Use Case |
+| ---- | ----------- | -------- |
+| `DefaultAzureCredential` | Tries multiple credential sources | Development, Azure deployments |
+| `ServicePrincipal` | Client ID + secret/certificate | CI/CD, automation |
+| `ManagedIdentity` | Azure-managed identity | Azure-hosted deployments |
+| `ConnectionString` | Direct connection string | Legacy, simple setups |
+
+#### Service Principal Settings
+
+| Setting | Description | Default |
+| ------- | ----------- | ------- |
+| `TenantId` | Azure AD tenant ID | *(required)* |
+| `ClientId` | Application (client) ID | *(required)* |
+| `ClientSecret` | Client secret for authentication | *(optional)* |
+| `CertificatePath` | Path to .pfx certificate file | *(optional)* |
+| `CertificatePassword` | Certificate password | *(optional)* |
+| `CertificateThumbprint` | Certificate thumbprint (Windows store) | *(optional)* |
+
+#### Managed Identity Settings
+
+| Setting | Description | Default |
+| ------- | ----------- | ------- |
+| `Enabled` | Whether to use managed identity | `true` |
+| `ClientId` | User-assigned identity client ID | *(null = system-assigned)* |
+| `ResourceId` | User-assigned identity resource ID | *(optional)* |
+
+#### Token Cache Settings
+
+| Setting | Description | Default |
+| ------- | ----------- | ------- |
+| `Enabled` | Enable token caching | `true` |
+| `RefreshBeforeExpirationMinutes` | Refresh buffer before expiration | `5` |
+| `MaxCacheSize` | Maximum cached tokens | `100` |
+
+**Environment variables:**
+
+```bash
+OutboundAuthentication__DefaultCredentialType=ServicePrincipal
+OutboundAuthentication__ServicePrincipal__TenantId=your-tenant-id
+OutboundAuthentication__ServicePrincipal__ClientId=your-client-id
+OutboundAuthentication__ServicePrincipal__ClientSecret=your-secret
+```
+
 ### Logging Settings (Serilog)
 
 ```json

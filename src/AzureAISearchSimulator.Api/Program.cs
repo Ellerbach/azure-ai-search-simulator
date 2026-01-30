@@ -36,6 +36,8 @@ try
         builder.Configuration.GetSection(SimulatorSettings.SectionName));
     builder.Services.Configure<AuthenticationSettings>(
         builder.Configuration.GetSection(AuthenticationSettings.SectionName));
+    builder.Services.Configure<OutboundAuthenticationSettings>(
+        builder.Configuration.GetSection(OutboundAuthenticationSettings.SectionName));
     builder.Services.Configure<LuceneSettings>(
         builder.Configuration.GetSection(LuceneSettings.SectionName));
     builder.Services.Configure<IndexerSettings>(
