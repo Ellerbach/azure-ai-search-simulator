@@ -13,13 +13,13 @@
 # The traditional way to authenticate - still supported
 
 ### Query with Query API Key
-POST {{baseUrl}}/indexes/hotels/docs/search?api-version={{apiVersion}}
+POST {{baseUrl}}/indexes/test-index/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
 
 {
-  "search": "pool",
-  "select": "hotelId,hotelName,description"
+  "search": "*",
+  "select": "id,content"
 }
 
 ### Create index with Admin API Key
@@ -58,18 +58,18 @@ api-key: {{adminKey}}
 @bearerToken = {{getToken.response.body.token}}
 
 ### Step 2: Query index with Bearer Token (Search Index Data Reader role)
-POST {{baseUrl}}/indexes/hotels/docs/search?api-version={{apiVersion}}
+POST {{baseUrl}}/indexes/test-index/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 Authorization: Bearer {{bearerToken}}
 
 {
   "search": "*",
   "top": 5,
-  "select": "hotelId,hotelName,rating"
+  "select": "id,content"
 }
 
 ### Step 3: Upload documents with Bearer Token (Search Index Data Contributor role)
-POST {{baseUrl}}/indexes/hotels/docs/index?api-version={{apiVersion}}
+POST {{baseUrl}}/indexes/test-index/docs/index?api-version={{apiVersion}}
 Content-Type: application/json
 Authorization: Bearer {{bearerToken}}
 
@@ -77,9 +77,8 @@ Authorization: Bearer {{bearerToken}}
   "value": [
     {
       "@search.action": "upload",
-      "hotelId": "auth-test-1",
-      "hotelName": "Authenticated Hotel",
-      "description": "A hotel added using bearer token authentication"
+      "id": "auth-test-1",
+      "content": "Document added using bearer token authentication"
     }
   ]
 }
@@ -159,16 +158,16 @@ api-key: {{adminKey}}
 ### This should SUCCEED - Reader can query
 @readerOnlyToken = {{readerToken.response.body.token}}
 
-POST {{baseUrl}}/indexes/hotels/docs/search?api-version={{apiVersion}}
+POST {{baseUrl}}/indexes/test-index/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 Authorization: Bearer {{readerOnlyToken}}
 
 {
-  "search": "pool"
+  "search": "*"
 }
 
 ### This should FAIL (403) - Reader cannot upload documents
-POST {{baseUrl}}/indexes/hotels/docs/index?api-version={{apiVersion}}
+POST {{baseUrl}}/indexes/test-index/docs/index?api-version={{apiVersion}}
 Content-Type: application/json
 Authorization: Bearer {{readerOnlyToken}}
 
@@ -176,7 +175,8 @@ Authorization: Bearer {{readerOnlyToken}}
   "value": [
     {
       "@search.action": "upload",
-      "hotelId": "should-fail"
+      "id": "should-fail",
+      "content": "This should not be uploaded"
     }
   ]
 }
@@ -209,7 +209,7 @@ Authorization: Bearer {{contributorOnlyToken}}
 }
 
 ### This should FAIL (403) - Service Contributor cannot query
-POST {{baseUrl}}/indexes/hotels/docs/search?api-version={{apiVersion}}
+POST {{baseUrl}}/indexes/test-index/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 Authorization: Bearer {{contributorOnlyToken}}
 
@@ -273,6 +273,7 @@ api-key: {{adminKey}}
   "token": "Bearer {{bearerToken}}"
 }
 
+###
 # ============================================
 # SECTION 7: REAL ENTRA ID TOKENS
 # ============================================
@@ -286,10 +287,10 @@ api-key: {{adminKey}}
 #
 # Then paste below:
 
-@realEntraToken = YOUR_REAL_ENTRA_ID_TOKEN_HERE
+@realEntraToken = YOUR_REAL_TOKEN
 
 ### Query with real Entra ID token
-POST {{baseUrl}}/indexes/hotels/docs/search?api-version={{apiVersion}}
+POST {{baseUrl}}/indexes/test-index/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 Authorization: Bearer {{realEntraToken}}
 
@@ -297,16 +298,9 @@ Authorization: Bearer {{realEntraToken}}
   "search": "*",
   "top": 10
 }
-POST {{baseUrl}}/admin/token/validate
-Content-Type: application/json
-api-key: {{adminKey}}
-
-{
-  "token": "{{bearerToken}}"
-}
 
 # ============================================
-# SECTION 7: DIAGNOSTICS
+# SECTION 8: DIAGNOSTICS
 # ============================================
 # Check authentication configuration and status
 
@@ -432,7 +426,7 @@ api-key: {{adminKey}}
 # Then use it here:
 @realEntraIdToken = YOUR_REAL_AZURE_AD_TOKEN_HERE
 
-POST {{baseUrl}}/indexes/hotels/docs/search?api-version={{apiVersion}}
+POST {{baseUrl}}/indexes/test-index/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 Authorization: Bearer {{realEntraIdToken}}
 

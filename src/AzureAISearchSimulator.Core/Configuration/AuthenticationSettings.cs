@@ -102,6 +102,18 @@ public class EntraIdSettings
     /// Whether to allow multi-tenant tokens.
     /// </summary>
     public bool AllowMultipleTenants { get; set; } = false;
+
+    /// <summary>
+    /// Default roles to assign to authenticated Entra ID users when no roles are present in the token.
+    /// This is useful for development/testing when users haven't been assigned Azure Search RBAC roles.
+    /// Leave empty to require explicit role assignments.
+    /// </summary>
+    public List<string> DefaultRoles { get; set; } = new() 
+    { 
+        "Search Index Data Reader",
+        "Search Index Data Contributor",
+        "Search Service Contributor"
+    };
 }
 
 /// <summary>

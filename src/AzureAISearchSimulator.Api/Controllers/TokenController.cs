@@ -132,11 +132,20 @@ public class TokenController : ControllerBase
             return BadRequest(ODataError.Create("InvalidRequest", "Token is required."));
         }
 
-        // Remove "Bearer " prefix if present
-        var token = request.Token;
+        // Remove "Bearer " prefix if present and trim whitespace
+        var token = request.Token.Trim();
         if (token.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
         {
-            token = token.Substring(7);
+            token = token.Substring(7).Trim();
+            if (string.IsNullOrEmpty(token))
+            {
+                return BadRequest(ODataError.Create("InvalidRequest", "Token value is missing after 'Bearer' prefix."));
+            }
+        }
+        else if (token.Equals("Bearer", StringComparison.OrdinalIgnoreCase))
+        {
+            // Just "Bearer" with no token
+            return BadRequest(ODataError.Create("InvalidRequest", "Token value is missing after 'Bearer' prefix."));
         }
 
         var result = _tokenService.ValidateToken(token);

@@ -5,94 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
 ### Added
 
-- **Documentation & Polish (Phase 6)**: Comprehensive authentication documentation and improvements
-  - Created `docs/AUTHENTICATION.md` comprehensive authentication guide
-  - Updated `README.md` with authentication section and feature updates
-  - Updated `docs/API-REFERENCE.md` with Admin endpoints documentation
-  - Enhanced 401/403 error responses with troubleshooting hints
-  - Added `AuthenticationConfigurationValidator` for startup validation
-  - Configuration warnings for default keys, simulated mode in production
-  - Improved authentication logging with path, remote IP, and access level
-  - Updated feature comparison tables and documentation links
-
-- **Resource-Level Identity (Phase 5)**: Per-resource managed identity configuration
-  - `ResourceIdentity` model matching Azure AI Search identity patterns
-  - Support for `#Microsoft.Azure.Search.DataNone` (no identity)
-  - Support for `#Microsoft.Azure.Search.DataUserAssignedIdentity` (user-assigned managed identity)
-  - Factory methods: `ResourceIdentity.None()`, `SystemAssigned()`, `UserAssigned(resourceId)`
-  - Helper properties: `IsNone`, `IsUserAssigned`, `IsSystemAssigned`
-  - `Identity` property on `DataSource` model for data source authentication
-  - `Identity` property on `Indexer` model for indexer authentication
-  - `AuthResourceId` and `AuthIdentity` properties on `Skill` model for custom skill authentication
-  - Updated `CognitiveServicesAccount` with `SubdomainUrl`, `Identity`, and new type constants
-  - `CognitiveServicesAccountTypes` constants: `ByKey`, `AIServicesByKey`, `AIServicesByIdentity`
-  - Updated `CustomWebApiSkillExecutor` to acquire Bearer tokens using `authResourceId` and `authIdentity`
-  - Updated `AzureBlobStorageConnector` to use `DataSource.Identity` for credential selection
-  - Updated `AdlsGen2Connector` to use `DataSource.Identity` for credential selection
-  - 23 new unit tests for `ResourceIdentity` model and related classes
-
-- **Outbound Authentication (Phase 4)**: Credential management for external Azure services
-  - `OutboundAuthenticationSettings` configuration for credential types
-  - `ICredentialFactory` interface and `CredentialFactory` implementation
-  - Support for DefaultAzureCredential, ServicePrincipal, and ManagedIdentity
-  - Service principal authentication via client secret or certificate
-  - User-assigned and system-assigned managed identity support
-  - Token caching with configurable refresh buffer
-  - `SearchIdentity` model matching Azure AI Search identity patterns
-  - `DiagnosticsController` with endpoints:
-    - `GET /admin/diagnostics/auth` - View auth configuration
-    - `GET /admin/diagnostics/credentials/test` - Test credential acquisition
-    - `POST /admin/diagnostics/credentials/token` - Acquire token for scope
-  - Updated `AzureBlobStorageConnector` to use credential factory
-  - Updated `AdlsGen2Connector` to use credential factory
-  - 39 new unit tests (292 total for API tests)
-
-- **Real Entra ID Authentication (Phase 3)**: Support for validating real Azure AD tokens
-  - `EntraIdAuthenticationHandler` for authenticating with real Azure AD Bearer tokens
-  - `EntraIdTokenValidator` service for token validation against Azure AD metadata endpoints
-  - OpenID Connect configuration retrieval with 24-hour caching
-  - Support for multiple valid audiences (including sovereign clouds)
-  - Support for multiple valid issuers (v1.0 and v2.0 token formats)
-  - Multi-tenant support via `AllowMultipleTenants` configuration
-  - Sovereign cloud support: Azure Public, Azure Government (US), Azure China, Azure Germany
-  - Claims extraction: oid, tid, appid/azp, roles, scp, idtyp, name/preferred_username
-  - Role-to-AccessLevel mapping matching simulated authentication
-  - 61 new unit tests for Entra ID authentication (253 total for API tests)
-
-- **Simulated Token Authentication (Phase 2)**: Local JWT token generation and validation
-  - `SimulatedTokenService` for generating JWT tokens that mimic Azure AD structure
-  - `SimulatedAuthenticationHandler` for validating Bearer tokens
-  - `TokenController` with endpoints for token generation and validation:
-    - `POST /admin/token` - Generate tokens with specified roles
-    - `POST /admin/token/validate` - Validate and inspect tokens
-    - `GET /admin/token/info` - Get authentication configuration
-    - `GET /admin/token/quick/{role}` - Quick token generation with role shortcuts
-  - `AuthorizationService` with RBAC permission matrix for all operations
-  - `SearchOperation` enum covering all Azure AI Search operations
-  - Support for service principal and user token types
-  - Role-to-AccessLevel mapping with GUID support
-  - 90 new unit tests (192 total for auth components)
-
-- **Authentication Foundation (Phase 1)**: Extensible authentication infrastructure
-  - New `AuthenticationSettings` configuration section with support for multiple auth modes
-  - `IAuthenticationHandler` interface for pluggable authentication handlers
-  - `AccessLevel` enum matching Azure AI Search RBAC model with 6 roles
-  - `AuthenticationResult` model for unified authentication responses
-  - `ApiKeyAuthenticationHandler` implementing the handler pattern
-  - `AuthenticationMiddleware` unified middleware with handler chain
-  - API key precedence rule matching Azure behavior (API key takes priority over Bearer tokens)
-  - Role mapping configuration for all Azure RBAC roles with GUIDs
-
-### Changed
-
-- Refactored authentication from hardcoded middleware to extensible handler pattern
-- Updated `Program.cs` to use new authentication DI registration
-- Updated `appsettings.json` to enable both ApiKey and Simulated authentication modes
-- Added `Microsoft.IdentityModel.Tokens` and `System.IdentityModel.Tokens.Jwt` packages
+- **Authentication System**: Complete authentication infrastructure matching Azure AI Search
+  - **API Key Authentication**: Admin and query keys with proper precedence rules
+  - **Simulated Tokens**: Local JWT generation via `/admin/token` endpoints for testing without Azure
+  - **Real Entra ID**: Validate Azure AD tokens from Azure CLI, PowerShell, and SDKs
+  - **RBAC Enforcement**: Role-based access control on all API operations
+  - **Outbound Authentication**: Credential factory for connecting to Azure Blob Storage, ADLS Gen2
+  - **Resource-Level Identity**: Per-resource managed identity on data sources, indexers, and skills
+  - **Documentation**: Comprehensive guide in `docs/AUTHENTICATION.md` with client IDs and examples
+  - 300+ unit tests for authentication components
 
 ---
 

@@ -113,8 +113,24 @@ public class EntraIdAuthenticationHandler : IAuthenticationHandler
                 AuthenticationMode);
         }
 
+        // Get roles from token, or use default roles if none present
+        var roles = validationResult.Roles;
+        if (roles == null || roles.Count == 0)
+        {
+            // Apply default roles for development/testing
+            if (settings.EntraId.DefaultRoles != null && settings.EntraId.DefaultRoles.Count > 0)
+            {
+                roles = settings.EntraId.DefaultRoles;
+                _logger.LogDebug("No roles in token, applying default roles: {Roles}", string.Join(", ", roles));
+            }
+            else
+            {
+                roles = new List<string>();
+            }
+        }
+
         // Map roles to access level
-        var accessLevel = MapRolesToAccessLevel(validationResult.Roles, settings.RoleMapping);
+        var accessLevel = MapRolesToAccessLevel(roles, settings.RoleMapping);
 
         _logger.LogDebug("Authenticated via Entra ID: {IdentityType} {ObjectId} with access level {AccessLevel}",
             validationResult.IdentityType, validationResult.ObjectId, accessLevel);
@@ -125,7 +141,7 @@ public class EntraIdAuthenticationHandler : IAuthenticationHandler
             identityId: validationResult.ObjectId ?? "unknown",
             identityName: validationResult.Name ?? validationResult.AppId ?? "Entra ID Identity",
             accessLevel: accessLevel,
-            roles: validationResult.Roles);
+            roles: roles);
 
         result.TenantId = validationResult.TenantId;
         result.ApplicationId = validationResult.AppId;
@@ -155,13 +171,20 @@ public class EntraIdAuthenticationHandler : IAuthenticationHandler
         var hasIndexDataReader = roles.Any(r => roleMapping.IndexDataReaderRoles.Contains(r, StringComparer.OrdinalIgnoreCase));
         var hasReader = roles.Any(r => roleMapping.ReaderRoles.Contains(r, StringComparer.OrdinalIgnoreCase));
 
-        // Service Contributor can manage indexes, indexers, etc.
+        // Combined roles: If user has ServiceContributor + any data role, they can do everything
+        // This matches the Azure "full development access" pattern
+        if (hasServiceContributor && (hasIndexDataContributor || hasIndexDataReader))
+        {
+            return AccessLevel.FullAccess;
+        }
+
+        // Service Contributor alone can manage indexes, indexers, etc. but NOT query data
         if (hasServiceContributor)
         {
             return AccessLevel.ServiceContributor;
         }
 
-        // Index Data Contributor can upload documents
+        // Index Data Contributor can upload documents AND query
         if (hasIndexDataContributor)
         {
             return AccessLevel.IndexDataContributor;

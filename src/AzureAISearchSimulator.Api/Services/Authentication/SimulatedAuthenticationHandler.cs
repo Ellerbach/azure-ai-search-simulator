@@ -3,6 +3,7 @@ using AzureAISearchSimulator.Core.Services.Authentication;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using System.IdentityModel.Tokens.Jwt;
 
 namespace AzureAISearchSimulator.Api.Services.Authentication;
 
@@ -96,6 +97,18 @@ public class SimulatedAuthenticationHandler : IAuthenticationHandler
                 AuthenticationMode));
         }
 
+        // Check if this token is intended for the simulated handler
+        // by examining the issuer claim before full validation
+        if (!IsSimulatedToken(token, settings.Simulated.Issuer))
+        {
+            // Not a simulated token - let other handlers (EntraId) try
+            _logger.LogDebug("Token is not a simulated token, passing to next handler");
+            return Task.FromResult(AuthenticationResult.Failure(
+                "NoCredentials",
+                "Token is not a simulated token.",
+                AuthenticationMode));
+        }
+
         // Validate the token
         var validationResult = _tokenService.ValidateToken(token);
 
@@ -152,13 +165,20 @@ public class SimulatedAuthenticationHandler : IAuthenticationHandler
         var hasIndexDataReader = roles.Any(r => roleMapping.IndexDataReaderRoles.Contains(r, StringComparer.OrdinalIgnoreCase));
         var hasReader = roles.Any(r => roleMapping.ReaderRoles.Contains(r, StringComparer.OrdinalIgnoreCase));
 
-        // Service Contributor can manage indexes, indexers, etc.
+        // Combined roles: If user has ServiceContributor + any data role, they can do everything
+        // This matches the Azure "full development access" pattern
+        if (hasServiceContributor && (hasIndexDataContributor || hasIndexDataReader))
+        {
+            return AccessLevel.FullAccess;
+        }
+
+        // Service Contributor alone can manage indexes, indexers, etc. but NOT query data
         if (hasServiceContributor)
         {
             return AccessLevel.ServiceContributor;
         }
 
-        // Index Data Contributor can upload documents
+        // Index Data Contributor can upload documents AND query
         if (hasIndexDataContributor)
         {
             return AccessLevel.IndexDataContributor;
@@ -177,5 +197,52 @@ public class SimulatedAuthenticationHandler : IAuthenticationHandler
         }
 
         return AccessLevel.None;
+    }
+
+    /// <summary>
+    /// Checks if a token is a simulated token by examining its issuer claim.
+    /// This allows real Entra ID tokens to pass through to the EntraId handler.
+    /// Returns true for tokens that can't be parsed (let the token service validate them).
+    /// </summary>
+    private bool IsSimulatedToken(string token, string expectedIssuer)
+    {
+        try
+        {
+            // Parse the JWT without validation to check the issuer
+            var handler = new JwtSecurityTokenHandler();
+            if (!handler.CanReadToken(token))
+            {
+                // Can't parse as JWT - could be an invalid token or test data
+                // Let it through so the token service can validate/reject it
+                return true;
+            }
+
+            var jwtToken = handler.ReadJwtToken(token);
+            var issuer = jwtToken.Issuer;
+
+            // Check if the issuer matches our simulated issuer
+            if (string.IsNullOrEmpty(issuer))
+            {
+                // No issuer claim - could be a test token, let it through
+                return true;
+            }
+
+            // Match against the configured simulated issuer
+            var isSimulated = issuer.Equals(expectedIssuer, StringComparison.OrdinalIgnoreCase);
+            
+            if (!isSimulated)
+            {
+                _logger.LogDebug("Token issuer '{Issuer}' does not match simulated issuer '{ExpectedIssuer}', passing to next handler", 
+                    issuer, expectedIssuer);
+            }
+
+            return isSimulated;
+        }
+        catch (Exception ex)
+        {
+            // Parse error - could be malformed or test data, let token service decide
+            _logger.LogDebug(ex, "Failed to parse token to check issuer, attempting validation anyway");
+            return true;
+        }
     }
 }

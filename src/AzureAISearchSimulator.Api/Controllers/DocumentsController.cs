@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using AzureAISearchSimulator.Core.Models;
 using AzureAISearchSimulator.Core.Services;
+using AzureAISearchSimulator.Api.Services.Authorization;
 
 namespace AzureAISearchSimulator.Api.Controllers;
 
@@ -15,15 +16,18 @@ public class DocumentsController : ControllerBase
     private readonly ILogger<DocumentsController> _logger;
     private readonly IDocumentService _documentService;
     private readonly ISearchService _searchService;
+    private readonly IAuthorizationService _authorizationService;
 
     public DocumentsController(
         ILogger<DocumentsController> logger,
         IDocumentService documentService,
-        ISearchService searchService)
+        ISearchService searchService,
+        IAuthorizationService authorizationService)
     {
         _logger = logger;
         _documentService = documentService;
         _searchService = searchService;
+        _authorizationService = authorizationService;
     }
 
     /// <summary>
@@ -35,12 +39,17 @@ public class DocumentsController : ControllerBase
     [ProducesResponseType(typeof(IndexDocumentsResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(IndexDocumentsResponse), StatusCodes.Status207MultiStatus)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> IndexDocuments(
         string indexName,
         [FromBody] IndexDocumentsRequest request,
         [FromQuery(Name = "api-version")] string? apiVersion = null)
     {
+        // Check authorization - document operations require IndexDataContributor
+        var authResult = this.CheckAuthorization(_authorizationService, SearchOperation.UploadDocuments);
+        if (authResult != null) return authResult;
+
         if (request.Value == null || !request.Value.Any())
         {
             return BadRequest(new { error = new { message = "Request must contain at least one document action" } });
@@ -78,12 +87,17 @@ public class DocumentsController : ControllerBase
     [HttpPost("search.post")] // Azure SDK may use this format
     [HttpPost("search.post.search")] // Azure SDK uses this format for search
     [ProducesResponseType(typeof(SearchResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Search(
         string indexName,
         [FromBody] SearchRequest request,
         [FromQuery(Name = "api-version")] string? apiVersion = null)
     {
+        // Check authorization - search requires IndexDataReader
+        var authResult = this.CheckAuthorization(_authorizationService, SearchOperation.Search);
+        if (authResult != null) return authResult;
+
         try
         {
             var response = await _searchService.SearchAsync(indexName, request);
@@ -106,6 +120,7 @@ public class DocumentsController : ControllerBase
     /// </summary>
     [HttpGet]
     [ProducesResponseType(typeof(SearchResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> SearchGet(
         string indexName,
@@ -121,6 +136,10 @@ public class DocumentsController : ControllerBase
         [FromQuery] string? queryType = null,
         [FromQuery(Name = "api-version")] string? apiVersion = null)
     {
+        // Check authorization - search requires IndexDataReader
+        var authResult = this.CheckAuthorization(_authorizationService, SearchOperation.Search);
+        if (authResult != null) return authResult;
+
         var request = new SearchRequest
         {
             Search = search ?? "*",
@@ -157,6 +176,7 @@ public class DocumentsController : ControllerBase
     /// </summary>
     [HttpGet("{key}")]
     [ProducesResponseType(typeof(Dictionary<string, object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetDocument(
         string indexName,
@@ -164,6 +184,10 @@ public class DocumentsController : ControllerBase
         [FromQuery(Name = "$select")] string? select = null,
         [FromQuery(Name = "api-version")] string? apiVersion = null)
     {
+        // Check authorization - lookup requires IndexDataReader
+        var authResult = this.CheckAuthorization(_authorizationService, SearchOperation.Lookup);
+        if (authResult != null) return authResult;
+
         try
         {
             var selectedFields = string.IsNullOrWhiteSpace(select)
@@ -195,11 +219,16 @@ public class DocumentsController : ControllerBase
     /// </summary>
     [HttpGet("$count")]
     [ProducesResponseType(typeof(long), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetDocumentCount(
         string indexName,
         [FromQuery(Name = "api-version")] string? apiVersion = null)
     {
+        // Check authorization - count requires IndexDataReader
+        var authResult = this.CheckAuthorization(_authorizationService, SearchOperation.Count);
+        if (authResult != null) return authResult;
+
         try
         {
             var count = await _documentService.GetDocumentCountAsync(indexName);
@@ -222,12 +251,17 @@ public class DocumentsController : ControllerBase
     /// </summary>
     [HttpPost("suggest")]
     [ProducesResponseType(typeof(SuggestResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Suggest(
         string indexName,
         [FromBody] SuggestRequest request,
         [FromQuery(Name = "api-version")] string? apiVersion = null)
     {
+        // Check authorization - suggest requires IndexDataReader
+        var authResult = this.CheckAuthorization(_authorizationService, SearchOperation.Suggest);
+        if (authResult != null) return authResult;
+
         try
         {
             var response = await _searchService.SuggestAsync(indexName, request);
@@ -250,12 +284,17 @@ public class DocumentsController : ControllerBase
     /// </summary>
     [HttpPost("autocomplete")]
     [ProducesResponseType(typeof(AutocompleteResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Autocomplete(
         string indexName,
         [FromBody] AutocompleteRequest request,
         [FromQuery(Name = "api-version")] string? apiVersion = null)
     {
+        // Check authorization - autocomplete requires IndexDataReader
+        var authResult = this.CheckAuthorization(_authorizationService, SearchOperation.Autocomplete);
+        if (authResult != null) return authResult;
+
         try
         {
             var response = await _searchService.AutocompleteAsync(indexName, request);

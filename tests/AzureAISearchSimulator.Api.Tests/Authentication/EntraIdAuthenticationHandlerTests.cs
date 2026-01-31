@@ -290,8 +290,13 @@ public class EntraIdAuthenticationHandlerTests
     }
 
     [Fact]
-    public async Task AuthenticateAsync_WithNoRoles_ReturnsNoneAccessLevel()
+    public async Task AuthenticateAsync_WithNoRoles_AndNoDefaultRoles_ReturnsNoneAccessLevel()
     {
+        // Arrange: configure empty default roles
+        var settings = CreateDefaultSettings();
+        settings.EntraId.DefaultRoles = new List<string>();
+        _authSettingsMock.Setup(x => x.CurrentValue).Returns(settings);
+
         var context = CreateHttpContext(bearerToken: "no-role-token");
         var validationResult = CreateValidationResult(roles: new List<string>());
 
@@ -303,6 +308,28 @@ public class EntraIdAuthenticationHandlerTests
 
         Assert.True(result.IsAuthenticated);
         Assert.Equal(AccessLevel.None, result.AccessLevel);
+    }
+
+    [Fact]
+    public async Task AuthenticateAsync_WithNoRoles_UsesDefaultRoles()
+    {
+        // Arrange: ensure default roles are configured (which they are by default in EntraIdSettings)
+        var settings = CreateDefaultSettings();
+        // DefaultRoles includes: Search Index Data Reader, Search Index Data Contributor, Search Service Contributor
+        _authSettingsMock.Setup(x => x.CurrentValue).Returns(settings);
+
+        var context = CreateHttpContext(bearerToken: "no-role-token");
+        var validationResult = CreateValidationResult(roles: new List<string>());
+
+        _tokenValidatorMock
+            .Setup(x => x.ValidateTokenAsync("no-role-token", It.IsAny<EntraIdSettings>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(validationResult);
+
+        var result = await _handler.AuthenticateAsync(context);
+
+        Assert.True(result.IsAuthenticated);
+        // With all three default roles, should get FullAccess
+        Assert.Equal(AccessLevel.FullAccess, result.AccessLevel);
     }
 
     [Fact]

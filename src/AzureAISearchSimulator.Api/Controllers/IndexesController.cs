@@ -2,6 +2,7 @@ using AzureAISearchSimulator.Core.Models;
 using AzureAISearchSimulator.Core.Services;
 using AzureAISearchSimulator.Search;
 using AzureAISearchSimulator.Search.Hnsw;
+using AzureAISearchSimulator.Api.Services.Authorization;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -19,6 +20,7 @@ public class IndexesController : ControllerBase
     private readonly IDocumentService _documentService;
     private readonly LuceneIndexManager _luceneManager;
     private readonly IHnswIndexManager _hnswManager;
+    private readonly IAuthorizationService _authorizationService;
     private readonly ILogger<IndexesController> _logger;
 
     public IndexesController(
@@ -26,12 +28,14 @@ public class IndexesController : ControllerBase
         IDocumentService documentService,
         LuceneIndexManager luceneManager,
         IHnswIndexManager hnswManager,
+        IAuthorizationService authorizationService,
         ILogger<IndexesController> logger)
     {
         _indexService = indexService;
         _documentService = documentService;
         _luceneManager = luceneManager;
         _hnswManager = hnswManager;
+        _authorizationService = authorizationService;
         _logger = logger;
     }
 
@@ -41,12 +45,17 @@ public class IndexesController : ControllerBase
     [HttpPost]
     [ProducesResponseType(typeof(SearchIndex), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ODataError), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ODataError), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ODataError), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> CreateIndex(
         [FromBody] SearchIndex index,
         [FromQuery(Name = "api-version")] string apiVersion,
         CancellationToken cancellationToken)
     {
+        // Check authorization - creating indexes requires ServiceContributor
+        var authResult = this.CheckAuthorization(_authorizationService, SearchOperation.CreateIndex);
+        if (authResult != null) return authResult;
+
         try
         {
             var created = await _indexService.CreateIndexAsync(index, cancellationToken);
@@ -71,12 +80,17 @@ public class IndexesController : ControllerBase
     [HttpGet("{indexName}")]
     [HttpGet("('{indexName}')")] // OData entity syntax for Azure SDK compatibility
     [ProducesResponseType(typeof(SearchIndex), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ODataError), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ODataError), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetIndex(
         string indexName,
         [FromQuery(Name = "api-version")] string apiVersion,
         CancellationToken cancellationToken)
     {
+        // Check authorization - getting index requires ServiceContributor
+        var authResult = this.CheckAuthorization(_authorizationService, SearchOperation.GetIndex);
+        if (authResult != null) return authResult;
+
         var index = await _indexService.GetIndexAsync(indexName, cancellationToken);
         if (index == null)
         {
@@ -93,10 +107,15 @@ public class IndexesController : ControllerBase
     /// </summary>
     [HttpGet]
     [ProducesResponseType(typeof(ODataResponse<SearchIndex>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ODataError), StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> ListIndexes(
         [FromQuery(Name = "api-version")] string apiVersion,
         CancellationToken cancellationToken)
     {
+        // Check authorization - listing indexes requires ServiceContributor
+        var authResult = this.CheckAuthorization(_authorizationService, SearchOperation.ListIndexes);
+        if (authResult != null) return authResult;
+
         var indexes = await _indexService.ListIndexesAsync(cancellationToken);
         
         var response = new ODataResponse<SearchIndex>
@@ -116,12 +135,17 @@ public class IndexesController : ControllerBase
     [ProducesResponseType(typeof(SearchIndex), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(SearchIndex), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ODataError), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ODataError), StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> CreateOrUpdateIndex(
         string indexName,
         [FromBody] SearchIndex index,
         [FromQuery(Name = "api-version")] string apiVersion,
         CancellationToken cancellationToken)
     {
+        // Check authorization - updating indexes requires ServiceContributor
+        var authResult = this.CheckAuthorization(_authorizationService, SearchOperation.UpdateIndex);
+        if (authResult != null) return authResult;
+
         try
         {
             var existed = await _indexService.IndexExistsAsync(indexName, cancellationToken);
@@ -150,12 +174,17 @@ public class IndexesController : ControllerBase
     [HttpDelete("{indexName}")]
     [HttpDelete("('{indexName}')")] // OData entity syntax for Azure SDK compatibility
     [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ODataError), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ODataError), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> DeleteIndex(
         string indexName,
         [FromQuery(Name = "api-version")] string apiVersion,
         CancellationToken cancellationToken)
     {
+        // Check authorization - deleting indexes requires ServiceContributor
+        var authResult = this.CheckAuthorization(_authorizationService, SearchOperation.DeleteIndex);
+        if (authResult != null) return authResult;
+
         var deleted = await _indexService.DeleteIndexAsync(indexName, cancellationToken);
         if (!deleted)
         {
@@ -170,6 +199,7 @@ public class IndexesController : ControllerBase
     /// </summary>
     [HttpPost("{indexName}/analyze")]
     [ProducesResponseType(typeof(AnalyzeResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ODataError), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ODataError), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> AnalyzeText(
         string indexName,
@@ -177,6 +207,10 @@ public class IndexesController : ControllerBase
         [FromQuery(Name = "api-version")] string apiVersion,
         CancellationToken cancellationToken)
     {
+        // Check authorization - analyzing text requires ServiceContributor
+        var authResult = this.CheckAuthorization(_authorizationService, SearchOperation.GetIndex);
+        if (authResult != null) return authResult;
+
         var index = await _indexService.GetIndexAsync(indexName, cancellationToken);
         if (index == null)
         {
@@ -206,12 +240,17 @@ public class IndexesController : ControllerBase
     /// </summary>
     [HttpGet("{indexName}/stats")]
     [ProducesResponseType(typeof(IndexStatistics), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ODataError), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ODataError), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetIndexStatistics(
         string indexName,
         [FromQuery(Name = "api-version")] string apiVersion,
         CancellationToken cancellationToken)
     {
+        // Check authorization - getting stats requires ServiceContributor
+        var authResult = this.CheckAuthorization(_authorizationService, SearchOperation.GetIndexStatistics);
+        if (authResult != null) return authResult;
+
         var index = await _indexService.GetIndexAsync(indexName, cancellationToken);
         if (index == null)
         {
