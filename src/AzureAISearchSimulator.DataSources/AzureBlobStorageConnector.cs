@@ -1,8 +1,10 @@
 using Azure;
+using Azure.Core;
 using Azure.Identity;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using AzureAISearchSimulator.Core.Models;
+using AzureAISearchSimulator.Core.Services.Credentials;
 using AzureAISearchSimulator.Search.DataSources;
 using Microsoft.Extensions.Logging;
 
@@ -10,11 +12,12 @@ namespace AzureAISearchSimulator.DataSources;
 
 /// <summary>
 /// Connector for reading documents from Azure Blob Storage.
-/// Supports both connection string and managed identity authentication.
+/// Supports connection string, SAS tokens, and managed identity authentication.
 /// </summary>
 public class AzureBlobStorageConnector : IDataSourceConnector
 {
     private readonly ILogger<AzureBlobStorageConnector> _logger;
+    private readonly ICredentialFactory _credentialFactory;
 
     private static readonly Dictionary<string, string> MimeTypes = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -36,9 +39,12 @@ public class AzureBlobStorageConnector : IDataSourceConnector
         { ".gif", "image/gif" },
     };
 
-    public AzureBlobStorageConnector(ILogger<AzureBlobStorageConnector> logger)
+    public AzureBlobStorageConnector(
+        ILogger<AzureBlobStorageConnector> logger,
+        ICredentialFactory credentialFactory)
     {
         _logger = logger;
+        _credentialFactory = credentialFactory;
     }
 
     public string Type => DataSourceType.AzureBlob;
@@ -196,13 +202,31 @@ public class AzureBlobStorageConnector : IDataSourceConnector
             throw new ArgumentException("Connection string is required for Azure Blob Storage");
         }
 
+        // Parse identity from data source if specified
+        var identity = ParseIdentity(dataSource);
+
+        // If identity is explicitly set to None, must use connection string with key
+        if (identity?.IsNone == true)
+        {
+            if (!connectionString.Contains("AccountKey=", StringComparison.OrdinalIgnoreCase) &&
+                !connectionString.Contains("SharedAccessSignature=", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException("Identity is set to None but connection string doesn't contain AccountKey or SharedAccessSignature");
+            }
+
+            _logger.LogDebug("Using connection string authentication (identity=none)");
+            var serviceClient = new BlobServiceClient(connectionString);
+            return serviceClient.GetBlobContainerClient(containerName);
+        }
+
         // Check if it's a connection string or account URL
         if (connectionString.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ||
             connectionString.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
         {
-            // Use managed identity
+            // Use credential factory for managed identity
+            var credential = GetCredentialForDataSource(identity);
             _logger.LogDebug("Using managed identity for Azure Blob Storage");
-            var serviceClient = new BlobServiceClient(new Uri(connectionString), new DefaultAzureCredential());
+            var serviceClient = new BlobServiceClient(new Uri(connectionString), credential);
             return serviceClient.GetBlobContainerClient(containerName);
         }
         else if (connectionString.Contains("AccountKey=", StringComparison.OrdinalIgnoreCase) ||
@@ -217,10 +241,32 @@ public class AzureBlobStorageConnector : IDataSourceConnector
         {
             // Assume it's an account name, use managed identity
             var accountUrl = $"https://{connectionString}.blob.core.windows.net";
+            var credential = GetCredentialForDataSource(identity);
             _logger.LogDebug("Using managed identity with account name for Azure Blob Storage: {Account}", connectionString);
-            var serviceClient = new BlobServiceClient(new Uri(accountUrl), new DefaultAzureCredential());
+            var serviceClient = new BlobServiceClient(new Uri(accountUrl), credential);
             return serviceClient.GetBlobContainerClient(containerName);
         }
+    }
+
+    private TokenCredential GetCredentialForDataSource(SearchIdentity? identity)
+    {
+        return _credentialFactory.GetCredential(identity: identity);
+    }
+
+    private static SearchIdentity? ParseIdentity(DataSource dataSource)
+    {
+        // Convert ResourceIdentity from the model to SearchIdentity for the credential factory
+        var resourceIdentity = dataSource.Identity;
+        if (resourceIdentity == null)
+        {
+            return null; // Use default credential
+        }
+
+        return new SearchIdentity
+        {
+            ODataType = resourceIdentity.ODataType,
+            UserAssignedIdentity = resourceIdentity.UserAssignedIdentity
+        };
     }
 
     private static async Task<byte[]> DownloadBlobContentAsync(BlobClient blobClient)

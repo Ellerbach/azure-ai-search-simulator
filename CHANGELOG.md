@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Authentication System**: Complete authentication infrastructure matching Azure AI Search
+  - **API Key Authentication**: Admin and query keys with proper precedence rules
+  - **Simulated Tokens**: Local JWT generation via `/admin/token` endpoints for testing without Azure
+  - **Real Entra ID**: Validate Azure AD tokens from Azure CLI, PowerShell, and SDKs
+  - **RBAC Enforcement**: Role-based access control on all API operations
+  - **Outbound Authentication**: Credential factory for connecting to Azure Blob Storage, ADLS Gen2
+  - **Resource-Level Identity**: Per-resource managed identity on data sources, indexers, and skills
+  - **Documentation**: Comprehensive guide in `docs/AUTHENTICATION.md` with client IDs and examples
+  - 300+ unit tests for authentication components
+
+---
+
+### Added
+
 - **Normalizers (API 2025-09-01)**: Support for text normalization on keyword fields
   - Predefined normalizers: `standard`, `lowercase`, `uppercase`, `asciifolding`, `elision`
   - Custom normalizers with token filters and character filters

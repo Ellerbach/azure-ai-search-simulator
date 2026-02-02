@@ -1,10 +1,14 @@
 ﻿namespace AzureAISearchSimulator.Api.Tests;
 
-public class UnitTest1
+/// <summary>
+/// Placeholder test class. Real tests are in the Authentication folder.
+/// </summary>
+public class PlaceholderTests
 {
     [Fact]
-    public void Test1()
+    public void Placeholder_AlwaysPasses()
     {
-
+        // This is just a placeholder. Real tests are in Authentication folder.
+        Assert.True(true);
     }
 }

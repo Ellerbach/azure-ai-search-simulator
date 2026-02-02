@@ -221,6 +221,21 @@ public class Skill
     /// </summary>
     [JsonPropertyName("defaultLanguageCode")]
     public string? DefaultLanguageCode { get; set; }
+
+    /// <summary>
+    /// For CustomWebApiSkill and AzureOpenAIEmbeddingSkill: The Azure resource ID 
+    /// to acquire a token for when calling the skill endpoint.
+    /// The token will be passed as a Bearer token in the Authorization header.
+    /// </summary>
+    [JsonPropertyName("authResourceId")]
+    public string? AuthResourceId { get; set; }
+
+    /// <summary>
+    /// For CustomWebApiSkill and AzureOpenAIEmbeddingSkill: The identity to use 
+    /// for authenticating to the skill endpoint.
+    /// </summary>
+    [JsonPropertyName("authIdentity")]
+    public ResourceIdentity? AuthIdentity { get; set; }
 }
 
 /// <summary>
@@ -278,6 +293,9 @@ public class CognitiveServicesAccount
 {
     /// <summary>
     /// OData type for the account configuration.
+    /// Values: #Microsoft.Azure.Search.CognitiveServicesByKey,
+    ///         #Microsoft.Azure.Search.AIServicesByKey,
+    ///         #Microsoft.Azure.Search.AIServicesByIdentity
     /// </summary>
     [JsonPropertyName("@odata.type")]
     public string? ODataType { get; set; }
@@ -299,6 +317,33 @@ public class CognitiveServicesAccount
     /// </summary>
     [JsonPropertyName("description")]
     public string? Description { get; set; }
+
+    /// <summary>
+    /// Subdomain URL for the AI services endpoint.
+    /// Used with AIServicesByIdentity for managed identity authentication.
+    /// </summary>
+    [JsonPropertyName("subdomainUrl")]
+    public string? SubdomainUrl { get; set; }
+
+    /// <summary>
+    /// Identity to use for authenticating to AI Services.
+    /// Used with AIServicesByIdentity type.
+    /// </summary>
+    [JsonPropertyName("identity")]
+    public ResourceIdentity? Identity { get; set; }
+
+    /// <summary>
+    /// Whether this account uses managed identity authentication.
+    /// </summary>
+    [JsonIgnore]
+    public bool UsesManagedIdentity => ODataType == CognitiveServicesAccountTypes.AIServicesByIdentity;
+
+    /// <summary>
+    /// Whether this account uses API key authentication.
+    /// </summary>
+    [JsonIgnore]
+    public bool UsesApiKey => ODataType == CognitiveServicesAccountTypes.ByKey ||
+                              ODataType == CognitiveServicesAccountTypes.AIServicesByKey;
 }
 
 /// <summary>

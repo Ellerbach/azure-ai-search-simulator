@@ -1,8 +1,10 @@
 using Azure;
+using Azure.Core;
 using Azure.Identity;
 using Azure.Storage.Files.DataLake;
 using Azure.Storage.Files.DataLake.Models;
 using AzureAISearchSimulator.Core.Models;
+using AzureAISearchSimulator.Core.Services.Credentials;
 using AzureAISearchSimulator.Search.DataSources;
 using Microsoft.Extensions.Logging;
 
@@ -10,12 +12,13 @@ namespace AzureAISearchSimulator.DataSources;
 
 /// <summary>
 /// Connector for reading documents from Azure Data Lake Storage Gen2 (ADLS Gen2).
-/// Supports both connection string and managed identity authentication.
+/// Supports connection string, SAS tokens, and managed identity authentication.
 /// ADLS Gen2 provides hierarchical namespace support with better performance for big data scenarios.
 /// </summary>
 public class AdlsGen2Connector : IDataSourceConnector
 {
     private readonly ILogger<AdlsGen2Connector> _logger;
+    private readonly ICredentialFactory _credentialFactory;
 
     private static readonly Dictionary<string, string> MimeTypes = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -40,9 +43,12 @@ public class AdlsGen2Connector : IDataSourceConnector
         { ".orc", "application/orc" },
     };
 
-    public AdlsGen2Connector(ILogger<AdlsGen2Connector> logger)
+    public AdlsGen2Connector(
+        ILogger<AdlsGen2Connector> logger,
+        ICredentialFactory credentialFactory)
     {
         _logger = logger;
+        _credentialFactory = credentialFactory;
     }
 
     /// <summary>
@@ -239,21 +245,40 @@ public class AdlsGen2Connector : IDataSourceConnector
             throw new ArgumentException("Connection string or account URL is required for ADLS Gen2");
         }
 
+        // Parse identity from data source if specified
+        var identity = ParseIdentity(dataSource);
+
+        // If identity is explicitly set to None, must use connection string with key
+        if (identity?.IsNone == true)
+        {
+            if (!connectionString.Contains("AccountKey=", StringComparison.OrdinalIgnoreCase) &&
+                !connectionString.Contains("SharedAccessSignature=", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException("Identity is set to None but connection string doesn't contain AccountKey or SharedAccessSignature");
+            }
+
+            _logger.LogDebug("Using connection string authentication (identity=none)");
+            var serviceClient = new DataLakeServiceClient(connectionString);
+            return serviceClient.GetFileSystemClient(fileSystemName);
+        }
+
         // Check if it's a DFS endpoint URL (https://account.dfs.core.windows.net)
         if (connectionString.Contains(".dfs.core.windows.net", StringComparison.OrdinalIgnoreCase))
         {
-            // Use managed identity with DFS endpoint
+            // Use credential factory for managed identity
+            var credential = GetCredentialForDataSource(identity);
             _logger.LogDebug("Using managed identity for ADLS Gen2 with DFS endpoint");
-            var serviceClient = new DataLakeServiceClient(new Uri(connectionString), new DefaultAzureCredential());
+            var serviceClient = new DataLakeServiceClient(new Uri(connectionString), credential);
             return serviceClient.GetFileSystemClient(fileSystemName);
         }
         else if (connectionString.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ||
                  connectionString.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
         {
             // Generic HTTPS URL - convert to DFS endpoint if needed
+            var credential = GetCredentialForDataSource(identity);
             _logger.LogDebug("Using managed identity for ADLS Gen2");
             var dfsUri = ConvertToDfsEndpoint(connectionString);
-            var serviceClient = new DataLakeServiceClient(new Uri(dfsUri), new DefaultAzureCredential());
+            var serviceClient = new DataLakeServiceClient(new Uri(dfsUri), credential);
             return serviceClient.GetFileSystemClient(fileSystemName);
         }
         else if (connectionString.Contains("AccountKey=", StringComparison.OrdinalIgnoreCase) ||
@@ -268,10 +293,32 @@ public class AdlsGen2Connector : IDataSourceConnector
         {
             // Assume it's an account name, use managed identity
             var accountUrl = $"https://{connectionString}.dfs.core.windows.net";
+            var credential = GetCredentialForDataSource(identity);
             _logger.LogDebug("Using managed identity with account name for ADLS Gen2: {Account}", connectionString);
-            var serviceClient = new DataLakeServiceClient(new Uri(accountUrl), new DefaultAzureCredential());
+            var serviceClient = new DataLakeServiceClient(new Uri(accountUrl), credential);
             return serviceClient.GetFileSystemClient(fileSystemName);
         }
+    }
+
+    private TokenCredential GetCredentialForDataSource(SearchIdentity? identity)
+    {
+        return _credentialFactory.GetCredential(identity: identity);
+    }
+
+    private static SearchIdentity? ParseIdentity(DataSource dataSource)
+    {
+        // Convert ResourceIdentity from the model to SearchIdentity for the credential factory
+        var resourceIdentity = dataSource.Identity;
+        if (resourceIdentity == null)
+        {
+            return null; // Use default credential
+        }
+
+        return new SearchIdentity
+        {
+            ODataType = resourceIdentity.ODataType,
+            UserAssignedIdentity = resourceIdentity.UserAssignedIdentity
+        };
     }
 
     private static string ConvertToDfsEndpoint(string url)

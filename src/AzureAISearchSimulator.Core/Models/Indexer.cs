@@ -76,6 +76,14 @@ public class Indexer
     public bool? Disabled { get; set; }
 
     /// <summary>
+    /// Identity configuration for the indexer.
+    /// When set, the indexer uses this identity for data source connections
+    /// and skill authentication instead of the search service identity.
+    /// </summary>
+    [JsonPropertyName("identity")]
+    public ResourceIdentity? Identity { get; set; }
+
+    /// <summary>
     /// ETag for optimistic concurrency.
     /// </summary>
     [JsonPropertyName("@odata.etag")]

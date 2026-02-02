@@ -31,7 +31,9 @@ The Azure AI Search Simulator provides a local implementation of the Azure AI Se
 - **Suggestions**: Prefix-based suggestions
 - **Vector Search**: Cosine similarity with `Collection(Edm.Single)` fields
 - **Hybrid Search**: Combined text and vector search scoring
-- **Authentication**: API key-based authentication (admin and query keys)
+- **Authentication**: API keys, simulated JWT tokens, and Entra ID (Azure AD) support
+- **Role-Based Access Control**: Full RBAC with 6 Azure Search roles
+- **Managed Identity**: Resource-level identity for data sources, indexers, and skills
 - **Storage**: LiteDB for index metadata, Lucene.NET for document indexing
 - **Data Sources**: Azure Blob Storage, ADLS Gen2, and file system connectors
 - **Indexers**: Automated document ingestion with field mappings and status tracking (Pull Mode)
@@ -266,6 +268,51 @@ POST https://localhost:7250/indexers/my-indexer/run?api-version=2024-07-01
 api-key: admin-key-12345
 ```
 
+## Authentication
+
+The simulator supports three authentication modes that can be enabled simultaneously:
+
+### API Key (Default)
+
+```http
+api-key: admin-key-12345
+```
+
+### Simulated Tokens (Local Development)
+
+Generate JWT tokens locally for testing RBAC without Azure:
+
+```http
+### Get a token with Search Index Data Contributor role
+GET https://localhost:7250/admin/token/quick/data-contributor
+api-key: admin-key-12345
+
+### Use the token
+GET https://localhost:7250/indexes
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+### Entra ID (Real Azure AD)
+
+Validate real Azure AD tokens for production-like testing:
+
+```csharp
+var credential = new DefaultAzureCredential();
+var searchClient = new SearchClient(endpoint, "my-index", credential);
+```
+
+### Role-Based Access Control
+
+The simulator enforces Azure AI Search RBAC:
+
+| Role | Permissions |
+|------|-------------|
+| Search Service Contributor | Manage indexes, indexers, data sources, skillsets |
+| Search Index Data Contributor | Upload, merge, delete documents |
+| Search Index Data Reader | Search, suggest, autocomplete |
+
+> 📚 See [docs/AUTHENTICATION.md](docs/AUTHENTICATION.md) for the complete authentication guide.
+
 ## Configuration
 
 Edit `appsettings.json` to customize the simulator:
@@ -288,6 +335,7 @@ Edit `appsettings.json` to customize the simulator:
 - [Development Plan](docs/PLAN.md) - Full project plan and architecture
 - [API Reference](docs/API-REFERENCE.md) - Complete REST API documentation
 - [Configuration Guide](docs/CONFIGURATION.md) - Detailed configuration options
+- [Authentication Guide](docs/AUTHENTICATION.md) - API keys, JWT tokens, Entra ID, and RBAC
 - [Limitations](docs/LIMITATIONS.md) - Differences from Azure AI Search
 
 ## Samples
@@ -336,7 +384,8 @@ AzureAISearchSimulator/
 | Document Cracking | ✅ | ✅ |
 | Semantic search | ✅ | ❌ |
 | AI skills (OCR, etc.) | ✅ | ❌ |
-| Managed Identity | ✅ | ❌ |
+| Managed Identity | ✅ | ✅ (simulated) |
+| Entra ID Authentication | ✅ | ✅ |
 | Scale (millions of docs) | ✅ | Limited |
 
 ### Skills Support
