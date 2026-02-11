@@ -306,7 +306,7 @@ var searchClient = new SearchClient(endpoint, "my-index", credential);
 The simulator enforces Azure AI Search RBAC:
 
 | Role | Permissions |
-|------|-------------|
+| ---- | ----------- |
 | Search Service Contributor | Manage indexes, indexers, data sources, skillsets |
 | Search Index Data Contributor | Upload, merge, delete documents |
 | Search Index Data Reader | Search, suggest, autocomplete |
@@ -329,6 +329,27 @@ Edit `appsettings.json` to customize the simulator:
   }
 }
 ```
+
+### Diagnostic Logging
+
+Enable verbose logging to debug indexer and skill pipeline execution:
+
+```json
+{
+  "DiagnosticLogging": {
+    "Enabled": true,
+    "LogDocumentDetails": true,
+    "LogSkillExecution": true,
+    "LogSkillInputPayloads": true,
+    "LogSkillOutputPayloads": true,
+    "LogEnrichedDocumentState": false,
+    "LogFieldMappings": true,
+    "MaxStringLogLength": 500
+  }
+}
+```
+
+Logs are written to `logs/simulator-{date}.log` and console. Look for `[DIAGNOSTIC]` prefixed entries.
 
 ## Documentation
 

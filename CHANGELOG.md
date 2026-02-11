@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Diagnostic Logging**: Optional verbose logging for debugging indexer and skill pipeline execution
+  - Log document details, skill inputs/outputs, and field mappings
+  - Enable via `DiagnosticLogging:Enabled` in `appsettings.json`
+  - All diagnostic entries prefixed with `[DIAGNOSTIC]` for easy filtering
+
+---
+
+### Added
+
 - **Authentication System**: Complete authentication infrastructure matching Azure AI Search
   - **API Key Authentication**: Admin and query keys with proper precedence rules
   - **Simulated Tokens**: Local JWT generation via `/admin/token` endpoints for testing without Azure
