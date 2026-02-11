@@ -1,4 +1,6 @@
+using System.Text.Json;
 using System.Text.RegularExpressions;
+using AzureAISearchSimulator.Core.Configuration;
 using AzureAISearchSimulator.Core.Models;
 using AzureAISearchSimulator.Core.Services;
 using AzureAISearchSimulator.Search.DataSources;
@@ -6,6 +8,7 @@ using AzureAISearchSimulator.Search.DocumentCracking;
 using AzureAISearchSimulator.Search.Skills;
 using AzureAISearchSimulator.Storage.Repositories;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace AzureAISearchSimulator.Api.Services;
 
@@ -45,6 +48,12 @@ public partial class IndexerService : IIndexerService
     private readonly ISkillPipeline _skillPipeline;
     private readonly IDocumentService _documentService;
     private readonly ILogger<IndexerService> _logger;
+    private readonly DiagnosticLoggingSettings _diagnosticSettings;
+    private static readonly JsonSerializerOptions _jsonOptions = new() 
+    { 
+        WriteIndented = true,
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+    };
 
     public IndexerService(
         IIndexerRepository repository,
@@ -55,7 +64,8 @@ public partial class IndexerService : IIndexerService
         IDocumentCrackerFactory documentCrackerFactory,
         ISkillPipeline skillPipeline,
         IDocumentService documentService,
-        ILogger<IndexerService> logger)
+        ILogger<IndexerService> logger,
+        IOptions<DiagnosticLoggingSettings> diagnosticSettings)
     {
         _repository = repository;
         _dataSourceService = dataSourceService;
@@ -66,6 +76,7 @@ public partial class IndexerService : IIndexerService
         _skillPipeline = skillPipeline;
         _documentService = documentService;
         _logger = logger;
+        _diagnosticSettings = diagnosticSettings.Value;
     }
 
     public async Task<Indexer> CreateAsync(Indexer indexer)
@@ -356,8 +367,24 @@ public partial class IndexerService : IIndexerService
 
     private async Task ProcessDocumentAsync(Indexer indexer, DataSourceDocument sourceDoc)
     {
+        var processStart = DateTime.UtcNow;
+        
         // Validate document key before processing
         ValidateDocumentKey(sourceDoc.Key, sourceDoc.Name, indexer.DataSourceName);
+
+        // Diagnostic: Log document processing start
+        if (_diagnosticSettings.Enabled && _diagnosticSettings.LogDocumentDetails)
+        {
+            _logger.LogInformation(
+                "[DIAGNOSTIC] Processing document: Key='{DocumentKey}', Name='{DocumentName}', ContentType='{ContentType}', Size={Size} bytes",
+                sourceDoc.Key, sourceDoc.Name, sourceDoc.ContentType, sourceDoc.Size);
+            
+            if (sourceDoc.Metadata.Count > 0)
+            {
+                var metadataJson = JsonSerializer.Serialize(sourceDoc.Metadata, _jsonOptions);
+                _logger.LogInformation("[DIAGNOSTIC] Document metadata:\n{Metadata}", metadataJson);
+            }
+        }
 
         // Check for JSON parsing mode
         var parsingMode = indexer.Parameters?.Configuration?.ParsingMode?.ToLowerInvariant() ?? "default";
@@ -370,6 +397,15 @@ public partial class IndexerService : IIndexerService
         
         // Extract content using document cracker (default mode)
         var crackedDoc = await ExtractContentAsync(sourceDoc, indexer.Parameters?.Configuration);
+
+        // Diagnostic: Log cracked document details
+        if (_diagnosticSettings.Enabled && _diagnosticSettings.LogDocumentDetails)
+        {
+            _logger.LogInformation(
+                "[DIAGNOSTIC] Document cracked: Title='{Title}', Author='{Author}', PageCount={PageCount}, WordCount={WordCount}, ContentLength={ContentLength}",
+                crackedDoc.Title ?? "(none)", crackedDoc.Author ?? "(none)", 
+                crackedDoc.PageCount ?? 0, crackedDoc.WordCount ?? 0, crackedDoc.Content?.Length ?? 0);
+        }
 
         // Create enriched document for skill processing
         var initialContent = new Dictionary<string, object?>
@@ -455,12 +491,26 @@ public partial class IndexerService : IIndexerService
         // Apply custom field mappings (can override enriched values)
         if (indexer.FieldMappings != null)
         {
+            if (_diagnosticSettings.Enabled && _diagnosticSettings.LogFieldMappings && indexer.FieldMappings.Count > 0)
+            {
+                _logger.LogInformation("[DIAGNOSTIC] Applying {Count} field mappings for document '{DocumentKey}'",
+                    indexer.FieldMappings.Count, sourceDoc.Key);
+            }
+            
             foreach (var mapping in indexer.FieldMappings)
             {
                 if (enrichedData.TryGetValue(mapping.SourceFieldName, out var value) && value != null)
                 {
                     var targetField = mapping.TargetFieldName ?? mapping.SourceFieldName;
-                    document[targetField] = ApplyMappingFunction(value, mapping.MappingFunction);
+                    var mappedValue = ApplyMappingFunction(value, mapping.MappingFunction);
+                    document[targetField] = mappedValue;
+                    
+                    if (_diagnosticSettings.Enabled && _diagnosticSettings.LogFieldMappings)
+                    {
+                        _logger.LogInformation(
+                            "[DIAGNOSTIC] Field mapping: '{Source}' -> '{Target}', Function: {Function}",
+                            mapping.SourceFieldName, targetField, mapping.MappingFunction?.Name ?? "(none)");
+                    }
                 }
             }
         }
@@ -468,6 +518,12 @@ public partial class IndexerService : IIndexerService
         // Apply output field mappings (from skillset outputs)
         if (indexer.OutputFieldMappings != null)
         {
+            if (_diagnosticSettings.Enabled && _diagnosticSettings.LogFieldMappings && indexer.OutputFieldMappings.Count > 0)
+            {
+                _logger.LogInformation("[DIAGNOSTIC] Applying {Count} output field mappings for document '{DocumentKey}'",
+                    indexer.OutputFieldMappings.Count, sourceDoc.Key);
+            }
+            
             foreach (var mapping in indexer.OutputFieldMappings)
             {
                 // Source is a path like "/document/embedding"
@@ -476,7 +532,15 @@ public partial class IndexerService : IIndexerService
                 if (value != null)
                 {
                     var targetField = mapping.TargetFieldName ?? Path.GetFileName(sourcePath);
-                    document[targetField] = ApplyMappingFunction(value, mapping.MappingFunction);
+                    var mappedValue = ApplyMappingFunction(value, mapping.MappingFunction);
+                    document[targetField] = mappedValue;
+                    
+                    if (_diagnosticSettings.Enabled && _diagnosticSettings.LogFieldMappings)
+                    {
+                        _logger.LogInformation(
+                            "[DIAGNOSTIC] Output field mapping: '{Source}' -> '{Target}', Function: {Function}",
+                            sourcePath, targetField, mapping.MappingFunction?.Name ?? "(none)");
+                    }
                 }
             }
         }
@@ -487,6 +551,15 @@ public partial class IndexerService : IIndexerService
             Value = new List<IndexAction> { document }
         };
         await _documentService.IndexDocumentsAsync(indexer.TargetIndexName, request);
+        
+        // Diagnostic: Log document processing completion with timing
+        if (_diagnosticSettings.Enabled && _diagnosticSettings.LogDocumentDetails && _diagnosticSettings.IncludeTimings)
+        {
+            var duration = DateTime.UtcNow - processStart;
+            _logger.LogInformation(
+                "[DIAGNOSTIC] Document '{DocumentKey}' processed and indexed in {Duration}ms - Target index: '{IndexName}', Fields mapped: {FieldCount}",
+                sourceDoc.Key, duration.TotalMilliseconds, indexer.TargetIndexName, document.Count - 1);
+        }
     }
 
     private async Task<CrackedDocument> ExtractContentAsync(DataSourceDocument doc, IndexerConfiguration? config)

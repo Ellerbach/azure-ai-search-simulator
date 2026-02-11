@@ -46,6 +46,8 @@ try
         builder.Configuration.GetSection(VectorSearchSettings.SectionName));
     builder.Services.Configure<AzureOpenAISettings>(
         builder.Configuration.GetSection(AzureOpenAISettings.SectionName));
+    builder.Services.Configure<DiagnosticLoggingSettings>(
+        builder.Configuration.GetSection(DiagnosticLoggingSettings.SectionName));
 
     // Register authentication handlers
     builder.Services.AddSingleton<IAuthenticationHandler, ApiKeyAuthenticationHandler>();
