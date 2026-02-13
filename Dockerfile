@@ -10,7 +10,6 @@ COPY AzureAISearchSimulator.sln ./
 COPY src/AzureAISearchSimulator.Core/AzureAISearchSimulator.Core.csproj src/AzureAISearchSimulator.Core/
 COPY src/AzureAISearchSimulator.Storage/AzureAISearchSimulator.Storage.csproj src/AzureAISearchSimulator.Storage/
 COPY src/AzureAISearchSimulator.Search/AzureAISearchSimulator.Search.csproj src/AzureAISearchSimulator.Search/
-COPY src/AzureAISearchSimulator.Indexing/AzureAISearchSimulator.Indexing.csproj src/AzureAISearchSimulator.Indexing/
 COPY src/AzureAISearchSimulator.DataSources/AzureAISearchSimulator.DataSources.csproj src/AzureAISearchSimulator.DataSources/
 COPY src/AzureAISearchSimulator.Api/AzureAISearchSimulator.Api.csproj src/AzureAISearchSimulator.Api/
 

@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Fixed custom skills integration example HTTP sample
 
+### Removed
+
+- Removed unused `AzureAISearchSimulator.Indexing` project and placeholder test files
+
 ---
 
 ### Added

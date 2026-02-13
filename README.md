@@ -378,8 +378,7 @@ AzureAISearchSimulator/
 ├── src/
 │   ├── AzureAISearchSimulator.Api/        # REST API layer
 │   ├── AzureAISearchSimulator.Core/       # Business logic
-│   ├── AzureAISearchSimulator.Search/     # Lucene.NET search engine
-│   ├── AzureAISearchSimulator.Indexing/   # Indexers and skills
+│   ├── AzureAISearchSimulator.Search/     # Lucene.NET search engine & skills
 │   ├── AzureAISearchSimulator.DataSources/# Data source connectors
 │   └── AzureAISearchSimulator.Storage/    # Persistence layer
 ├── tests/
