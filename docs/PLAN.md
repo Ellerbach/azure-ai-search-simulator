@@ -15,7 +15,7 @@ This document outlines the comprehensive plan for building an Azure AI Search Si
 | Phase 5: Skillsets | ✅ Complete | Text skills, embedding skills, custom WebApiSkill, skill pipeline |
 | Phase 6: Polish & Docs | ✅ Complete | Error handling, Docker support, SDK samples, documentation |
 | Phase 7: HNSW Vector Search | ✅ Complete | HNSWlib.NET integration, filtered vector search, hybrid ranking |
-| Phase 8: API 2025-09-01 | 🔄 In Progress | Index description, debug subscores, normalizers |
+| Phase 8: API 2025-09-01 | 🔄 In Progress | Index description ✅, debug subscores ✅, normalizers ✅ — remaining: truncated dimensions, rescoring |
 
 ## 1. Project Overview
 
@@ -60,9 +60,11 @@ This document outlines the comprehensive plan for building an Azure AI Search Si
 #### In Progress 🔄
 
 - **API version 2025-09-01 features:**
-  - Index description property
-  - Search debug parameter (query subscores)
-  - Normalizers for case-insensitive filtering
+  - ✅ Index description property
+  - ✅ Search debug parameter (query subscores)
+  - ✅ Normalizers for case-insensitive filtering
+  - Truncated dimensions (MRL)
+  - Rescoring options
   - Truncated dimensions for MRL models
   - Rescoring options for compressed vectors
 - Scoring profiles
@@ -1027,4 +1029,4 @@ This is the same pattern used by production vector databases like Elasticsearch.
 ---
 
 *Document Version: 2.0*  
-*Last Updated: January 26, 2026*
+*Last Updated: February 13, 2026*

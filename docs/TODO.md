@@ -352,10 +352,10 @@
 
 ### Search Debug Features
 
-- [ ] Add `debug` query parameter to search API
-- [ ] Implement subscore breakdown for hybrid queries
-- [ ] Return RRF component scores in response
-- [ ] Return individual vector/text match scores
+- [x] Add `debug` query parameter to search API
+- [x] Implement subscore breakdown for hybrid queries
+- [x] Return RRF component scores in response
+- [x] Return individual vector/text match scores
 
 ### Data Source Connectors
 
@@ -373,5 +373,5 @@
 
 - [x] Write tests for index description property
 - [x] Write tests for normalizers
-- [ ] Write tests for search debug output
+- [x] Write tests for search debug output (SearchDebugTests.cs - 69 tests)
 - [ ] Write tests for truncated dimensions

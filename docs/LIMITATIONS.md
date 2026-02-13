@@ -19,7 +19,7 @@ The simulator is designed for **development, learning, and testing purposes only
 | Feature | Status |
 | ------- | ------ |
 | Index description property | ✅ Implemented |
-| Search debug parameter | 🔄 Planned |
+| Search debug parameter | ✅ Implemented |
 | Normalizers | ✅ Implemented (see below for details) |
 | Truncated dimensions (MRL) | 🔄 Planned |
 | Rescoring options | 🔄 Planned |
@@ -77,7 +77,7 @@ The simulator is designed for **development, learning, and testing purposes only
 | **Managed Identity** | Azure-specific security feature |
 | **Private endpoints** | Azure networking feature |
 | **Customer-managed keys** | Azure Key Vault integration |
-| **Debug sessions** | Complex debugging infrastructure |
+| **Debug sessions (skillset)** | Complex debugging infrastructure |
 | **Index aliases** | Not yet implemented |
 | **Replica/partition scaling** | Single-instance only |
 
@@ -359,4 +359,4 @@ When moving from the simulator to Azure AI Search:
 
 ---
 
-*Last updated: January 30, 2026*
+*Last updated: February 13, 2026*

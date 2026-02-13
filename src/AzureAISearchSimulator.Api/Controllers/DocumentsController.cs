@@ -134,6 +134,7 @@ public class DocumentsController : ControllerBase
         [FromQuery] string? highlight = null,
         [FromQuery] string? searchMode = null,
         [FromQuery] string? queryType = null,
+        [FromQuery] string? debug = null,
         [FromQuery(Name = "api-version")] string? apiVersion = null)
     {
         // Check authorization - search requires IndexDataReader
@@ -151,7 +152,8 @@ public class DocumentsController : ControllerBase
             Count = count,
             Highlight = highlight,
             SearchMode = searchMode ?? "any",
-            QueryType = queryType ?? "simple"
+            QueryType = queryType ?? "simple",
+            Debug = debug
         };
 
         try

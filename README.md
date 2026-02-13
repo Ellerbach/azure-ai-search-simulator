@@ -44,11 +44,11 @@ The Azure AI Search Simulator provides a local implementation of the Azure AI Se
 - **Error Handling**: OData-compliant error responses
 - **Docker Support**: Containerized deployment with docker-compose
 - **Azure SDK Compatibility**: Works with official Azure.Search.Documents SDK
+- **Search Debug**: Query diagnostics with subscore breakdown for hybrid/vector searches (`debug` parameter)
 
 ### 🔜 Planned (Future Phases)
 
 - Scoring profiles
-- HNSW algorithm optimization for vector search
 - Local embedding models
 - Synonym maps
 - Azure SQL / Cosmos DB connectors

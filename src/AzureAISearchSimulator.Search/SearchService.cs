@@ -36,6 +36,11 @@ public class SearchService : ISearchService
 
     public async Task<SearchResponse> SearchAsync(string indexName, SearchRequest request)
     {
+        var totalStopwatch = System.Diagnostics.Stopwatch.StartNew();
+        var debugModes = ParseDebugModes(request.Debug);
+        var debugMode = debugModes.Count > 0;
+        var debugVector = debugModes.Contains("vector") || debugModes.Contains("all");
+        
         var index = await _indexService.GetIndexAsync(indexName);
         if (index == null)
         {
@@ -48,41 +53,90 @@ public class SearchService : ISearchService
             Value = new List<SearchResult>()
         };
 
+        // Initialize debug info if debug mode is enabled
+        DebugInfo? debugInfo = null;
+        if (debugMode)
+        {
+            debugInfo = new DebugInfo
+            {
+                SearchableFields = index.Fields
+                    .Where(f => f.Searchable == true)
+                    .Select(f => f.Name)
+                    .ToList()
+            };
+            _logger.LogInformation("[DEBUG] Search request on index '{IndexName}': search='{Search}', filter='{Filter}', queryType='{QueryType}', debugModes='{DebugModes}'",
+                indexName, request.Search, request.Filter, request.QueryType, request.Debug);
+        }
+
         var searcher = _indexManager.GetSearcher(indexName);
         var keyField = LuceneDocumentMapper.GetKeyFieldName(index);
 
         // Build the Lucene query
         Query? textQuery = null;
+        Query? filterQuery = null;
+        var textSearchStopwatch = new System.Diagnostics.Stopwatch();
+        
         if (!string.IsNullOrWhiteSpace(request.Search) && request.Search != "*")
         {
             textQuery = BuildTextQuery(indexName, index, request);
+            if (debugMode && debugInfo != null)
+            {
+                debugInfo.ParsedQuery = textQuery?.ToString();
+                _logger.LogInformation("[DEBUG] Parsed text query: {ParsedQuery}", debugInfo.ParsedQuery);
+            }
+        }
+
+        // Build filter query
+        if (!string.IsNullOrWhiteSpace(request.Filter))
+        {
+            filterQuery = BuildFilterQuery(index, request.Filter);
+            if (debugMode && debugInfo != null)
+            {
+                debugInfo.ParsedFilter = filterQuery?.ToString();
+                _logger.LogInformation("[DEBUG] Parsed filter query: {ParsedFilter}", debugInfo.ParsedFilter);
+            }
         }
 
         // Handle vector search
+        var vectorSearchStopwatch = new System.Diagnostics.Stopwatch();
         Dictionary<string, double>? vectorScores = null;
         if (request.VectorQueries != null && request.VectorQueries.Any())
         {
+            vectorSearchStopwatch.Start();
             vectorScores = ExecuteVectorSearch(indexName, request.VectorQueries);
+            vectorSearchStopwatch.Stop();
+            
+            if (debugMode && debugInfo != null)
+            {
+                debugInfo.VectorSearchTimeMs = vectorSearchStopwatch.Elapsed.TotalMilliseconds;
+                debugInfo.VectorMatchCount = vectorScores.Count;
+                _logger.LogInformation("[DEBUG] Vector search completed in {TimeMs}ms, found {Count} matches",
+                    debugInfo.VectorSearchTimeMs, debugInfo.VectorMatchCount);
+                
+                // Log top vector scores
+                var topVectorResults = vectorScores.OrderByDescending(x => x.Value).Take(5);
+                foreach (var (docKey, score) in topVectorResults)
+                {
+                    _logger.LogInformation("[DEBUG] Vector result: key='{Key}', score={Score:F4}", docKey, score);
+                }
+            }
         }
 
-        // Execute Lucene search
+        // Execute Lucene text search
         var topN = (request.Skip ?? 0) + (request.Top ?? 50);
         TopDocs? topDocs = null;
         
+        textSearchStopwatch.Start();
         if (textQuery != null)
         {
             // Apply OData filter if present
             Query finalQuery = textQuery;
-            if (!string.IsNullOrWhiteSpace(request.Filter))
+            if (filterQuery != null)
             {
-                var filterQuery = BuildFilterQuery(index, request.Filter);
-                if (filterQuery != null)
-                {
-                    var bq = new BooleanQuery();
-                    bq.Add(textQuery, Occur.MUST);
-                    bq.Add(filterQuery, Occur.MUST);
-                    finalQuery = bq;
-                }
+                var bq = new BooleanQuery();
+                bq.Add(textQuery, Occur.MUST);
+                bq.Add(filterQuery, Occur.MUST);
+                finalQuery = bq;
             }
 
             var sort = BuildSort(request.OrderBy, index);
@@ -90,17 +144,13 @@ public class SearchService : ISearchService
                 ? searcher.Search(finalQuery, topN, sort)
                 : searcher.Search(finalQuery, topN);
         }
-        else if (!string.IsNullOrWhiteSpace(request.Filter))
+        else if (filterQuery != null)
         {
             // Filter-only search
-            var filterQuery = BuildFilterQuery(index, request.Filter);
-            if (filterQuery != null)
-            {
-                var sort = BuildSort(request.OrderBy, index);
-                topDocs = sort != null
-                    ? searcher.Search(filterQuery, topN, sort)
-                    : searcher.Search(filterQuery, topN);
-            }
+            var sort = BuildSort(request.OrderBy, index);
+            topDocs = sort != null
+                ? searcher.Search(filterQuery, topN, sort)
+                : searcher.Search(filterQuery, topN);
         }
         else if (vectorScores == null || !vectorScores.Any())
         {
@@ -111,19 +161,53 @@ public class SearchService : ISearchService
                 ? searcher.Search(matchAllQuery, topN, sort)
                 : searcher.Search(matchAllQuery, topN);
         }
+        textSearchStopwatch.Stop();
 
-        // Combine text and vector results
-        var results = CombineResults(
+        if (debugMode && debugInfo != null)
+        {
+            debugInfo.TextSearchTimeMs = textSearchStopwatch.Elapsed.TotalMilliseconds;
+            debugInfo.TextMatchCount = topDocs?.TotalHits ?? 0;
+            _logger.LogInformation("[DEBUG] Text search completed in {TimeMs}ms, found {Count} matches",
+                debugInfo.TextSearchTimeMs, debugInfo.TextMatchCount);
+            
+            // Log top text scores
+            if (topDocs != null)
+            {
+                foreach (var scoreDoc in topDocs.ScoreDocs.Take(5))
+                {
+                    var doc = searcher.Doc(scoreDoc.Doc);
+                    var key = doc.Get(keyField);
+                    _logger.LogInformation("[DEBUG] Text result: key='{Key}', score={Score:F4}", key, scoreDoc.Score);
+                }
+            }
+        }
+
+        // Determine if this is hybrid search
+        var isHybridSearch = request.VectorQueries != null && request.VectorQueries.Any() && 
+                            !string.IsNullOrWhiteSpace(request.Search) && request.Search != "*";
+        
+        if (debugMode && debugInfo != null)
+        {
+            debugInfo.IsHybridSearch = isHybridSearch;
+            debugInfo.ScoreFusionMethod = isHybridSearch ? "WeightedAverage" : (vectorScores != null ? "VectorOnly" : "TextOnly");
+            _logger.LogInformation("[DEBUG] Search mode: {Mode}, Hybrid: {IsHybrid}", 
+                debugInfo.ScoreFusionMethod, isHybridSearch);
+        }
+
+        // Combine text and vector results (with debug tracking)
+        var combinedResults = CombineResultsWithDebug(
             searcher, 
             keyField, 
             topDocs, 
             vectorScores, 
-            request);
+            request,
+            debugVector);
 
         // Apply skip and top
-        var finalResults = results
+        var finalResults = combinedResults.Results
             .Skip(request.Skip ?? 0)
-            .Take(request.Top ?? 50);
+            .Take(request.Top ?? 50)
+            .ToList();
 
         // Parse selected fields
         var selectedFields = ParseSelect(request.Select);
@@ -158,6 +242,15 @@ public class SearchService : ISearchService
                 }
             }
 
+            // Add per-document debug info (official @search.documentDebugInfo)
+            if (debugVector && combinedResults.DocumentDebugInfos != null)
+            {
+                if (combinedResults.DocumentDebugInfos.TryGetValue(docKey, out var docDebugInfo))
+                {
+                    searchResult.DocumentDebugInfo = docDebugInfo;
+                }
+            }
+
             response.Value.Add(searchResult);
         }
 
@@ -183,11 +276,215 @@ public class SearchService : ISearchService
         // Search coverage (always 100% for simulator)
         response.SearchCoverage = 100.0;
 
+        // Finalize debug info
+        totalStopwatch.Stop();
+        if (debugMode && debugInfo != null)
+        {
+            debugInfo.TotalTimeMs = totalStopwatch.Elapsed.TotalMilliseconds;
+            debugInfo.IsHybridSearch = isHybridSearch;
+            debugInfo.ScoreFusionMethod = isHybridSearch ? "WeightedAverage" : (vectorScores != null ? "VectorOnly" : "TextOnly");
+            
+            response.SearchDebug = debugInfo;
+            
+            _logger.LogInformation("[DEBUG] Search completed in {TotalMs}ms. Results: {Count}", 
+                debugInfo.TotalTimeMs, response.Value.Count);
+            
+            // Log final result scores
+            if (debugVector)
+            {
+                foreach (var result in finalResults)
+                {
+                    if (combinedResults.DocumentDebugInfos != null && 
+                        combinedResults.DocumentDebugInfos.TryGetValue(result.Key, out var docDebug))
+                    {
+                        _logger.LogInformation(
+                            "[DEBUG] Final result: key='{Key}', finalScore={FinalScore:F4}, textScore={TextScore}, vectorSimilarity={VectorSim}",
+                            result.Key, result.Score, 
+                            docDebug.Vectors?.Subscores?.Text?.SearchScore,
+                            docDebug.Vectors?.Subscores?.Vectors?.Values.FirstOrDefault()?.VectorSimilarity);
+                    }
+                }
+            }
+        }
+
         _logger.LogDebug(
             "Search on {IndexName}: query='{Query}', filter='{Filter}', returned {Count} results",
             indexName, request.Search, request.Filter, response.Value.Count);
 
         return response;
+    }
+
+    private (IEnumerable<(int DocId, double Score, string Key)> Results, Dictionary<string, DocumentDebugInfo>? DocumentDebugInfos) CombineResultsWithDebug(
+        IndexSearcher searcher,
+        string keyField,
+        TopDocs? textResults,
+        Dictionary<string, double>? vectorScores,
+        SearchRequest request,
+        bool debugVector)
+    {
+        var combined = new Dictionary<string, (int DocId, double TextScore, double VectorScore)>();
+        var textRanks = new Dictionary<string, int>();
+        var vectorRanks = new Dictionary<string, int>();
+
+        // Add text search results and track ranks
+        if (textResults != null)
+        {
+            var rank = 1;
+            foreach (var scoreDoc in textResults.ScoreDocs)
+            {
+                var doc = searcher.Doc(scoreDoc.Doc);
+                var key = doc.Get(keyField);
+                if (key != null)
+                {
+                    combined[key] = (scoreDoc.Doc, scoreDoc.Score, 0);
+                    textRanks[key] = rank++;
+                }
+            }
+        }
+
+        // Add/merge vector search results and track ranks
+        if (vectorScores != null)
+        {
+            var rank = 1;
+            foreach (var (key, vectorScore) in vectorScores.OrderByDescending(x => x.Value))
+            {
+                vectorRanks[key] = rank++;
+                
+                if (combined.TryGetValue(key, out var existing))
+                {
+                    combined[key] = (existing.DocId, existing.TextScore, vectorScore);
+                }
+                else
+                {
+                    // Find doc by key
+                    var termQuery = new TermQuery(new Term(keyField, key));
+                    var topDocs = searcher.Search(termQuery, 1);
+                    if (topDocs.TotalHits > 0)
+                    {
+                        combined[key] = (topDocs.ScoreDocs[0].Doc, 0, vectorScore);
+                    }
+                }
+            }
+        }
+
+        // Determine vector field names for debug
+        var vectorFieldNames = request.VectorQueries?
+            .Where(vq => vq.Fields != null)
+            .SelectMany(vq => vq.Fields!.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(f => f.Trim()))
+            .Distinct()
+            .ToList() ?? new List<string>();
+
+        // Calculate final scores based on search mode
+        var useHybrid = request.VectorQueries != null && request.VectorQueries.Any() && 
+                        !string.IsNullOrWhiteSpace(request.Search) && request.Search != "*";
+        
+        Dictionary<string, DocumentDebugInfo>? documentDebugInfos = null;
+        if (debugVector)
+        {
+            documentDebugInfos = new Dictionary<string, DocumentDebugInfo>();
+        }
+
+        var results = combined
+            .Select(kvp =>
+            {
+                var (docId, textScore, vectorScore) = kvp.Value;
+                double finalScore;
+                
+                if (useHybrid)
+                {
+                    // Hybrid: weighted average
+                    finalScore = (textScore * 0.5) + (vectorScore * 0.5);
+                }
+                else if (vectorScores != null && vectorScores.Any())
+                {
+                    // Vector only
+                    finalScore = vectorScore;
+                }
+                else
+                {
+                    // Text only
+                    finalScore = textScore;
+                }
+
+                // Build per-document debug info matching official structure
+                if (debugVector && documentDebugInfos != null)
+                {
+                    var subscores = new QueryResultDocumentSubscores();
+
+                    // Text subscore
+                    if (textScore > 0)
+                    {
+                        subscores.Text = new TextResult { SearchScore = textScore };
+                    }
+
+                    // Vector subscores - one entry per vector field
+                    if (vectorScore > 0 && vectorFieldNames.Any())
+                    {
+                        subscores.Vectors = new Dictionary<string, SingleVectorFieldResult>();
+                        foreach (var fieldName in vectorFieldNames)
+                        {
+                            subscores.Vectors[fieldName] = new SingleVectorFieldResult
+                            {
+                                SearchScore = finalScore, // The @search.score for a pure vector query
+                                VectorSimilarity = vectorScore // The raw cosine similarity
+                            };
+                        }
+                    }
+                    else if (vectorScore > 0)
+                    {
+                        // Fallback when no field name specified
+                        subscores.Vectors = new Dictionary<string, SingleVectorFieldResult>
+                        {
+                            ["vector"] = new SingleVectorFieldResult
+                            {
+                                SearchScore = finalScore,
+                                VectorSimilarity = vectorScore
+                            }
+                        };
+                    }
+
+                    // Document boost (not used yet, placeholder for scoring profiles)
+                    subscores.DocumentBoost = 1.0;
+
+                    documentDebugInfos[kvp.Key] = new DocumentDebugInfo
+                    {
+                        Vectors = new VectorsDebugInfo
+                        {
+                            Subscores = subscores
+                        }
+                    };
+                }
+
+                return (DocId: docId, Score: finalScore, Key: kvp.Key);
+            })
+            .OrderByDescending(r => r.Score);
+
+        return (results, documentDebugInfos);
+    }
+
+    /// <summary>
+    /// Parse the debug mode string into a set of active debug modes.
+    /// Supports: "disabled", "semantic", "vector", "queryRewrites", "innerHits", "all".
+    /// Can be combined with '|', e.g. "semantic|vector".
+    /// </summary>
+    private static HashSet<string> ParseDebugModes(string? debug)
+    {
+        var modes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(debug) || debug.Equals("disabled", StringComparison.OrdinalIgnoreCase))
+        {
+            return modes;
+        }
+
+        foreach (var part in debug.Split('|', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var trimmed = part.Trim().ToLowerInvariant();
+            if (trimmed != "disabled")
+            {
+                modes.Add(trimmed);
+            }
+        }
+
+        return modes;
     }
 
     private Query BuildTextQuery(string indexName, SearchIndex schema, SearchRequest request)
@@ -480,81 +777,6 @@ public class SearchService : ISearchService
         }
 
         return combinedScores;
-    }
-
-    private IEnumerable<(int DocId, double Score, string Key)> CombineResults(
-        IndexSearcher searcher,
-        string keyField,
-        TopDocs? textResults,
-        Dictionary<string, double>? vectorScores,
-        SearchRequest request)
-    {
-        var combined = new Dictionary<string, (int DocId, double TextScore, double VectorScore)>();
-
-        // Add text search results
-        if (textResults != null)
-        {
-            foreach (var scoreDoc in textResults.ScoreDocs)
-            {
-                var doc = searcher.Doc(scoreDoc.Doc);
-                var key = doc.Get(keyField);
-                if (key != null)
-                {
-                    combined[key] = (scoreDoc.Doc, scoreDoc.Score, 0);
-                }
-            }
-        }
-
-        // Add/merge vector search results
-        if (vectorScores != null)
-        {
-            foreach (var (key, vectorScore) in vectorScores)
-            {
-                if (combined.TryGetValue(key, out var existing))
-                {
-                    combined[key] = (existing.DocId, existing.TextScore, vectorScore);
-                }
-                else
-                {
-                    // Find doc by key
-                    var termQuery = new TermQuery(new Term(keyField, key));
-                    var topDocs = searcher.Search(termQuery, 1);
-                    if (topDocs.TotalHits > 0)
-                    {
-                        combined[key] = (topDocs.ScoreDocs[0].Doc, 0, vectorScore);
-                    }
-                }
-            }
-        }
-
-        // Calculate final scores based on search mode
-        // For hybrid: combine text + vector scores
-        var useHybrid = request.VectorQueries != null && request.VectorQueries.Any() && 
-                        !string.IsNullOrWhiteSpace(request.Search) && request.Search != "*";
-        
-        return combined
-            .Select(kvp =>
-            {
-                var (docId, textScore, vectorScore) = kvp.Value;
-                double finalScore;
-                if (useHybrid)
-                {
-                    // Hybrid: weighted average
-                    finalScore = (textScore * 0.5) + (vectorScore * 0.5);
-                }
-                else if (vectorScores != null && vectorScores.Any())
-                {
-                    // Vector only
-                    finalScore = vectorScore;
-                }
-                else
-                {
-                    // Text only
-                    finalScore = textScore;
-                }
-                return (DocId: docId, Score: finalScore, Key: kvp.Key);
-            })
-            .OrderByDescending(r => r.Score);
     }
 
     private IEnumerable<string>? ParseSelect(string? select)

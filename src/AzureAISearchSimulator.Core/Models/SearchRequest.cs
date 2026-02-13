@@ -114,6 +114,14 @@ public class SearchRequest
     /// </summary>
     [JsonPropertyName("vectorQueries")]
     public List<VectorQuery>? VectorQueries { get; set; }
+
+    /// <summary>
+    /// Enables a debugging tool that can be used to further explore your search results.
+    /// Supported values: "disabled", "semantic", "vector", "queryRewrites", "innerHits", "all".
+    /// Multiple modes can be combined with '|', e.g. "semantic|vector".
+    /// </summary>
+    [JsonPropertyName("debug")]
+    public string? Debug { get; set; }
 }
 
 /// <summary>
