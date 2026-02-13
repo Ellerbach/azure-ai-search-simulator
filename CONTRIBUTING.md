@@ -68,10 +68,9 @@ dotnet run --project src/AzureAISearchSimulator.Api
 ├── src/
 │   ├── AzureAISearchSimulator.Api/        # ASP.NET Core Web API
 │   ├── AzureAISearchSimulator.Core/       # Core models and interfaces
-│   ├── AzureAISearchSimulator.Search/     # Lucene.NET search implementation
+│   ├── AzureAISearchSimulator.Search/     # Lucene.NET search & skills
 │   ├── AzureAISearchSimulator.Storage/    # LiteDB persistence
-│   ├── AzureAISearchSimulator.DataSources/# Azure data source connectors
-│   └── AzureAISearchSimulator.Indexing/   # Indexer execution engine
+│   └── AzureAISearchSimulator.DataSources/# Azure data source connectors
 ├── tests/
 │   ├── AzureAISearchSimulator.Core.Tests/
 │   ├── AzureAISearchSimulator.Api.Tests/

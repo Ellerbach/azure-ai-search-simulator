@@ -381,27 +381,23 @@ AzureAISearchSimulator/
 │   │   │   └── FullQueryParser.cs
 │   │   ├── Analyzers/
 │   │   │   └── AnalyzerFactory.cs
-│   │   └── Filters/
-│   │       └── ODataFilterParser.cs
-│   │
-│   ├── AzureAISearchSimulator.Indexing/      # Indexer/Skills engine
-│   │   ├── IndexerEngine.cs
-│   │   ├── DocumentCracker/
+│   │   ├── Filters/
+│   │   │   └── ODataFilterParser.cs
+│   │   ├── DocumentCracking/
 │   │   │   ├── IDocumentCracker.cs
 │   │   │   ├── PdfCracker.cs
 │   │   │   ├── OfficeDocCracker.cs
 │   │   │   ├── JsonCracker.cs
 │   │   │   └── PlainTextCracker.cs
-│   │   ├── Skills/
-│   │   │   ├── ISkill.cs
-│   │   │   ├── TextSplitSkill.cs
-│   │   │   ├── TextMergeSkill.cs
-│   │   │   ├── ConditionalSkill.cs
-│   │   │   ├── ShaperSkill.cs
-│   │   │   ├── DocumentExtractionSkill.cs
-│   │   │   └── CustomWebApiSkill.cs
-│   │   └── FieldMapping/
-│   │       └── FieldMappingProcessor.cs
+│   │   └── Skills/
+│   │       ├── ISkillExecutor.cs
+│   │       ├── SkillPipeline.cs
+│   │       ├── TextSplitSkillExecutor.cs
+│   │       ├── TextMergeSkillExecutor.cs
+│   │       ├── ShaperSkillExecutor.cs
+│   │       ├── ConditionalSkillExecutor.cs
+│   │       ├── AzureOpenAIEmbeddingSkillExecutor.cs
+│   │       └── CustomWebApiSkillExecutor.cs
 │   │
 │   ├── AzureAISearchSimulator.DataSources/   # Data source connectors
 │   │   ├── IDataSourceConnector.cs
