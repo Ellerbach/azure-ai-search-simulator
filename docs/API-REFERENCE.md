@@ -402,6 +402,91 @@ api-key: <query-key>
 | `facets` | array | Facet specifications |
 | `highlight` | string | Fields to highlight |
 | `vectorQueries` | array | Vector query objects (see below) |
+| `debug` | string | Debug mode for search diagnostics (see below) |
+
+#### Debug Parameter
+
+The `debug` parameter enables diagnostic information in the search response. It returns detailed information about how results were scored and ranked.
+
+> **Note:** In Azure AI Search, the `debug` parameter was introduced in API version `2025-05-01-preview`. The simulator supports it on all API versions for convenience.
+
+**Supported values:**
+
+| Value | Description |
+| ----- | ----------- |
+| `disabled` | No debug info (default) |
+| `semantic` | Debug info for semantic ranking |
+| `vector` | Debug info for vector/hybrid search subscores |
+| `queryRewrites` | Debug info for query rewrites |
+| `innerHits` | Debug info for inner hits in complex types |
+| `all` | All debug info |
+
+Multiple modes can be combined with `|`, e.g. `"semantic|vector"`.
+
+**Example request with debug:**
+
+```json
+{
+  "search": "luxury hotel",
+  "vectorQueries": [
+    {
+      "kind": "vector",
+      "vector": [0.1, 0.2, 0.3],
+      "fields": "contentVector",
+      "k": 5
+    }
+  ],
+  "debug": "vector"
+}
+```
+
+When debug is enabled, the response includes:
+
+- **`@search.debug`** (response-level): Query-level debug info including parsed queries, timing, and simulator-specific diagnostics.
+- **`@search.documentDebugInfo`** (per-document): Breakdown of subscores per document, including text BM25 scores and vector similarity scores per field.
+
+**Debug response example:**
+
+```json
+{
+  "@search.debug": {
+    "queryRewrites": null,
+    "simulator.parsedQuery": "+title:luxury +title:hotel",
+    "simulator.parsedFilter": null,
+    "simulator.isHybridSearch": true,
+    "simulator.textSearchTimeMs": 5.2,
+    "simulator.vectorSearchTimeMs": 3.1,
+    "simulator.totalTimeMs": 12.5,
+    "simulator.textMatchCount": 15,
+    "simulator.vectorMatchCount": 10,
+    "simulator.scoreFusionMethod": "WeightedAverage",
+    "simulator.searchableFields": ["title", "description"]
+  },
+  "value": [
+    {
+      "@search.score": 0.85,
+      "@search.documentDebugInfo": {
+        "vectors": {
+          "subscores": {
+            "text": { "searchScore": 3.14 },
+            "documentBoost": 1.0,
+            "vectors": {
+              "contentVector": {
+                "searchScore": 0.85,
+                "vectorSimilarity": 0.92
+              }
+            }
+          }
+        }
+      },
+      "id": "1",
+      "title": "Grand Luxury Hotel"
+    }
+  ]
+}
+```
+
+> **Note:** Properties prefixed with `simulator.` are specific to this simulator and are not present in the official Azure AI Search API. The `@search.documentDebugInfo` and `@search.debug.queryRewrites` structures match the official API.
 
 #### Vector Search Parameters
 
@@ -581,6 +666,22 @@ Text scores are normalized using min-max normalization. Vector scores are alread
     }
   ]
 }
+```
+
+### Search Documents (GET)
+
+```http
+GET /indexes/{indexName}/docs?api-version=2024-07-01&search={text}&$filter={filter}&$select={fields}&$orderby={sort}&$top={n}&$skip={n}&$count={bool}&highlight={fields}&searchMode={mode}&queryType={type}&debug={mode}
+api-key: <query-key>
+```
+
+All search parameters can be passed as query string parameters. The `debug` parameter accepts the same values as in the POST body.
+
+**Example:**
+
+```http
+GET /indexes/hotels/docs?api-version=2024-07-01&search=luxury&debug=all
+api-key: <query-key>
 ```
 
 ---

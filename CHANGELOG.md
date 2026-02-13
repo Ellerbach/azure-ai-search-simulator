@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+### Added
+
+- **Search Debug Parameter**: `debug` query parameter for search diagnostics (based on Azure AI Search `2025-05-01-preview` API)
+  - Supported modes: `disabled`, `semantic`, `vector`, `queryRewrites`, `innerHits`, `all`
+  - Combined modes with `|` separator (e.g., `"semantic|vector"`)
+  - Response-level `@search.debug` with query rewrites and simulator-specific diagnostics
+  - Per-document `@search.documentDebugInfo` with text/vector subscore breakdown
+  - Simulator-specific properties prefixed with `simulator.*`
+  - Supported on both POST body and GET query string
+  - 69 unit tests covering all debug functionality
+
+---
+
 ### Fixed
 
 - Fixed custom skills integration example HTTP sample

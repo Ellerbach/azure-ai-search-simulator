@@ -45,7 +45,7 @@ api-key: {{adminKey}}
     { "name": "id", "type": "Edm.String", "key": true },
     { "name": "title", "type": "Edm.String", "searchable": true },
     { "name": "content", "type": "Edm.String", "searchable": true },
-    { "name": "contentVector", "type": "Collection(Edm.Single)", "searchable": false, "dimensions": 1536 }
+    { "name": "contentVector", "type": "Collection(Edm.Single)", "searchable": false, "dimensions": 1536, "vectorSearchProfile": "vector-profile" }
   ],
   "vectorSearch": {
     "algorithms": [
@@ -311,6 +311,72 @@ api-key: {{queryKey}}
 ### GET search (alternative to POST)
 GET {{baseUrl}}/indexes/hotels/docs?api-version={{apiVersion}}&search=luxury&$filter=rating ge 4&$top=5&$orderby=rating desc
 api-key: {{queryKey}}
+
+# ============================================
+# SEARCH DEBUG
+# ============================================
+
+### Search with debug=all (text search)
+POST {{baseUrl}}/indexes/hotels/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "luxury hotel",
+  "count": true,
+  "debug": "all"
+}
+
+### Search with debug=vector (vector search)
+POST {{baseUrl}}/indexes/documents-vector/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "vectorQueries": [
+    {
+      "kind": "vector",
+      "vector": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8],
+      "fields": "contentVector",
+      "k": 3
+    }
+  ],
+  "select": "id,title,content",
+  "debug": "vector"
+}
+
+### Hybrid search with debug (combined text + vector)
+POST {{baseUrl}}/indexes/documents-vector/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "machine learning",
+  "vectorQueries": [
+    {
+      "kind": "vector",
+      "vector": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8],
+      "fields": "contentVector",
+      "k": 3
+    }
+  ],
+  "select": "id,title,content",
+  "debug": "vector|semantic"
+}
+
+### GET search with debug parameter
+GET {{baseUrl}}/indexes/hotels/docs?api-version={{apiVersion}}&search=luxury&$top=5&debug=all
+api-key: {{queryKey}}
+
+### Search with debug=disabled (explicitly off)
+POST {{baseUrl}}/indexes/hotels/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "luxury hotel",
+  "debug": "disabled"
+}
 
 # ============================================
 # AUTOCOMPLETE & SUGGESTIONS
