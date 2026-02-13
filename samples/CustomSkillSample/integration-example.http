@@ -14,9 +14,14 @@
 #
 ###############################################################################
 
-@baseUrl = http://localhost:5250
+@baseUrl = https://localhost:7250
 @apiVersion = 2024-07-01
 @apiKey = admin-key-12345
+
+# this needs to be without the container name since the data source definition already specifies the container. The indexer will combine the connection string path with the container name to get the full path to the documents.
+@absolutePathToSampleDocuments = C:\Projets\AzureAISimulator
+
+@containerName = sample-documents
 
 ###############################################################################
 # Step 1: Create Index with fields for skill outputs
@@ -168,10 +173,10 @@ api-key: {{apiKey}}
   "name": "local-docs",
   "type": "filesystem",
   "credentials": {
-    "connectionString": "path=./sample-documents"
+    "connectionString": "path={{absolutePathToSampleDocuments}}"
   },
   "container": {
-    "name": "documents"
+    "name": "{{@containerName}}"
   }
 }
 
