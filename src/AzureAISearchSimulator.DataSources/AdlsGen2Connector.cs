@@ -144,15 +144,16 @@ public class AdlsGen2Connector : IDataSourceConnector
                     }
 
                     var fileClient = fileSystemClient.GetFileClient(pathItem.Name);
-                    var content = await DownloadFileContentAsync(fileClient);
 
                     var key = GenerateKey(pathItem.Name);
 
+                    // Metadata-only: content is NOT downloaded here for performance.
+                    // Use DownloadContentAsync to fetch content when needed.
                     documents.Add(new DataSourceDocument
                     {
                         Key = key,
                         Name = pathItem.Name,
-                        Content = content,
+                        Content = Array.Empty<byte>(),
                         ContentType = GetMimeType(pathItem.Name),
                         LastModified = pathItem.LastModified,
                         Size = pathItem.ContentLength ?? 0,
@@ -168,6 +169,21 @@ public class AdlsGen2Connector : IDataSourceConnector
         catch (RequestFailedException ex) when (ex.Status == 404)
         {
             _logger.LogWarning("Directory not found: {Path}", directoryPath);
+        }
+    }
+
+    public async Task DownloadContentAsync(DataSource dataSource, DataSourceDocument document)
+    {
+        try
+        {
+            var fileSystemClient = GetFileSystemClient(dataSource);
+            var fileClient = fileSystemClient.GetFileClient(document.Name);
+            document.Content = await DownloadFileContentAsync(fileClient);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to download content for file: {FilePath}", document.Name);
+            throw;
         }
     }
 

@@ -180,61 +180,100 @@ public partial class IndexerService : IIndexerService
             var trackingState = status.LastResult?.FinalTrackingState;
             executionResult.InitialTrackingState = trackingState;
 
-            // Fetch documents from data source
+            // Fetch document metadata from data source (content is NOT downloaded yet)
             var documents = await connector.ListDocumentsAsync(dataSource, trackingState);
             var documentList = documents.ToList();
 
             _logger.LogInformation("Indexer {Name} found {Count} documents to process", 
                 name, documentList.Count);
 
-            // Process documents
+            // Process documents in batches
             var processedCount = 0;
             var failedCount = 0;
+            var skippedCount = 0;
             var batchSize = indexer.Parameters?.BatchSize ?? 1000;
             var maxFailedItems = indexer.Parameters?.MaxFailedItems ?? -1;
-            var progressUpdateInterval = 50; // Update progress every N documents
+            var maxFailedItemsPerBatch = indexer.Parameters?.MaxFailedItemsPerBatch ?? -1;
+            // Concurrency limit for parallel document preparation within a batch
+            var maxParallelism = Math.Min(Environment.ProcessorCount, batchSize);
 
             foreach (var batch in documentList.Chunk(batchSize))
             {
-                foreach (var doc in batch)
+                var batchFailedCount = 0; // Reset per-batch failure counter
+                var batchStart = DateTime.UtcNow;
+
+                _logger.LogDebug("Processing batch of {Count} documents (batch size: {BatchSize})", 
+                    batch.Length, batchSize);
+
+                // Phase 1: Prepare all documents in parallel (download, crack, enrich, map fields)
+                var preparedResults = await PrepareDocumentBatchAsync(
+                    indexer, batch, maxParallelism, connector, dataSource);
+
+                // Phase 2: Collect successes and failures, then bulk upload
+                var batchActions = new List<IndexAction>();
+
+                foreach (var result in preparedResults)
+                {
+                    if (result.Skipped)
+                    {
+                        skippedCount++;
+                        continue;
+                    }
+
+                    if (result.Success)
+                    {
+                        batchActions.AddRange(result.Actions);
+                    }
+                    else
+                    {
+                        failedCount++;
+                        batchFailedCount++;
+
+                        executionResult.Errors.Add(result.Error!);
+
+                        // Check per-batch failure limit
+                        if (maxFailedItemsPerBatch >= 0 && batchFailedCount > maxFailedItemsPerBatch)
+                        {
+                            _logger.LogWarning(
+                                "Batch failure limit ({Limit}) exceeded, skipping rest of batch",
+                                maxFailedItemsPerBatch);
+                            break;
+                        }
+
+                        // Check global failure limit
+                        if (maxFailedItems >= 0 && failedCount > maxFailedItems)
+                        {
+                            throw new InvalidOperationException(
+                                $"Maximum failed items ({maxFailedItems}) exceeded.");
+                        }
+                    }
+                }
+
+                // Phase 3: Bulk upload all successful documents in a single call
+                if (batchActions.Count > 0)
                 {
                     try
                     {
-                        await ProcessDocumentAsync(indexer, doc);
-                        processedCount++;
-                    }
-                    catch (InvalidDocumentKeyException keyEx)
-                    {
-                        failedCount++;
-                        _logger.LogWarning(keyEx, "Invalid document key: {Key}", keyEx.Key);
-                        
-                        executionResult.Errors.Add(new IndexerExecutionError
-                        {
-                            Key = $"localId={doc.Key}&documentKey={keyEx.Key}",
-                            ErrorMessage = keyEx.Message,
-                            StatusCode = 400,
-                            Name = $"DocumentExtraction.azureblob.{indexer.DataSourceName}",
-                            Details = $"Target field 'id' is either not present, doesn't have a value set, or no data could be extracted from the document for it.Failed document: '{doc.Key}'",
-                            DocumentationLink = "https://go.microsoft.com/fwlink/?linkid=2049388"
-                        });
+                        var request = new IndexDocumentsRequest { Value = batchActions };
+                        await _documentService.IndexDocumentsAsync(indexer.TargetIndexName, request);
+                        processedCount += batchActions.Count;
 
-                        if (maxFailedItems >= 0 && failedCount > maxFailedItems)
-                        {
-                            throw new InvalidOperationException(
-                                $"Maximum failed items ({maxFailedItems}) exceeded.");
-                        }
+                        _logger.LogDebug(
+                            "Bulk indexed {Count} documents in {Duration}ms",
+                            batchActions.Count, (DateTime.UtcNow - batchStart).TotalMilliseconds);
                     }
                     catch (Exception ex)
                     {
-                        failedCount++;
-                        _logger.LogWarning(ex, "Failed to process document: {Key}", doc.Key);
+                        // If the bulk upload fails, count all documents in the batch as failed
+                        _logger.LogError(ex, "Bulk upload failed for batch of {Count} documents", batchActions.Count);
+                        failedCount += batchActions.Count;
                         
                         executionResult.Errors.Add(new IndexerExecutionError
                         {
-                            Key = doc.Key,
-                            ErrorMessage = ex.Message,
+                            Key = "(batch)",
+                            ErrorMessage = $"Bulk upload failed: {ex.Message}",
                             StatusCode = 500,
-                            Name = doc.Name
+                            Name = $"BulkUpload.{indexer.TargetIndexName}"
                         });
 
                         if (maxFailedItems >= 0 && failedCount > maxFailedItems)
@@ -243,15 +282,12 @@ public partial class IndexerService : IIndexerService
                                 $"Maximum failed items ({maxFailedItems}) exceeded.");
                         }
                     }
-
-                    // Live progress update every N documents
-                    if ((processedCount + failedCount) % progressUpdateInterval == 0)
-                    {
-                        executionResult.ItemsProcessed = processedCount;
-                        executionResult.ItemsFailed = failedCount;
-                        await _repository.SaveStatusAsync(name, status);
-                    }
                 }
+
+                // Live progress update after each batch
+                executionResult.ItemsProcessed = processedCount;
+                executionResult.ItemsFailed = failedCount;
+                await _repository.SaveStatusAsync(name, status);
             }
 
             // Update execution result
@@ -264,8 +300,8 @@ public partial class IndexerService : IIndexerService
             executionResult.FinalTrackingState = DateTimeOffset.UtcNow.ToString("O");
 
             _logger.LogInformation(
-                "Indexer {Name} completed: {Processed} processed, {Failed} failed", 
-                name, processedCount, failedCount);
+                "Indexer {Name} completed: {Processed} processed, {Failed} failed, {Skipped} skipped (unchanged)", 
+                name, processedCount, failedCount, skippedCount);
         }
         catch (Exception ex)
         {
@@ -290,6 +326,112 @@ public partial class IndexerService : IIndexerService
         }
 
         await _repository.SaveStatusAsync(name, status);
+    }
+
+    /// <summary>
+    /// Result of preparing a single source document for indexing.
+    /// Contains one or more IndexActions (e.g., JSON array parsing produces multiple actions).
+    /// </summary>
+    private class DocumentPrepareResult
+    {
+        public bool Success { get; init; }
+        public bool Skipped { get; init; }
+        public List<IndexAction> Actions { get; init; } = new();
+        public IndexerExecutionError? Error { get; init; }
+
+        public static DocumentPrepareResult Ok(IndexAction action) =>
+            new() { Success = true, Actions = [action] };
+
+        public static DocumentPrepareResult Ok(List<IndexAction> actions) =>
+            new() { Success = true, Actions = actions };
+
+        public static DocumentPrepareResult Fail(IndexerExecutionError error) =>
+            new() { Success = false, Error = error };
+
+        public static DocumentPrepareResult Skip() =>
+            new() { Success = true, Skipped = true };
+    }
+
+    /// <summary>
+    /// Prepares a batch of documents in parallel: downloads content, cracks, enriches, and maps fields
+    /// without uploading to the index. Returns preparation results for bulk upload.
+    /// </summary>
+    private async Task<List<DocumentPrepareResult>> PrepareDocumentBatchAsync(
+        Indexer indexer,
+        DataSourceDocument[] batch,
+        int maxParallelism,
+        IDataSourceConnector connector,
+        DataSource dataSource)
+    {
+        var semaphore = new SemaphoreSlim(maxParallelism);
+        var tasks = batch.Select(async doc =>
+        {
+            await semaphore.WaitAsync();
+            try
+            {
+                return await PrepareDocumentSafeAsync(indexer, doc, connector, dataSource);
+            }
+            finally
+            {
+                semaphore.Release();
+            }
+        });
+
+        var results = await Task.WhenAll(tasks);
+        return results.ToList();
+    }
+
+    /// <summary>
+    /// Safely prepares a document, catching any exceptions and wrapping them
+    /// in a DocumentPrepareResult with error details.
+    /// Performs change detection to skip documents that haven't changed since last indexing.
+    /// </summary>
+    private async Task<DocumentPrepareResult> PrepareDocumentSafeAsync(
+        Indexer indexer, DataSourceDocument doc,
+        IDataSourceConnector connector, DataSource dataSource)
+    {
+        try
+        {
+            // Check if the document has changed since it was last indexed
+            if (dataSource.DataChangeDetectionPolicy != null)
+            {
+                var hasChanged = await HasDocumentChangedAsync(indexer, doc, dataSource);
+                if (!hasChanged)
+                {
+                    _logger.LogDebug(
+                        "Skipping unchanged document: {Key} (Name: {Name})",
+                        doc.Key, doc.Name);
+                    return DocumentPrepareResult.Skip();
+                }
+            }
+
+            var actions = await PrepareDocumentAsync(indexer, doc, connector, dataSource);
+            return DocumentPrepareResult.Ok(actions);
+        }
+        catch (InvalidDocumentKeyException keyEx)
+        {
+            _logger.LogWarning(keyEx, "Invalid document key: {Key}", keyEx.Key);
+            return DocumentPrepareResult.Fail(new IndexerExecutionError
+            {
+                Key = $"localId={doc.Key}&documentKey={keyEx.Key}",
+                ErrorMessage = keyEx.Message,
+                StatusCode = 400,
+                Name = $"DocumentExtraction.azureblob.{indexer.DataSourceName}",
+                Details = $"Target field 'id' is either not present, doesn't have a value set, or no data could be extracted from the document for it.Failed document: '{doc.Key}'",
+                DocumentationLink = "https://go.microsoft.com/fwlink/?linkid=2049388"
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to process document: {Key}", doc.Key);
+            return DocumentPrepareResult.Fail(new IndexerExecutionError
+            {
+                Key = doc.Key,
+                ErrorMessage = ex.Message,
+                StatusCode = 500,
+                Name = doc.Name
+            });
+        }
     }
 
     public async Task ResetAsync(string name)
@@ -354,6 +496,119 @@ public partial class IndexerService : IIndexerService
     }
 
     /// <summary>
+    /// Checks whether a source document has changed since it was last indexed.
+    /// Compares the high-water-mark column value (e.g., metadata_storage_last_modified)
+    /// from the source document metadata against the value stored in the index.
+    /// Returns true if the document is new or has changed, false if unchanged.
+    /// </summary>
+    private async Task<bool> HasDocumentChangedAsync(
+        Indexer indexer, DataSourceDocument sourceDoc, DataSource dataSource)
+    {
+        var policy = dataSource.DataChangeDetectionPolicy;
+        if (policy == null)
+            return true; // No policy = always process
+
+        // Determine the document key as it would appear in the index
+        var keyMapping = GetKeyFieldMapping(indexer);
+        var docKey = sourceDoc.Key;
+
+        // Apply the key mapping function if one exists
+        if (keyMapping.MappingFunction != null)
+        {
+            docKey = ApplyMappingFunction(docKey, keyMapping.MappingFunction)?.ToString() ?? docKey;
+        }
+
+        var keyFieldName = keyMapping.TargetFieldName ?? keyMapping.SourceFieldName;
+
+        // Look up the document in the index
+        Dictionary<string, object?>? existingDoc;
+        try
+        {
+            existingDoc = await _documentService.GetDocumentAsync(
+                indexer.TargetIndexName, docKey);
+        }
+        catch
+        {
+            // If lookup fails (e.g., index not created yet), treat as changed
+            return true;
+        }
+
+        if (existingDoc == null)
+        {
+            // Document doesn't exist in the index yet — needs indexing
+            return true;
+        }
+
+        // Compare using the high-water-mark column
+        var hwmColumn = policy.HighWaterMarkColumnName;
+        if (string.IsNullOrEmpty(hwmColumn))
+            return true; // No column specified = always process
+
+        // Get the source value from the document metadata
+        object? sourceValue = null;
+
+        // Common high-water-mark columns map to DataSourceDocument properties
+        if (hwmColumn.Equals("metadata_storage_last_modified", StringComparison.OrdinalIgnoreCase))
+        {
+            sourceValue = sourceDoc.LastModified?.ToString("O");
+        }
+        else if (hwmColumn.Equals("metadata_storage_size", StringComparison.OrdinalIgnoreCase))
+        {
+            sourceValue = sourceDoc.Size.ToString();
+        }
+        else if (sourceDoc.Metadata.TryGetValue(hwmColumn, out var metaValue))
+        {
+            sourceValue = metaValue?.ToString();
+        }
+
+        if (sourceValue == null)
+            return true; // Can't determine = always process
+
+        // Find the matching field in the index
+        // The hwm column might be stored under a different field name via field mappings
+        var targetFieldName = hwmColumn;
+
+        // Check if there's a field mapping for this column
+        if (indexer.FieldMappings != null)
+        {
+            var mapping = indexer.FieldMappings.FirstOrDefault(m =>
+                m.SourceFieldName.Equals(hwmColumn, StringComparison.OrdinalIgnoreCase));
+            if (mapping != null)
+            {
+                targetFieldName = mapping.TargetFieldName ?? mapping.SourceFieldName;
+            }
+        }
+
+        // Get the indexed value
+        if (!existingDoc.TryGetValue(targetFieldName, out var indexedValue) || indexedValue == null)
+        {
+            // Field not found in index = treat as changed (needs re-indexing)
+            return true;
+        }
+
+        // Compare values as strings
+        var sourceStr = sourceValue.ToString() ?? "";
+        var indexedStr = indexedValue.ToString() ?? "";
+
+        // For date comparisons, try to parse and compare as DateTimeOffset
+        if (DateTimeOffset.TryParse(sourceStr, out var sourceDate) &&
+            DateTimeOffset.TryParse(indexedStr, out var indexedDate))
+        {
+            var changed = sourceDate > indexedDate;
+            if (!changed && _diagnosticSettings.Enabled && _diagnosticSettings.LogDocumentDetails)
+            {
+                _logger.LogInformation(
+                    "[DIAGNOSTIC] Document '{Key}' unchanged: source={SourceDate}, indexed={IndexedDate}",
+                    sourceDoc.Key, sourceStr, indexedStr);
+            }
+            return changed;
+        }
+
+        // Fallback: string comparison
+        return !string.Equals(sourceStr, indexedStr, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// Validates that a document key contains only valid characters.
     /// Valid characters are: letters, digits, underscore (_), dash (-), or equal sign (=).
     /// </summary>
@@ -365,12 +620,25 @@ public partial class IndexerService : IIndexerService
         }
     }
 
-    private async Task ProcessDocumentAsync(Indexer indexer, DataSourceDocument sourceDoc)
+    /// <summary>
+    /// Prepares a document for indexing: downloads content, cracks, runs skillset, maps fields.
+    /// Returns one or more IndexActions ready for bulk upload (JSON array produces multiple).
+    /// Does NOT upload to the index.
+    /// </summary>
+    private async Task<List<IndexAction>> PrepareDocumentAsync(
+        Indexer indexer, DataSourceDocument sourceDoc,
+        IDataSourceConnector connector, DataSource dataSource)
     {
         var processStart = DateTime.UtcNow;
         
         // Validate document key before processing
         ValidateDocumentKey(sourceDoc.Key, sourceDoc.Name, indexer.DataSourceName);
+
+        // Download content on-demand (parallel across batch via PrepareDocumentBatchAsync)
+        if (sourceDoc.Content == null || sourceDoc.Content.Length == 0)
+        {
+            await connector.DownloadContentAsync(dataSource, sourceDoc);
+        }
 
         // Diagnostic: Log document processing start
         if (_diagnosticSettings.Enabled && _diagnosticSettings.LogDocumentDetails)
@@ -391,8 +659,7 @@ public partial class IndexerService : IIndexerService
         
         if (parsingMode == "json" || parsingMode == "jsonarray")
         {
-            await ProcessJsonDocumentAsync(indexer, sourceDoc, parsingMode);
-            return;
+            return await PrepareJsonDocumentAsync(indexer, sourceDoc, parsingMode);
         }
         
         // Extract content using document cracker (default mode)
@@ -438,35 +705,7 @@ public partial class IndexerService : IIndexerService
         var enrichedDoc = new EnrichedDocument(initialContent);
 
         // Execute skillset if configured
-        if (!string.IsNullOrEmpty(indexer.SkillsetName))
-        {
-            var skillset = await _skillsetService.GetAsync(indexer.SkillsetName);
-            if (skillset != null)
-            {
-                _logger.LogDebug("Executing skillset '{SkillsetName}' for document {Key}", 
-                    skillset.Name, sourceDoc.Key);
-                
-                var pipelineResult = await _skillPipeline.ExecuteAsync(skillset, enrichedDoc);
-                
-                if (!pipelineResult.Success)
-                {
-                    var errorMessage = $"Skillset '{skillset.Name}' failed for document {sourceDoc.Key}: {string.Join("; ", pipelineResult.Errors)}";
-                    _logger.LogWarning(errorMessage);
-                    throw new InvalidOperationException(errorMessage);
-                }
-
-                if (pipelineResult.Warnings.Count > 0)
-                {
-                    _logger.LogDebug("Skillset warnings: {Warnings}", 
-                        string.Join("; ", pipelineResult.Warnings));
-                }
-            }
-            else
-            {
-                _logger.LogWarning("Skillset '{SkillsetName}' not found, skipping skill execution", 
-                    indexer.SkillsetName);
-            }
-        }
+        await ExecuteSkillsetAsync(indexer, enrichedDoc, sourceDoc.Key);
 
         // Build the final document from enriched data
         var enrichedData = enrichedDoc.ToDictionary();
@@ -489,76 +728,129 @@ public partial class IndexerService : IIndexerService
         }
 
         // Apply custom field mappings (can override enriched values)
-        if (indexer.FieldMappings != null)
-        {
-            if (_diagnosticSettings.Enabled && _diagnosticSettings.LogFieldMappings && indexer.FieldMappings.Count > 0)
-            {
-                _logger.LogInformation("[DIAGNOSTIC] Applying {Count} field mappings for document '{DocumentKey}'",
-                    indexer.FieldMappings.Count, sourceDoc.Key);
-            }
-            
-            foreach (var mapping in indexer.FieldMappings)
-            {
-                if (enrichedData.TryGetValue(mapping.SourceFieldName, out var value) && value != null)
-                {
-                    var targetField = mapping.TargetFieldName ?? mapping.SourceFieldName;
-                    var mappedValue = ApplyMappingFunction(value, mapping.MappingFunction);
-                    document[targetField] = mappedValue;
-                    
-                    if (_diagnosticSettings.Enabled && _diagnosticSettings.LogFieldMappings)
-                    {
-                        _logger.LogInformation(
-                            "[DIAGNOSTIC] Field mapping: '{Source}' -> '{Target}', Function: {Function}",
-                            mapping.SourceFieldName, targetField, mapping.MappingFunction?.Name ?? "(none)");
-                    }
-                }
-            }
-        }
+        ApplyFieldMappings(indexer, enrichedData, document, sourceDoc.Key);
 
         // Apply output field mappings (from skillset outputs)
-        if (indexer.OutputFieldMappings != null)
-        {
-            if (_diagnosticSettings.Enabled && _diagnosticSettings.LogFieldMappings && indexer.OutputFieldMappings.Count > 0)
-            {
-                _logger.LogInformation("[DIAGNOSTIC] Applying {Count} output field mappings for document '{DocumentKey}'",
-                    indexer.OutputFieldMappings.Count, sourceDoc.Key);
-            }
-            
-            foreach (var mapping in indexer.OutputFieldMappings)
-            {
-                // Source is a path like "/document/embedding"
-                var sourcePath = mapping.SourceFieldName;
-                var value = enrichedDoc.GetValue(sourcePath);
-                if (value != null)
-                {
-                    var targetField = mapping.TargetFieldName ?? Path.GetFileName(sourcePath);
-                    var mappedValue = ApplyMappingFunction(value, mapping.MappingFunction);
-                    document[targetField] = mappedValue;
-                    
-                    if (_diagnosticSettings.Enabled && _diagnosticSettings.LogFieldMappings)
-                    {
-                        _logger.LogInformation(
-                            "[DIAGNOSTIC] Output field mapping: '{Source}' -> '{Target}', Function: {Function}",
-                            sourcePath, targetField, mapping.MappingFunction?.Name ?? "(none)");
-                    }
-                }
-            }
-        }
+        ApplyOutputFieldMappings(indexer, enrichedDoc, document);
 
-        // Upload to index
-        var request = new IndexDocumentsRequest
-        {
-            Value = new List<IndexAction> { document }
-        };
-        await _documentService.IndexDocumentsAsync(indexer.TargetIndexName, request);
-        
         // Diagnostic: Log document processing completion with timing
         if (_diagnosticSettings.Enabled && _diagnosticSettings.LogDocumentDetails && _diagnosticSettings.IncludeTimings)
         {
             var duration = DateTime.UtcNow - processStart;
             _logger.LogInformation(
-                "[DIAGNOSTIC] Document '{DocumentKey}' processed and indexed in {Duration}ms - Target index: '{IndexName}', Fields mapped: {FieldCount}",
+                "[DIAGNOSTIC] Document '{DocumentKey}' prepared in {Duration}ms - Target index: '{IndexName}', Fields mapped: {FieldCount}",
                 sourceDoc.Key, duration.TotalMilliseconds, indexer.TargetIndexName, document.Count - 1);
+        }
+
+        return [document];
+    }
+
+    /// <summary>
+    /// Executes the skillset on an enriched document if the indexer has one configured.
+    /// </summary>
+    private async Task ExecuteSkillsetAsync(Indexer indexer, EnrichedDocument enrichedDoc, string docKey)
+    {
+        if (string.IsNullOrEmpty(indexer.SkillsetName))
+            return;
+
+        var skillset = await _skillsetService.GetAsync(indexer.SkillsetName);
+        if (skillset == null)
+        {
+            _logger.LogWarning("Skillset '{SkillsetName}' not found, skipping skill execution", 
+                indexer.SkillsetName);
+            return;
+        }
+
+        _logger.LogDebug("Executing skillset '{SkillsetName}' for document {Key}", 
+            skillset.Name, docKey);
+
+        var pipelineResult = await _skillPipeline.ExecuteAsync(skillset, enrichedDoc);
+
+        if (!pipelineResult.Success)
+        {
+            var errorMessage = $"Skillset '{skillset.Name}' failed for document {docKey}: {string.Join("; ", pipelineResult.Errors)}";
+            _logger.LogWarning(errorMessage);
+            throw new InvalidOperationException(errorMessage);
+        }
+
+        if (pipelineResult.Warnings.Count > 0)
+        {
+            _logger.LogDebug("Skillset warnings: {Warnings}", 
+                string.Join("; ", pipelineResult.Warnings));
+        }
+    }
+
+    /// <summary>
+    /// Applies field mappings from enriched data to the document action.
+    /// </summary>
+    private void ApplyFieldMappings(
+        Indexer indexer,
+        Dictionary<string, object?> enrichedData,
+        IndexAction document,
+        string docKey)
+    {
+        if (indexer.FieldMappings == null)
+            return;
+
+        if (_diagnosticSettings.Enabled && _diagnosticSettings.LogFieldMappings && indexer.FieldMappings.Count > 0)
+        {
+            _logger.LogInformation("[DIAGNOSTIC] Applying {Count} field mappings for document '{DocumentKey}'",
+                indexer.FieldMappings.Count, docKey);
+        }
+
+        foreach (var mapping in indexer.FieldMappings)
+        {
+            if (enrichedData.TryGetValue(mapping.SourceFieldName, out var value) && value != null)
+            {
+                var targetField = mapping.TargetFieldName ?? mapping.SourceFieldName;
+                var mappedValue = ApplyMappingFunction(value, mapping.MappingFunction);
+                document[targetField] = mappedValue;
+
+                if (_diagnosticSettings.Enabled && _diagnosticSettings.LogFieldMappings)
+                {
+                    _logger.LogInformation(
+                        "[DIAGNOSTIC] Field mapping: '{Source}' -> '{Target}', Function: {Function}",
+                        mapping.SourceFieldName, targetField, mapping.MappingFunction?.Name ?? "(none)");
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Applies output field mappings (from skillset outputs) to the document action.
+    /// </summary>
+    private void ApplyOutputFieldMappings(
+        Indexer indexer,
+        EnrichedDocument enrichedDoc,
+        IndexAction document)
+    {
+        if (indexer.OutputFieldMappings == null)
+            return;
+
+        if (_diagnosticSettings.Enabled && _diagnosticSettings.LogFieldMappings && indexer.OutputFieldMappings.Count > 0)
+        {
+            _logger.LogInformation("[DIAGNOSTIC] Applying {Count} output field mappings",
+                indexer.OutputFieldMappings.Count);
+        }
+
+        foreach (var mapping in indexer.OutputFieldMappings)
+        {
+            // Source is a path like "/document/embedding"
+            var sourcePath = mapping.SourceFieldName;
+            var value = enrichedDoc.GetValue(sourcePath);
+            if (value != null)
+            {
+                var targetField = mapping.TargetFieldName ?? Path.GetFileName(sourcePath);
+                var mappedValue = ApplyMappingFunction(value, mapping.MappingFunction);
+                document[targetField] = mappedValue;
+
+                if (_diagnosticSettings.Enabled && _diagnosticSettings.LogFieldMappings)
+                {
+                    _logger.LogInformation(
+                        "[DIAGNOSTIC] Output field mapping: '{Source}' -> '{Target}', Function: {Function}",
+                        sourcePath, targetField, mapping.MappingFunction?.Name ?? "(none)");
+                }
+            }
         }
     }
 
@@ -668,13 +960,15 @@ public partial class IndexerService : IIndexerService
     }
 
     /// <summary>
-    /// Process a JSON document using JSON parsing mode.
-    /// The JSON content is parsed and its properties are used directly as index fields.
+    /// Prepares a JSON document using JSON parsing mode.
+    /// Returns one or more IndexActions (JSON array produces multiple actions).
+    /// Does NOT upload to the index.
     /// </summary>
-    private async Task ProcessJsonDocumentAsync(Indexer indexer, DataSourceDocument sourceDoc, string parsingMode)
+    private async Task<List<IndexAction>> PrepareJsonDocumentAsync(Indexer indexer, DataSourceDocument sourceDoc, string parsingMode)
     {
         var jsonContent = System.Text.Encoding.UTF8.GetString(sourceDoc.Content);
-        
+        var actions = new List<IndexAction>();
+
         try
         {
             if (parsingMode == "jsonarray")
@@ -686,7 +980,8 @@ public partial class IndexerService : IIndexerService
                     var index = 0;
                     foreach (var element in jsonArray)
                     {
-                        await IndexJsonElementAsync(indexer, sourceDoc, element, $"{sourceDoc.Key}_{index}");
+                        var action = await PrepareJsonElementAsync(indexer, sourceDoc, element, $"{sourceDoc.Key}_{index}");
+                        actions.Add(action);
                         index++;
                     }
                 }
@@ -695,7 +990,8 @@ public partial class IndexerService : IIndexerService
             {
                 // Parse as single JSON object
                 var jsonElement = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(jsonContent);
-                await IndexJsonElementAsync(indexer, sourceDoc, jsonElement, null);
+                var action = await PrepareJsonElementAsync(indexer, sourceDoc, jsonElement, null);
+                actions.Add(action);
             }
         }
         catch (System.Text.Json.JsonException ex)
@@ -703,12 +999,15 @@ public partial class IndexerService : IIndexerService
             _logger.LogWarning(ex, "Failed to parse JSON document {Name}: {Error}", sourceDoc.Name, ex.Message);
             throw new InvalidOperationException($"Failed to parse JSON document '{sourceDoc.Name}': {ex.Message}");
         }
+
+        return actions;
     }
 
     /// <summary>
-    /// Index a single JSON element as a document.
+    /// Prepares a single JSON element as an IndexAction.
+    /// Does NOT upload to the index.
     /// </summary>
-    private async Task IndexJsonElementAsync(Indexer indexer, DataSourceDocument sourceDoc, System.Text.Json.JsonElement jsonElement, string? keySuffix)
+    private async Task<IndexAction> PrepareJsonElementAsync(Indexer indexer, DataSourceDocument sourceDoc, System.Text.Json.JsonElement jsonElement, string? keySuffix)
     {
         // Extract all properties from the JSON
         var jsonData = new Dictionary<string, object?>();
@@ -743,35 +1042,7 @@ public partial class IndexerService : IIndexerService
         var enrichedDoc = new EnrichedDocument(jsonData);
 
         // Execute skillset if configured
-        if (!string.IsNullOrEmpty(indexer.SkillsetName))
-        {
-            var skillset = await _skillsetService.GetAsync(indexer.SkillsetName);
-            if (skillset != null)
-            {
-                _logger.LogInformation("Executing skillset '{SkillsetName}' for JSON document {Key}", 
-                    skillset.Name, docKey);
-                
-                var pipelineResult = await _skillPipeline.ExecuteAsync(skillset, enrichedDoc);
-                
-                if (!pipelineResult.Success)
-                {
-                    var errorMessage = $"Skillset '{skillset.Name}' failed for document {docKey}: {string.Join("; ", pipelineResult.Errors)}";
-                    _logger.LogWarning(errorMessage);
-                    throw new InvalidOperationException(errorMessage);
-                }
-
-                if (pipelineResult.Warnings.Count > 0)
-                {
-                    _logger.LogWarning("Skillset warnings for {Key}: {Warnings}", 
-                        docKey, string.Join("; ", pipelineResult.Warnings));
-                }
-            }
-            else
-            {
-                _logger.LogWarning("Skillset '{SkillsetName}' not found, skipping skill execution", 
-                    indexer.SkillsetName);
-            }
-        }
+        await ExecuteSkillsetAsync(indexer, enrichedDoc, docKey);
 
         // Build the final document from enriched data
         var enrichedData = enrichedDoc.ToDictionary();
@@ -805,25 +1076,7 @@ public partial class IndexerService : IIndexerService
         }
 
         // Apply output field mappings (from skillset outputs)
-        if (indexer.OutputFieldMappings != null)
-        {
-            foreach (var mapping in indexer.OutputFieldMappings)
-            {
-                // Source is a path like "/document/contentEmbedding"
-                var sourcePath = mapping.SourceFieldName;
-                var value = enrichedDoc.GetValue(sourcePath);
-                if (value != null)
-                {
-                    var targetField = mapping.TargetFieldName ?? System.IO.Path.GetFileName(sourcePath);
-                    document[targetField] = ApplyMappingFunction(value, mapping.MappingFunction);
-                    _logger.LogDebug("Applied output field mapping: {Source} -> {Target}", sourcePath, targetField);
-                }
-                else
-                {
-                    _logger.LogDebug("Output field mapping source {Source} has no value", sourcePath);
-                }
-            }
-        }
+        ApplyOutputFieldMappings(indexer, enrichedDoc, document);
 
         // Ensure we have a key field
         if (!document.ContainsKey("id") && !indexer.FieldMappings?.Any(m => m.TargetFieldName == "id") == true)
@@ -831,15 +1084,10 @@ public partial class IndexerService : IIndexerService
             document["id"] = docKey;
         }
 
-        _logger.LogDebug("Indexing JSON document with fields: {Fields}", 
+        _logger.LogDebug("Prepared JSON document with fields: {Fields}", 
             string.Join(", ", document.Keys.Where(k => k != "@search.action")));
 
-        // Upload to index
-        var request = new IndexDocumentsRequest
-        {
-            Value = new List<IndexAction> { document }
-        };
-        await _documentService.IndexDocumentsAsync(indexer.TargetIndexName, request);
+        return document;
     }
 
     /// <summary>
