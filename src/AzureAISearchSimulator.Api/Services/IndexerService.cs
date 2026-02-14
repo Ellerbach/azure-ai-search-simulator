@@ -190,6 +190,7 @@ public partial class IndexerService : IIndexerService
             // Process documents in batches
             var processedCount = 0;
             var failedCount = 0;
+            var skippedCount = 0;
             var batchSize = indexer.Parameters?.BatchSize ?? 1000;
             var maxFailedItems = indexer.Parameters?.MaxFailedItems ?? -1;
             var maxFailedItemsPerBatch = indexer.Parameters?.MaxFailedItemsPerBatch ?? -1;
@@ -213,6 +214,12 @@ public partial class IndexerService : IIndexerService
 
                 foreach (var result in preparedResults)
                 {
+                    if (result.Skipped)
+                    {
+                        skippedCount++;
+                        continue;
+                    }
+
                     if (result.Success)
                     {
                         batchActions.AddRange(result.Actions);
@@ -293,8 +300,8 @@ public partial class IndexerService : IIndexerService
             executionResult.FinalTrackingState = DateTimeOffset.UtcNow.ToString("O");
 
             _logger.LogInformation(
-                "Indexer {Name} completed: {Processed} processed, {Failed} failed", 
-                name, processedCount, failedCount);
+                "Indexer {Name} completed: {Processed} processed, {Failed} failed, {Skipped} skipped (unchanged)", 
+                name, processedCount, failedCount, skippedCount);
         }
         catch (Exception ex)
         {
@@ -328,6 +335,7 @@ public partial class IndexerService : IIndexerService
     private class DocumentPrepareResult
     {
         public bool Success { get; init; }
+        public bool Skipped { get; init; }
         public List<IndexAction> Actions { get; init; } = new();
         public IndexerExecutionError? Error { get; init; }
 
@@ -339,6 +347,9 @@ public partial class IndexerService : IIndexerService
 
         public static DocumentPrepareResult Fail(IndexerExecutionError error) =>
             new() { Success = false, Error = error };
+
+        public static DocumentPrepareResult Skip() =>
+            new() { Success = true, Skipped = true };
     }
 
     /// <summary>
@@ -373,6 +384,7 @@ public partial class IndexerService : IIndexerService
     /// <summary>
     /// Safely prepares a document, catching any exceptions and wrapping them
     /// in a DocumentPrepareResult with error details.
+    /// Performs change detection to skip documents that haven't changed since last indexing.
     /// </summary>
     private async Task<DocumentPrepareResult> PrepareDocumentSafeAsync(
         Indexer indexer, DataSourceDocument doc,
@@ -380,6 +392,19 @@ public partial class IndexerService : IIndexerService
     {
         try
         {
+            // Check if the document has changed since it was last indexed
+            if (dataSource.DataChangeDetectionPolicy != null)
+            {
+                var hasChanged = await HasDocumentChangedAsync(indexer, doc, dataSource);
+                if (!hasChanged)
+                {
+                    _logger.LogDebug(
+                        "Skipping unchanged document: {Key} (Name: {Name})",
+                        doc.Key, doc.Name);
+                    return DocumentPrepareResult.Skip();
+                }
+            }
+
             var actions = await PrepareDocumentAsync(indexer, doc, connector, dataSource);
             return DocumentPrepareResult.Ok(actions);
         }
@@ -468,6 +493,119 @@ public partial class IndexerService : IIndexerService
         {
             throw new ArgumentException($"Target index '{indexer.TargetIndexName}' does not exist.");
         }
+    }
+
+    /// <summary>
+    /// Checks whether a source document has changed since it was last indexed.
+    /// Compares the high-water-mark column value (e.g., metadata_storage_last_modified)
+    /// from the source document metadata against the value stored in the index.
+    /// Returns true if the document is new or has changed, false if unchanged.
+    /// </summary>
+    private async Task<bool> HasDocumentChangedAsync(
+        Indexer indexer, DataSourceDocument sourceDoc, DataSource dataSource)
+    {
+        var policy = dataSource.DataChangeDetectionPolicy;
+        if (policy == null)
+            return true; // No policy = always process
+
+        // Determine the document key as it would appear in the index
+        var keyMapping = GetKeyFieldMapping(indexer);
+        var docKey = sourceDoc.Key;
+
+        // Apply the key mapping function if one exists
+        if (keyMapping.MappingFunction != null)
+        {
+            docKey = ApplyMappingFunction(docKey, keyMapping.MappingFunction)?.ToString() ?? docKey;
+        }
+
+        var keyFieldName = keyMapping.TargetFieldName ?? keyMapping.SourceFieldName;
+
+        // Look up the document in the index
+        Dictionary<string, object?>? existingDoc;
+        try
+        {
+            existingDoc = await _documentService.GetDocumentAsync(
+                indexer.TargetIndexName, docKey);
+        }
+        catch
+        {
+            // If lookup fails (e.g., index not created yet), treat as changed
+            return true;
+        }
+
+        if (existingDoc == null)
+        {
+            // Document doesn't exist in the index yet — needs indexing
+            return true;
+        }
+
+        // Compare using the high-water-mark column
+        var hwmColumn = policy.HighWaterMarkColumnName;
+        if (string.IsNullOrEmpty(hwmColumn))
+            return true; // No column specified = always process
+
+        // Get the source value from the document metadata
+        object? sourceValue = null;
+
+        // Common high-water-mark columns map to DataSourceDocument properties
+        if (hwmColumn.Equals("metadata_storage_last_modified", StringComparison.OrdinalIgnoreCase))
+        {
+            sourceValue = sourceDoc.LastModified?.ToString("O");
+        }
+        else if (hwmColumn.Equals("metadata_storage_size", StringComparison.OrdinalIgnoreCase))
+        {
+            sourceValue = sourceDoc.Size.ToString();
+        }
+        else if (sourceDoc.Metadata.TryGetValue(hwmColumn, out var metaValue))
+        {
+            sourceValue = metaValue?.ToString();
+        }
+
+        if (sourceValue == null)
+            return true; // Can't determine = always process
+
+        // Find the matching field in the index
+        // The hwm column might be stored under a different field name via field mappings
+        var targetFieldName = hwmColumn;
+
+        // Check if there's a field mapping for this column
+        if (indexer.FieldMappings != null)
+        {
+            var mapping = indexer.FieldMappings.FirstOrDefault(m =>
+                m.SourceFieldName.Equals(hwmColumn, StringComparison.OrdinalIgnoreCase));
+            if (mapping != null)
+            {
+                targetFieldName = mapping.TargetFieldName ?? mapping.SourceFieldName;
+            }
+        }
+
+        // Get the indexed value
+        if (!existingDoc.TryGetValue(targetFieldName, out var indexedValue) || indexedValue == null)
+        {
+            // Field not found in index = treat as changed (needs re-indexing)
+            return true;
+        }
+
+        // Compare values as strings
+        var sourceStr = sourceValue.ToString() ?? "";
+        var indexedStr = indexedValue.ToString() ?? "";
+
+        // For date comparisons, try to parse and compare as DateTimeOffset
+        if (DateTimeOffset.TryParse(sourceStr, out var sourceDate) &&
+            DateTimeOffset.TryParse(indexedStr, out var indexedDate))
+        {
+            var changed = sourceDate > indexedDate;
+            if (!changed && _diagnosticSettings.Enabled && _diagnosticSettings.LogDocumentDetails)
+            {
+                _logger.LogInformation(
+                    "[DIAGNOSTIC] Document '{Key}' unchanged: source={SourceDate}, indexed={IndexedDate}",
+                    sourceDoc.Key, sourceStr, indexedStr);
+            }
+            return changed;
+        }
+
+        // Fallback: string comparison
+        return !string.Equals(sourceStr, indexedStr, StringComparison.Ordinal);
     }
 
     /// <summary>
