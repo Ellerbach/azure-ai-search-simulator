@@ -60,8 +60,16 @@ public interface IDataSourceConnector
 
     /// <summary>
     /// Lists all documents in the data source.
+    /// Returns metadata-only documents (no content downloaded) for performance.
+    /// Use <see cref="DownloadContentAsync"/> to fetch content for individual documents.
     /// </summary>
     Task<IEnumerable<DataSourceDocument>> ListDocumentsAsync(DataSource dataSource, string? trackingState = null);
+
+    /// <summary>
+    /// Downloads the content for a document previously returned by <see cref="ListDocumentsAsync"/>.
+    /// Populates the <see cref="DataSourceDocument.Content"/> property in-place.
+    /// </summary>
+    Task DownloadContentAsync(DataSource dataSource, DataSourceDocument document);
 
     /// <summary>
     /// Gets a single document by key.

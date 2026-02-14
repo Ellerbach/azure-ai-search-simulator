@@ -123,6 +123,21 @@ public class FileSystemConnector : IDataSourceConnector
         return Task.FromResult<IEnumerable<DataSourceDocument>>(documents);
     }
 
+    public Task DownloadContentAsync(DataSource dataSource, DataSourceDocument document)
+    {
+        // For local file system, content is already loaded during ListDocumentsAsync
+        // since disk I/O is fast. This is a no-op if content is already present.
+        if (document.Content != null && document.Content.Length > 0)
+        {
+            return Task.CompletedTask;
+        }
+
+        var basePath = GetBasePath(dataSource);
+        var filePath = Path.Combine(basePath, document.Name.Replace('/', Path.DirectorySeparatorChar));
+        document.Content = File.ReadAllBytes(filePath);
+        return Task.CompletedTask;
+    }
+
     public Task<DataSourceDocument?> GetDocumentAsync(DataSource dataSource, string key)
     {
         var basePath = GetBasePath(dataSource);

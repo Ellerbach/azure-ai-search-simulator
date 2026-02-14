@@ -180,7 +180,7 @@ public partial class IndexerService : IIndexerService
             var trackingState = status.LastResult?.FinalTrackingState;
             executionResult.InitialTrackingState = trackingState;
 
-            // Fetch documents from data source
+            // Fetch document metadata from data source (content is NOT downloaded yet)
             var documents = await connector.ListDocumentsAsync(dataSource, trackingState);
             var documentList = documents.ToList();
 
@@ -204,9 +204,9 @@ public partial class IndexerService : IIndexerService
                 _logger.LogDebug("Processing batch of {Count} documents (batch size: {BatchSize})", 
                     batch.Length, batchSize);
 
-                // Phase 1: Prepare all documents in parallel (crack, enrich, map fields)
+                // Phase 1: Prepare all documents in parallel (download, crack, enrich, map fields)
                 var preparedResults = await PrepareDocumentBatchAsync(
-                    indexer, batch, maxParallelism);
+                    indexer, batch, maxParallelism, connector, dataSource);
 
                 // Phase 2: Collect successes and failures, then bulk upload
                 var batchActions = new List<IndexAction>();
@@ -342,13 +342,15 @@ public partial class IndexerService : IIndexerService
     }
 
     /// <summary>
-    /// Prepares a batch of documents in parallel: cracks, enriches, and maps fields
+    /// Prepares a batch of documents in parallel: downloads content, cracks, enriches, and maps fields
     /// without uploading to the index. Returns preparation results for bulk upload.
     /// </summary>
     private async Task<List<DocumentPrepareResult>> PrepareDocumentBatchAsync(
         Indexer indexer,
         DataSourceDocument[] batch,
-        int maxParallelism)
+        int maxParallelism,
+        IDataSourceConnector connector,
+        DataSource dataSource)
     {
         var semaphore = new SemaphoreSlim(maxParallelism);
         var tasks = batch.Select(async doc =>
@@ -356,7 +358,7 @@ public partial class IndexerService : IIndexerService
             await semaphore.WaitAsync();
             try
             {
-                return await PrepareDocumentSafeAsync(indexer, doc);
+                return await PrepareDocumentSafeAsync(indexer, doc, connector, dataSource);
             }
             finally
             {
@@ -373,11 +375,12 @@ public partial class IndexerService : IIndexerService
     /// in a DocumentPrepareResult with error details.
     /// </summary>
     private async Task<DocumentPrepareResult> PrepareDocumentSafeAsync(
-        Indexer indexer, DataSourceDocument doc)
+        Indexer indexer, DataSourceDocument doc,
+        IDataSourceConnector connector, DataSource dataSource)
     {
         try
         {
-            var actions = await PrepareDocumentAsync(indexer, doc);
+            var actions = await PrepareDocumentAsync(indexer, doc, connector, dataSource);
             return DocumentPrepareResult.Ok(actions);
         }
         catch (InvalidDocumentKeyException keyEx)
@@ -480,16 +483,24 @@ public partial class IndexerService : IIndexerService
     }
 
     /// <summary>
-    /// Prepares a document for indexing: cracks content, runs skillset, maps fields.
+    /// Prepares a document for indexing: downloads content, cracks, runs skillset, maps fields.
     /// Returns one or more IndexActions ready for bulk upload (JSON array produces multiple).
     /// Does NOT upload to the index.
     /// </summary>
-    private async Task<List<IndexAction>> PrepareDocumentAsync(Indexer indexer, DataSourceDocument sourceDoc)
+    private async Task<List<IndexAction>> PrepareDocumentAsync(
+        Indexer indexer, DataSourceDocument sourceDoc,
+        IDataSourceConnector connector, DataSource dataSource)
     {
         var processStart = DateTime.UtcNow;
         
         // Validate document key before processing
         ValidateDocumentKey(sourceDoc.Key, sourceDoc.Name, indexer.DataSourceName);
+
+        // Download content on-demand (parallel across batch via PrepareDocumentBatchAsync)
+        if (sourceDoc.Content == null || sourceDoc.Content.Length == 0)
+        {
+            await connector.DownloadContentAsync(dataSource, sourceDoc);
+        }
 
         // Diagnostic: Log document processing start
         if (_diagnosticSettings.Enabled && _diagnosticSettings.LogDocumentDetails)

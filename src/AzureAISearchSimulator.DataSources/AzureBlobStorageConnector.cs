@@ -97,16 +97,15 @@ public class AzureBlobStorageConnector : IDataSourceConnector
                         continue;
                     }
 
-                    var blobClient = containerClient.GetBlobClient(blobItem.Name);
-                    var content = await DownloadBlobContentAsync(blobClient);
-
                     var key = GenerateKey(blobItem.Name);
 
+                    // Metadata-only: content is NOT downloaded here for performance.
+                    // Use DownloadContentAsync to fetch content when needed.
                     documents.Add(new DataSourceDocument
                     {
                         Key = key,
                         Name = blobItem.Name,
-                        Content = content,
+                        Content = Array.Empty<byte>(),
                         ContentType = blobItem.Properties.ContentType ?? GetMimeType(blobItem.Name),
                         LastModified = blobItem.Properties.LastModified,
                         Size = blobItem.Properties.ContentLength ?? 0,
@@ -128,6 +127,21 @@ public class AzureBlobStorageConnector : IDataSourceConnector
         }
 
         return documents;
+    }
+
+    public async Task DownloadContentAsync(DataSource dataSource, DataSourceDocument document)
+    {
+        try
+        {
+            var containerClient = GetContainerClient(dataSource);
+            var blobClient = containerClient.GetBlobClient(document.Name);
+            document.Content = await DownloadBlobContentAsync(blobClient);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to download content for blob: {BlobName}", document.Name);
+            throw;
+        }
     }
 
     public async Task<DataSourceDocument?> GetDocumentAsync(DataSource dataSource, string key)
