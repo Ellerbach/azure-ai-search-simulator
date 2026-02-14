@@ -22,6 +22,22 @@ public interface ISkillPipeline
         Skillset skillset,
         EnrichedDocument document,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Executes all skills in a skillset against a batch of documents.
+    /// Documents are processed in parallel up to the specified concurrency limit,
+    /// enabling better throughput for external API calls (e.g., Azure OpenAI embeddings).
+    /// </summary>
+    /// <param name="skillset">The skillset to execute.</param>
+    /// <param name="documents">The enriched documents to process.</param>
+    /// <param name="maxConcurrency">Maximum number of documents to process concurrently.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Pipeline execution results, one per document in the same order as the input.</returns>
+    Task<List<SkillPipelineResult>> ExecuteBatchAsync(
+        Skillset skillset,
+        IReadOnlyList<EnrichedDocument> documents,
+        int maxConcurrency = 4,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -202,6 +218,45 @@ public class SkillPipeline : ISkillPipeline
             result.Errors.Count);
 
         return result;
+    }
+
+    /// <inheritdoc/>
+    public async Task<List<SkillPipelineResult>> ExecuteBatchAsync(
+        Skillset skillset,
+        IReadOnlyList<EnrichedDocument> documents,
+        int maxConcurrency = 4,
+        CancellationToken cancellationToken = default)
+    {
+        if (documents.Count == 0)
+            return new List<SkillPipelineResult>();
+
+        _logger.LogInformation(
+            "Executing skillset '{SkillsetName}' for batch of {Count} documents (concurrency: {Concurrency})",
+            skillset.Name, documents.Count, maxConcurrency);
+
+        var semaphore = new SemaphoreSlim(maxConcurrency);
+        var tasks = documents.Select(async doc =>
+        {
+            await semaphore.WaitAsync(cancellationToken);
+            try
+            {
+                return await ExecuteAsync(skillset, doc, cancellationToken);
+            }
+            finally
+            {
+                semaphore.Release();
+            }
+        });
+
+        var results = await Task.WhenAll(tasks);
+
+        var successCount = results.Count(r => r.Success);
+        var failCount = results.Count(r => !r.Success);
+        _logger.LogInformation(
+            "Batch skillset execution complete: {Success} succeeded, {Failed} failed",
+            successCount, failCount);
+
+        return results.ToList();
     }
 
     /// <summary>
