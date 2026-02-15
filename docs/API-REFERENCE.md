@@ -1119,12 +1119,12 @@ api-key: <admin-key>
 
 | Skill Type | Description | Status |
 | ---------- | ----------- | ------ |
-| `#Microsoft.Skills.Text.SplitSkill` | Split text into pages or sentences | ✅ |
-| `#Microsoft.Skills.Text.MergeSkill` | Merge text fragments | ✅ |
-| `#Microsoft.Skills.Util.ShaperSkill` | Restructure data | ✅ |
-| `#Microsoft.Skills.Util.ConditionalSkill` | Conditional output | ✅ |
-| `#Microsoft.Skills.Custom.WebApiSkill` | Call external REST API | ✅ |
-| `#Microsoft.Skills.Text.AzureOpenAIEmbeddingSkill` | Generate embeddings | ✅ |
+| [`#Microsoft.Skills.Text.SplitSkill`](https://learn.microsoft.com/en-us/azure/search/cognitive-search-skill-textsplit) | Split text into pages or sentences | ✅ |
+| [`#Microsoft.Skills.Text.MergeSkill`](https://learn.microsoft.com/en-us/azure/search/cognitive-search-skill-textmerger) | Merge text fragments | ✅ |
+| [`#Microsoft.Skills.Util.ShaperSkill`](https://learn.microsoft.com/en-us/azure/search/cognitive-search-skill-shaper) | Restructure data | ✅ |
+| [`#Microsoft.Skills.Util.ConditionalSkill`](https://learn.microsoft.com/en-us/azure/search/cognitive-search-skill-conditional) | Conditional output | ✅ |
+| [`#Microsoft.Skills.Custom.WebApiSkill`](https://learn.microsoft.com/en-us/azure/search/cognitive-search-custom-skill-web-api) | Call external REST API | ✅ |
+| [`#Microsoft.Skills.Text.AzureOpenAIEmbeddingSkill`](https://learn.microsoft.com/en-us/azure/search/cognitive-search-skill-azure-openai-embedding) | Generate embeddings | ✅ |
 
 ### Using Skillsets with Indexers
 
