@@ -6,9 +6,10 @@
 ### 4. Run Indexer
 ### 5. Verify documents are indexed
 
-@baseUrl = https://localhost:7250
-@apiKey = admin-key-12345
-@apiVersion = 2024-07-01
+# Variables loaded from .env file (copy .env.example to .env in the workspace root)
+@baseUrl = {{$dotenv BASE_URL}}
+@apiKey = {{$dotenv ADMIN_KEY}}
+@apiVersion = {{$dotenv API_VERSION}}
 
 ### =====================================================
 ### Step 1: Create Index

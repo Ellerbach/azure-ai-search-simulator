@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+### Fixed
+
+- **IndexWriter disposed during shutdown**: Guarded `LuceneIndexManager` and `DocumentService` against `ObjectDisposedException` when the application shuts down while an indexer is still running. Errors are now logged as a single warning instead of thousands of full stack traces.
+
+### Changed
+
+- **HTTP samples use `.env` for secrets**: All `.http` sample files now use `{{$dotenv VAR_NAME}}` for base URL, API keys, storage credentials, and Entra ID tokens. Added `.env.example` template at workspace root.
+
 ### Improved
 
 - **Indexer Batch Processing Performance**

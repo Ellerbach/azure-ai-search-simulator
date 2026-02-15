@@ -3,6 +3,11 @@
 [Dd]ebugPublic/
 [Rr]elease/
 [Rr]eleases/
+
+# Environment variables (secrets)
+.env
+!.env.example
+
 x64/
 x86/
 [Ww][Ii][Nn]32/

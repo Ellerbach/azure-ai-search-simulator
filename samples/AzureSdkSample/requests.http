@@ -2,9 +2,10 @@
 ### This file can be used with the REST Client extension in VS Code
 ### Make sure the simulator is running on https://localhost:7250 or http://localhost:5250
 
-@baseUrl = https://localhost:7250
-@apiKey = admin-key-12345
-@apiVersion = 2024-07-01
+# Variables loaded from .env file (copy .env.example to .env in the workspace root)
+@baseUrl = {{$dotenv BASE_URL}}
+@apiKey = {{$dotenv ADMIN_KEY}}
+@apiVersion = {{$dotenv API_VERSION}}
 
 ### =====================================================
 ### 1. Create Index (Hotels)

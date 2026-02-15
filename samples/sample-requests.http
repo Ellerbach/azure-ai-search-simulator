@@ -2,10 +2,11 @@
 ### Use with REST Client extension in VS Code or similar tools
 ### Base URL: https://localhost:7250 (HTTPS) or http://localhost:5250 (HTTP)
 
-@baseUrl = https://localhost:7250
-@apiVersion = 2024-07-01
-@adminKey = admin-key-12345
-@queryKey = query-key-67890
+# Variables loaded from .env file (copy .env.example to .env in the workspace root)
+@baseUrl = {{$dotenv BASE_URL}}
+@apiVersion = {{$dotenv API_VERSION}}
+@adminKey = {{$dotenv ADMIN_KEY}}
+@queryKey = {{$dotenv QUERY_KEY}}
 
 # ============================================
 # INDEX MANAGEMENT

@@ -361,6 +361,12 @@ Logs are written to `logs/simulator-{date}.log` and console. Look for `[DIAGNOST
 
 ## Samples
 
+All `.http` sample files use environment variables via `$dotenv`. To get started:
+
+1. Copy `.env.example` to `.env` in the workspace root
+2. Fill in your values (API keys, storage credentials, etc.)
+3. The `.env` file is gitignored and will not be committed
+
 | Sample | Description |
 | ------ | ----------- |
 | [AzureSdkSample](samples/AzureSdkSample/) | C# console app demonstrating Azure.Search.Documents SDK compatibility |

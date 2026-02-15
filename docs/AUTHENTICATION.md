@@ -417,16 +417,34 @@ Invoke-RestMethod -Uri "https://localhost:7250/indexes?api-version=2024-07-01" -
 
 ### HTTP Client Examples (.http files)
 
-For VS Code REST Client or JetBrains HTTP Client:
+For VS Code REST Client or JetBrains HTTP Client.
+
+All `.http` files use environment variables from a `.env` file. Copy `.env.example` to `.env` in the workspace root and fill in your values:
+
+```ini
+# .env (workspace root)
+BASE_URL=https://localhost:7250
+API_VERSION=2024-07-01
+ADMIN_KEY=admin-key-12345
+QUERY_KEY=query-key-67890
+ENTRA_TOKEN=
+```
+
+Then in `.http` files, variables are loaded via `$dotenv`:
 
 ```http
-### Variables - Update these for your environment
-@baseUrl = https://localhost:7250
-@apiVersion = 2024-07-01
+### Variables loaded from .env
+@baseUrl = {{$dotenv BASE_URL}}
+@apiVersion = {{$dotenv API_VERSION}}
+@adminKey = {{$dotenv ADMIN_KEY}}
 
-### Get token using Azure CLI (run in terminal first)
+### List indexes with API key
+GET {{baseUrl}}/indexes?api-version={{apiVersion}}
+api-key: {{adminKey}}
+
+### Get token from .env (obtain via Azure CLI, then paste into .env)
 # az account get-access-token --scope https://search.azure.com/.default --query accessToken -o tsv
-@bearerToken = <paste-your-token-here>
+@bearerToken = {{$dotenv ENTRA_TOKEN}}
 
 ### List indexes with Entra ID token
 GET {{baseUrl}}/indexes?api-version={{apiVersion}}

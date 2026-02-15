@@ -39,20 +39,60 @@ public class DocumentService : IDocumentService
         }
 
         var keyField = LuceneDocumentMapper.GetKeyFieldName(index);
-        var writer = _indexManager.GetWriter(indexName);
+        IndexWriter writer;
+        try
+        {
+            writer = _indexManager.GetWriter(indexName);
+        }
+        catch (ObjectDisposedException)
+        {
+            _logger.LogWarning(
+                "Index manager is disposed — skipping batch of {Count} documents for '{IndexName}' (application may be shutting down)",
+                request.Value.Count, indexName);
+            return new IndexDocumentsResponse
+            {
+                Value = request.Value.Select(a => new IndexingResult
+                {
+                    Key = "(unavailable)",
+                    Status = false,
+                    StatusCode = 503,
+                    ErrorMessage = $"Index '{indexName}' is no longer available"
+                }).ToList()
+            };
+        }
+
         var results = new List<IndexingResult>();
 
         foreach (var action in request.Value)
         {
             var result = await ProcessActionAsync(indexName, index, keyField, writer, action);
             results.Add(result);
+
+            // If the index was disposed mid-batch, stop processing remaining actions
+            if (result.StatusCode == 503)
+            {
+                var remaining = request.Value.Count - results.Count;
+                if (remaining > 0)
+                {
+                    _logger.LogWarning("Stopping batch — {Remaining} remaining documents skipped", remaining);
+                }
+                break;
+            }
         }
 
-        // Commit all changes
-        _indexManager.Commit(indexName);
-        
-        // Persist vector indexes to disk
-        _vectorSearchService.SaveAll();
+        // Only commit if we have successful results and the manager is still alive
+        try
+        {
+            if (results.Any(r => r.Status))
+            {
+                _indexManager.Commit(indexName);
+                _vectorSearchService.SaveAll();
+            }
+        }
+        catch (ObjectDisposedException)
+        {
+            _logger.LogWarning("Could not commit changes — index manager disposed");
+        }
 
         var response = new IndexDocumentsResponse
         {
@@ -75,6 +115,7 @@ public class DocumentService : IDocumentService
         IndexWriter writer,
         IndexAction action)
     {
+        string? key = null;
         try
         {
             // Normalize action type
@@ -92,7 +133,7 @@ public class DocumentService : IDocumentService
                 };
             }
 
-            var key = ConvertToString(keyObj);
+            key = ConvertToString(keyObj);
             var term = new Term(keyField, key);
 
             switch (actionType)
@@ -118,6 +159,17 @@ public class DocumentService : IDocumentService
                         ErrorMessage = $"Unknown action type: {actionType}"
                     };
             }
+        }
+        catch (ObjectDisposedException)
+        {
+            _logger.LogWarning("Index '{IndexName}' is disposed — document action skipped (application may be shutting down)", indexName);
+            return new IndexingResult
+            {
+                Key = key ?? "(unknown)",
+                Status = false,
+                StatusCode = 503,
+                ErrorMessage = $"Index '{indexName}' is no longer available (may be shutting down)"
+            };
         }
         catch (Exception ex)
         {
