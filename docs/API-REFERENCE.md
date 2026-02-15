@@ -81,7 +81,7 @@ All requests require the `api-version` query parameter:
 
 ## Index Operations ✅
 
-### Create Index
+### [Create Index](https://learn.microsoft.com/en-us/rest/api/searchservice/indexes/create)
 
 Creates a new search index.
 
@@ -194,7 +194,7 @@ api-key: <admin-key>
 
 ---
 
-### List Indexes
+### [List Indexes](https://learn.microsoft.com/en-us/rest/api/searchservice/indexes/list)
 
 ```http
 GET /indexes?api-version=2024-07-01
@@ -218,7 +218,7 @@ api-key: <admin-key>
 
 ---
 
-### Get Index
+### [Get Index](https://learn.microsoft.com/en-us/rest/api/searchservice/indexes/get)
 
 ```http
 GET /indexes/{indexName}?api-version=2024-07-01
@@ -227,7 +227,7 @@ api-key: <admin-key>
 
 ---
 
-### Delete Index
+### [Delete Index](https://learn.microsoft.com/en-us/rest/api/searchservice/indexes/delete)
 
 ```http
 DELETE /indexes/{indexName}?api-version=2024-07-01
@@ -238,7 +238,7 @@ api-key: <admin-key>
 
 ---
 
-### Get Index Statistics
+### [Get Index Statistics](https://learn.microsoft.com/en-us/rest/api/searchservice/indexes/get-statistics)
 
 Returns statistics for a search index including document count and storage size.
 
@@ -268,7 +268,7 @@ api-key: <admin-key>
 
 ## Document Operations ✅
 
-### Upload Documents
+### [Upload Documents](https://learn.microsoft.com/en-us/rest/api/searchservice/documents)
 
 ```http
 POST /indexes/{indexName}/docs/index?api-version=2024-07-01
@@ -334,7 +334,7 @@ api-key: <admin-key>
 
 ---
 
-### Get Document
+### [Get Document](https://learn.microsoft.com/en-us/rest/api/searchservice/documents/get)
 
 ```http
 GET /indexes/{indexName}/docs/{key}?api-version=2024-07-01
@@ -343,7 +343,7 @@ api-key: <query-key>
 
 ---
 
-### Count Documents
+### [Count Documents](https://learn.microsoft.com/en-us/rest/api/searchservice/documents/count)
 
 ```http
 GET /indexes/{indexName}/docs/$count?api-version=2024-07-01
@@ -356,7 +356,7 @@ api-key: <query-key>
 
 ## Search Operations ✅
 
-### Search Documents (POST)
+### [Search Documents (POST)](https://learn.microsoft.com/en-us/rest/api/searchservice/documents/search-post)
 
 ```http
 POST /indexes/{indexName}/docs/search?api-version=2024-07-01
@@ -668,7 +668,7 @@ Text scores are normalized using min-max normalization. Vector scores are alread
 }
 ```
 
-### Search Documents (GET)
+### [Search Documents (GET)](https://learn.microsoft.com/en-us/rest/api/searchservice/documents/search-get)
 
 ```http
 GET /indexes/{indexName}/docs?api-version=2024-07-01&search={text}&$filter={filter}&$select={fields}&$orderby={sort}&$top={n}&$skip={n}&$count={bool}&highlight={fields}&searchMode={mode}&queryType={type}&debug={mode}
@@ -686,7 +686,7 @@ api-key: <query-key>
 
 ---
 
-### Suggestions
+### [Suggestions](https://learn.microsoft.com/en-us/rest/api/searchservice/documents/suggest-post)
 
 ```http
 POST /indexes/{indexName}/docs/suggest?api-version=2024-07-01
@@ -722,7 +722,7 @@ api-key: <query-key>
 
 ---
 
-### Autocomplete
+### [Autocomplete](https://learn.microsoft.com/en-us/rest/api/searchservice/documents/autocomplete-post)
 
 ```http
 POST /indexes/{indexName}/docs/autocomplete?api-version=2024-07-01
@@ -745,7 +745,7 @@ api-key: <query-key>
 
 ## Indexer Operations ✅
 
-### Create Indexer
+### [Create Indexer](https://learn.microsoft.com/en-us/rest/api/searchservice/indexers/create)
 
 ```http
 POST /indexers?api-version=2024-07-01
@@ -791,7 +791,7 @@ api-key: <admin-key>
 
 ---
 
-### Run Indexer
+### [Run Indexer](https://learn.microsoft.com/en-us/rest/api/searchservice/indexers/run)
 
 ```http
 POST /indexers/{indexerName}/run?api-version=2024-07-01
@@ -802,7 +802,7 @@ api-key: <admin-key>
 
 ---
 
-### Get Indexer Status
+### [Get Indexer Status](https://learn.microsoft.com/en-us/rest/api/searchservice/indexers/get-status)
 
 ```http
 GET /indexers/{indexerName}/status?api-version=2024-07-01
@@ -828,7 +828,7 @@ api-key: <admin-key>
 
 ---
 
-### Reset Indexer
+### [Reset Indexer](https://learn.microsoft.com/en-us/rest/api/searchservice/indexers/reset)
 
 Resets the change tracking state, causing a full re-index on next run.
 
@@ -841,7 +841,7 @@ api-key: <admin-key>
 
 ## Data Source Operations ✅
 
-### Create Data Source
+### [Create Data Source](https://learn.microsoft.com/en-us/rest/api/searchservice/data-sources/create)
 
 ```http
 POST /datasources?api-version=2024-07-01
@@ -942,7 +942,7 @@ The cracker is selected based on:
 
 Skillsets define a sequence of skills that transform and enrich documents during indexing.
 
-### Create Skillset
+### [Create Skillset](https://learn.microsoft.com/en-us/rest/api/searchservice/skillsets/create)
 
 ```http
 POST /skillsets?api-version=2024-07-01
@@ -1071,7 +1071,7 @@ api-key: <admin-key>
 
 **Response:** `201 Created`
 
-### Get Skillset
+### [Get Skillset](https://learn.microsoft.com/en-us/rest/api/searchservice/skillsets/get)
 
 ```http
 GET /skillsets/{skillsetName}?api-version=2024-07-01
@@ -1080,7 +1080,7 @@ api-key: <admin-key>
 
 **Response:** `200 OK` with skillset definition
 
-### List Skillsets
+### [List Skillsets](https://learn.microsoft.com/en-us/rest/api/searchservice/skillsets/list)
 
 ```http
 GET /skillsets?api-version=2024-07-01
@@ -1098,7 +1098,7 @@ api-key: <admin-key>
 }
 ```
 
-### Create or Update Skillset
+### [Create or Update Skillset](https://learn.microsoft.com/en-us/rest/api/searchservice/skillsets/create-or-update)
 
 ```http
 PUT /skillsets/{skillsetName}?api-version=2024-07-01
@@ -1106,7 +1106,7 @@ Content-Type: application/json
 api-key: <admin-key>
 ```
 
-### Delete Skillset
+### [Delete Skillset](https://learn.microsoft.com/en-us/rest/api/searchservice/skillsets/delete)
 
 ```http
 DELETE /skillsets/{skillsetName}?api-version=2024-07-01
@@ -1119,12 +1119,12 @@ api-key: <admin-key>
 
 | Skill Type | Description | Status |
 | ---------- | ----------- | ------ |
-| `#Microsoft.Skills.Text.SplitSkill` | Split text into pages or sentences | ✅ |
-| `#Microsoft.Skills.Text.MergeSkill` | Merge text fragments | ✅ |
-| `#Microsoft.Skills.Util.ShaperSkill` | Restructure data | ✅ |
-| `#Microsoft.Skills.Util.ConditionalSkill` | Conditional output | ✅ |
-| `#Microsoft.Skills.Custom.WebApiSkill` | Call external REST API | ✅ |
-| `#Microsoft.Skills.Text.AzureOpenAIEmbeddingSkill` | Generate embeddings | ✅ |
+| [`#Microsoft.Skills.Text.SplitSkill`](https://learn.microsoft.com/en-us/azure/search/cognitive-search-skill-textsplit) | Split text into pages or sentences | ✅ |
+| [`#Microsoft.Skills.Text.MergeSkill`](https://learn.microsoft.com/en-us/azure/search/cognitive-search-skill-textmerger) | Merge text fragments | ✅ |
+| [`#Microsoft.Skills.Util.ShaperSkill`](https://learn.microsoft.com/en-us/azure/search/cognitive-search-skill-shaper) | Restructure data | ✅ |
+| [`#Microsoft.Skills.Util.ConditionalSkill`](https://learn.microsoft.com/en-us/azure/search/cognitive-search-skill-conditional) | Conditional output | ✅ |
+| [`#Microsoft.Skills.Custom.WebApiSkill`](https://learn.microsoft.com/en-us/azure/search/cognitive-search-custom-skill-web-api) | Call external REST API | ✅ |
+| [`#Microsoft.Skills.Text.AzureOpenAIEmbeddingSkill`](https://learn.microsoft.com/en-us/azure/search/cognitive-search-skill-azure-openai-embedding) | Generate embeddings | ✅ |
 
 ### Using Skillsets with Indexers
 
@@ -1223,7 +1223,7 @@ The skill's `resourceUri` and `deploymentId` are specified in the skill definiti
 
 ## Data Source Operations ✅
 
-### Create Data Source
+### [Create Data Source](https://learn.microsoft.com/en-us/rest/api/searchservice/data-sources/create)
 
 Creates a new data source.
 
@@ -1251,7 +1251,7 @@ api-key: <admin-key>
 
 **Response:** `201 Created` with the created data source.
 
-### Create or Update Data Source
+### [Create or Update Data Source](https://learn.microsoft.com/en-us/rest/api/searchservice/data-sources/create-or-update)
 
 ```http
 PUT /datasources/{dataSourceName}?api-version=2024-07-01
@@ -1259,7 +1259,7 @@ PUT /datasources/{dataSourceName}?api-version=2024-07-01
 
 **Response:** `200 OK` (update) or `201 Created` (create).
 
-### Get Data Source
+### [Get Data Source](https://learn.microsoft.com/en-us/rest/api/searchservice/data-sources/get)
 
 ```http
 GET /datasources/{dataSourceName}?api-version=2024-07-01
@@ -1282,7 +1282,7 @@ api-key: <admin-key>
 }
 ```
 
-### List Data Sources
+### [List Data Sources](https://learn.microsoft.com/en-us/rest/api/searchservice/data-sources/list)
 
 ```http
 GET /datasources?api-version=2024-07-01
@@ -1304,7 +1304,7 @@ api-key: <admin-key>
 }
 ```
 
-### Delete Data Source
+### [Delete Data Source](https://learn.microsoft.com/en-us/rest/api/searchservice/data-sources/delete)
 
 ```http
 DELETE /datasources/{dataSourceName}?api-version=2024-07-01
@@ -1405,7 +1405,7 @@ api-key: <admin-key>
 
 ## Indexer Operations ✅
 
-### Create Indexer
+### [Create Indexer](https://learn.microsoft.com/en-us/rest/api/searchservice/indexers/create)
 
 Creates a new indexer.
 
@@ -1447,27 +1447,27 @@ api-key: <admin-key>
 
 **Response:** `201 Created` with the created indexer.
 
-### Create or Update Indexer
+### [Create or Update Indexer](https://learn.microsoft.com/en-us/rest/api/searchservice/indexers/create-or-update)
 
 ```http
 PUT /indexers/{indexerName}?api-version=2024-07-01
 ```
 
-### Get Indexer
+### [Get Indexer](https://learn.microsoft.com/en-us/rest/api/searchservice/indexers/get)
 
 ```http
 GET /indexers/{indexerName}?api-version=2024-07-01
 api-key: <admin-key>
 ```
 
-### List Indexers
+### [List Indexers](https://learn.microsoft.com/en-us/rest/api/searchservice/indexers/list)
 
 ```http
 GET /indexers?api-version=2024-07-01
 api-key: <admin-key>
 ```
 
-### Delete Indexer
+### [Delete Indexer](https://learn.microsoft.com/en-us/rest/api/searchservice/indexers/delete)
 
 ```http
 DELETE /indexers/{indexerName}?api-version=2024-07-01
@@ -1476,7 +1476,7 @@ api-key: <admin-key>
 
 **Response:** `204 No Content`
 
-### Run Indexer
+### [Run Indexer](https://learn.microsoft.com/en-us/rest/api/searchservice/indexers/run)
 
 Triggers an immediate indexer run.
 
@@ -1487,7 +1487,7 @@ api-key: <admin-key>
 
 **Response:** `202 Accepted`
 
-### Reset Indexer
+### [Reset Indexer](https://learn.microsoft.com/en-us/rest/api/searchservice/indexers/reset)
 
 Resets the indexer tracking state, causing a full reindex on next run.
 
@@ -1498,7 +1498,7 @@ api-key: <admin-key>
 
 **Response:** `204 No Content`
 
-### Get Indexer Status
+### [Get Indexer Status](https://learn.microsoft.com/en-us/rest/api/searchservice/indexers/get-status)
 
 Gets the current status and execution history.
 
