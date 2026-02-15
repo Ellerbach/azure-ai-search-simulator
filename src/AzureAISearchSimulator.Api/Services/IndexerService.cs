@@ -410,7 +410,7 @@ public partial class IndexerService : IIndexerService
         }
         catch (InvalidDocumentKeyException keyEx)
         {
-            _logger.LogWarning(keyEx, "Invalid document key: {Key}", keyEx.Key);
+            _logger.LogError(keyEx, "Invalid document key: {Key}", keyEx.Key);
             return DocumentPrepareResult.Fail(new IndexerExecutionError
             {
                 Key = $"localId={doc.Key}&documentKey={keyEx.Key}",
