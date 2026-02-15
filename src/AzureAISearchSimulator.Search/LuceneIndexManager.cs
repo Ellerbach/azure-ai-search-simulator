@@ -35,6 +35,7 @@ public class LuceneIndexManager : IDisposable
     /// </summary>
     public IndexWriter GetWriter(string indexName)
     {
+        ThrowIfDisposed();
         var holder = GetOrCreateHolder(indexName);
         return holder.Writer;
     }
@@ -44,6 +45,7 @@ public class LuceneIndexManager : IDisposable
     /// </summary>
     public IndexSearcher GetSearcher(string indexName)
     {
+        ThrowIfDisposed();
         var holder = GetOrCreateHolder(indexName);
         holder.RefreshReader();
         return holder.Searcher;
@@ -72,6 +74,7 @@ public class LuceneIndexManager : IDisposable
     /// </summary>
     public void Commit(string indexName)
     {
+        ThrowIfDisposed();
         if (_indexes.TryGetValue(indexName, out var holder))
         {
             holder.Writer.Commit();
@@ -85,6 +88,7 @@ public class LuceneIndexManager : IDisposable
     /// </summary>
     public void ClearIndex(string indexName)
     {
+        ThrowIfDisposed();
         if (_indexes.TryGetValue(indexName, out var holder))
         {
             holder.Writer.DeleteAll();
@@ -144,6 +148,11 @@ public class LuceneIndexManager : IDisposable
 
         return System.IO.Directory.GetFiles(indexPath, "*", SearchOption.AllDirectories)
             .Sum(f => new FileInfo(f).Length);
+    }
+
+    private void ThrowIfDisposed()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
     }
 
     private IndexHolder GetOrCreateHolder(string indexName)
@@ -236,6 +245,12 @@ public class LuceneIndexManager : IDisposable
 
         public void RefreshReader()
         {
+            if (_disposed)
+            {
+                throw new ObjectDisposedException($"IndexHolder[{_indexName}]",
+                    $"Cannot refresh reader for index '{_indexName}' because it has been disposed.");
+            }
+
             var newReader = _reader == null
                 ? DirectoryReader.Open(Writer, applyAllDeletes: true)
                 : DirectoryReader.OpenIfChanged(_reader, Writer, applyAllDeletes: true);

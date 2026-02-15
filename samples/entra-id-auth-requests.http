@@ -2,10 +2,11 @@
 ### Use with REST Client extension in VS Code
 ### This file demonstrates different authentication methods supported by the simulator
 
-@baseUrl = https://localhost:7250
-@apiVersion = 2025-09-01
-@adminKey = admin-key-12345
-@queryKey = query-key-67890
+# Variables loaded from .env file (copy .env.example to .env in the workspace root)
+@baseUrl = {{$dotenv BASE_URL}}
+@apiVersion = {{$dotenv API_VERSION}}
+@adminKey = {{$dotenv ADMIN_KEY}}
+@queryKey = {{$dotenv QUERY_KEY}}
 
 # ============================================
 # SECTION 1: API KEY AUTHENTICATION (Current)
@@ -287,7 +288,7 @@ api-key: {{adminKey}}
 #
 # Then paste below:
 
-@realEntraToken = YOUR_REAL_TOKEN
+@realEntraToken = {{$dotenv ENTRA_TOKEN}}
 
 ### Query with real Entra ID token
 POST {{baseUrl}}/indexes/test-index/docs/search?api-version={{apiVersion}}
@@ -424,7 +425,7 @@ api-key: {{adminKey}}
 # First, obtain a token from Azure AD:
 #   az account get-access-token --resource https://search.azure.com --query accessToken -o tsv
 # Then use it here:
-@realEntraIdToken = YOUR_REAL_AZURE_AD_TOKEN_HERE
+@realEntraIdToken = {{$dotenv ENTRA_TOKEN}}
 
 POST {{baseUrl}}/indexes/test-index/docs/search?api-version={{apiVersion}}
 Content-Type: application/json

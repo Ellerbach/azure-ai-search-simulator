@@ -1,0 +1,533 @@
+### =====================================================
+### LEGO AI Search - Complete Setup
+### Azure AI Search REST API requests for LEGO data indexing
+### =====================================================
+### 
+### SETUP ORDER:
+### 1. Create Index (PUT /indexes/lego-index)
+### 2. Create Data Source (PUT /datasources/lego-blob-datasource)
+### 3. Create Indexer (PUT /indexers/lego-data-indexer)
+### 4. Run Indexer (POST /indexers/lego-data-indexer/run)
+### 5. Check Status (GET /indexers/lego-data-indexer/status)
+###
+### =====================================================
+
+### =====================================================
+### CONFIGURATION - Variables loaded from .env file
+### Copy .env.example to .env in the workspace root and fill in your values
+### =====================================================
+# Variables loaded from .env file (copy .env.example to .env and fill in values)
+@baseUrl = {{$dotenv BASE_URL}}
+# simulator default base URL is https://localhost:7250, but you can point to a real Azure AI Search service by changing the BASE_URL in .env
+# @baseUrl = https://localhost:7250
+# simulator admin key has full access to all operations
+# @apiKey =  admin-key-12345
+# for real Azure AI Search service, use the admin key from the Azure portal
+@apiKey = {{$dotenv ADMIN_KEY}}
+
+@apiVersion = {{$dotenv API_VERSION}}
+
+# Storage configuration
+@storageAccount = {{$dotenv STORAGE_ACCOUNT}}
+@storageKey = {{$dotenv STORAGE_KEY}}
+@storageContainer = {{$dotenv STORAGE_CONTAINER}}
+@storageFolder = {{$dotenv STORAGE_FOLDER}}
+
+# Resource names
+@indexName = lego-index
+@dataSourceName = lego-blob-datasource
+@indexerName = lego-data-indexer
+
+### =====================================================
+### STEP 1: CREATE INDEX
+### =====================================================
+
+### Create the LEGO index with all fields for Sets, Parts, Minifigures, and Colors
+PUT {{baseUrl}}/indexes/{{indexName}}?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "name": "lego-index",
+  "fields": [
+    {
+      "name": "id",
+      "type": "Edm.String",
+      "key": true,
+      "retrievable": true,
+      "searchable": false,
+      "filterable": true
+    },
+    {
+      "name": "name",
+      "type": "Edm.String",
+      "searchable": true,
+      "retrievable": true,
+      "filterable": false,
+      "sortable": false,
+      "analyzer": "en.microsoft"
+    },
+    {
+      "name": "description",
+      "type": "Edm.String",
+      "searchable": true,
+      "retrievable": true,
+      "filterable": false,
+      "analyzer": "en.microsoft"
+    },
+    {
+      "name": "searchableText",
+      "type": "Edm.String",
+      "searchable": true,
+      "retrievable": false,
+      "analyzer": "en.microsoft"
+    },
+    {
+      "name": "category",
+      "type": "Edm.String",
+      "searchable": true,
+      "filterable": true,
+      "facetable": true,
+      "retrievable": true
+    },
+    {
+      "name": "subCategory",
+      "type": "Edm.String",
+      "searchable": true,
+      "filterable": true,
+      "facetable": true,
+      "retrievable": true
+    },
+    {
+      "name": "year",
+      "type": "Edm.Int32",
+      "filterable": true,
+      "sortable": true,
+      "facetable": true,
+      "retrievable": true
+    },
+    {
+      "name": "partsCount",
+      "type": "Edm.Int32",
+      "filterable": true,
+      "sortable": true,
+      "retrievable": true
+    },
+    {
+      "name": "minifiguresCount",
+      "type": "Edm.Int32",
+      "filterable": true,
+      "sortable": true,
+      "retrievable": true
+    },
+    {
+      "name": "imageUrls",
+      "type": "Collection(Edm.String)",
+      "retrievable": true,
+      "searchable": false
+    },
+    {
+      "name": "detailUrls",
+      "type": "Collection(Edm.String)",
+      "retrievable": true,
+      "searchable": false
+    },
+    {
+      "name": "lastUpdated",
+      "type": "Edm.DateTimeOffset",
+      "filterable": true,
+      "sortable": true,
+      "retrievable": true
+    },
+    {
+      "name": "themeId",
+      "type": "Edm.String",
+      "filterable": true,
+      "facetable": true,
+      "retrievable": true
+    },
+    {
+      "name": "themeName",
+      "type": "Edm.String",
+      "searchable": true,
+      "filterable": true,
+      "facetable": true,
+      "retrievable": true
+    },
+    {
+      "name": "setNumber",
+      "type": "Edm.String",
+      "searchable": true,
+      "filterable": true,
+      "retrievable": true
+    },
+    {
+      "name": "partNumber",
+      "type": "Edm.String",
+      "searchable": true,
+      "filterable": true,
+      "retrievable": true
+    },
+    {
+      "name": "minifigNumber",
+      "type": "Edm.String",
+      "searchable": true,
+      "filterable": true,
+      "retrievable": true
+    },
+    {
+      "name": "colorId",
+      "type": "Edm.String",
+      "filterable": true,
+      "facetable": true,
+      "retrievable": true
+    },
+    {
+      "name": "rgbHex",
+      "type": "Edm.String",
+      "filterable": true,
+      "retrievable": true
+    },
+    {
+      "name": "isTransparent",
+      "type": "Edm.Boolean",
+      "filterable": true,
+      "facetable": true,
+      "retrievable": true
+    },
+    {
+      "name": "timeline",
+      "type": "Edm.String",
+      "retrievable": true
+    },
+    {
+      "name": "setsCount",
+      "type": "Edm.Int32",
+      "filterable": true,
+      "sortable": true,
+      "retrievable": true
+    },
+    {
+      "name": "availableColors",
+      "type": "Collection(Edm.String)",
+      "searchable": true,
+      "filterable": true,
+      "facetable": true,
+      "retrievable": true
+    },
+    {
+      "name": "foundInSets",
+      "type": "Collection(Edm.String)",
+      "searchable": true,
+      "filterable": true,
+      "retrievable": true
+    },
+    {
+      "name": "hasBrickLinkData",
+      "type": "Edm.Boolean",
+      "filterable": true,
+      "facetable": true,
+      "retrievable": true
+    },
+    {
+      "name": "hasRebrickableData",
+      "type": "Edm.Boolean",
+      "filterable": true,
+      "facetable": true,
+      "retrievable": true
+    }
+  ],
+  "suggesters": [
+    {
+      "name": "lego-suggester",
+      "searchMode": "analyzingInfixMatching",
+      "sourceFields": [
+        "name",
+        "setNumber",
+        "partNumber",
+        "minifigNumber"
+      ]
+    }
+  ],
+  "scoringProfiles": [
+    {
+      "name": "boost-name-match",
+      "text": {
+        "weights": {
+          "name": 3,
+          "description": 1.5,
+          "searchableText": 1,
+          "category": 2
+        }
+      }
+    }
+  ],
+  "defaultScoringProfile": "boost-name-match",
+  "corsOptions": {
+    "allowedOrigins": ["*"],
+    "maxAgeInSeconds": 300
+  }
+}
+
+### =====================================================
+### STEP 2: CREATE DATA SOURCE
+### =====================================================
+
+### Create Azure Blob Storage data source pointing to legoindex/CombinedData
+PUT {{baseUrl}}/datasources/{{dataSourceName}}?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "name": "lego-blob-datasource",
+  "description": "Blob storage data source for LEGO combined data from BrickLink and Rebrickable",
+  "type": "azureblob",
+  "credentials": {
+    "connectionString": "DefaultEndpointsProtocol=https;AccountName={{storageAccount}};AccountKey={{storageKey}};EndpointSuffix=core.windows.net"
+  },
+  "container": {
+    "name": "{{storageContainer}}",
+    "query": "{{storageFolder}}"
+  },
+  "dataChangeDetectionPolicy": {
+    "@odata.type": "#Microsoft.Azure.Search.HighWaterMarkChangeDetectionPolicy",
+    "highWaterMarkColumnName": "metadata_storage_last_modified"
+  },
+  "dataDeletionDetectionPolicy": {
+    "@odata.type": "#Microsoft.Azure.Search.SoftDeleteColumnDeletionDetectionPolicy",
+    "softDeleteColumnName": "IsDeleted",
+    "softDeleteMarkerValue": "true"
+  }
+}
+
+### =====================================================
+### STEP 3: CREATE INDEXER
+### =====================================================
+
+### Create indexer with JSON array parsing and field mappings
+PUT {{baseUrl}}/indexers/{{indexerName}}?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "name": "lego-data-indexer",
+  "description": "Indexer for LEGO combined data - Sets, Parts, Minifigures, Colors",
+  "dataSourceName": "lego-blob-datasource",
+  "targetIndexName": "lego-index",
+  "schedule": null,
+  "parameters": {
+    "batchSize": 1000,
+    "maxFailedItems": -1,
+    "maxFailedItemsPerBatch": 20,
+    "configuration": {
+      "dataToExtract": "contentAndMetadata",
+      "parsingMode": "json"
+    }
+  },
+  "fieldMappings": [
+    { "sourceFieldName": "id", "targetFieldName": "id" },
+    { "sourceFieldName": "name", "targetFieldName": "name" },
+    { "sourceFieldName": "description", "targetFieldName": "description" },
+    { "sourceFieldName": "searchableText", "targetFieldName": "searchableText" },
+    { "sourceFieldName": "category", "targetFieldName": "category" },
+    { "sourceFieldName": "subCategory", "targetFieldName": "subCategory" },
+    { "sourceFieldName": "year", "targetFieldName": "year" },
+    { "sourceFieldName": "partsCount", "targetFieldName": "partsCount" },
+    { "sourceFieldName": "minifiguresCount", "targetFieldName": "minifiguresCount" },
+    { "sourceFieldName": "imageUrls", "targetFieldName": "imageUrls" },
+    { "sourceFieldName": "detailUrls", "targetFieldName": "detailUrls" },
+    { "sourceFieldName": "lastUpdated", "targetFieldName": "lastUpdated" },
+    { "sourceFieldName": "themeId", "targetFieldName": "themeId" },
+    { "sourceFieldName": "themeName", "targetFieldName": "themeName" },
+    { "sourceFieldName": "setNumber", "targetFieldName": "setNumber" },
+    { "sourceFieldName": "partNumber", "targetFieldName": "partNumber" },
+    { "sourceFieldName": "minifigNumber", "targetFieldName": "minifigNumber" },
+    { "sourceFieldName": "colorId", "targetFieldName": "colorId" },
+    { "sourceFieldName": "rgbHex", "targetFieldName": "rgbHex" },
+    { "sourceFieldName": "isTransparent", "targetFieldName": "isTransparent" },
+    { "sourceFieldName": "timeline", "targetFieldName": "timeline" },
+    { "sourceFieldName": "setsCount", "targetFieldName": "setsCount" },
+    { "sourceFieldName": "availableColors", "targetFieldName": "availableColors" },
+    { "sourceFieldName": "foundInSets", "targetFieldName": "foundInSets" },
+    { "sourceFieldName": "/sourceData/hasBrickLinkData", "targetFieldName": "hasBrickLinkData" },
+    { "sourceFieldName": "/sourceData/hasRebrickableData", "targetFieldName": "hasRebrickableData" }
+  ]
+}
+
+### =====================================================
+### STEP 4: RUN INDEXER
+### =====================================================
+
+### Run the indexer manually (first time or on-demand)
+POST {{baseUrl}}/indexers/{{indexerName}}/run?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+### =====================================================
+### STEP 5: CHECK STATUS
+### =====================================================
+
+### Get indexer status and execution history
+GET {{baseUrl}}/indexers/{{indexerName}}/status?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+### =====================================================
+### VERIFICATION & SEARCH QUERIES
+### =====================================================
+
+###
+GET {{baseUrl}}/servicestats?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+### Get index statistics (document count, storage size)
+GET {{baseUrl}}/indexes/{{indexName}}/stats?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+### Count total indexed documents
+GET {{baseUrl}}/indexes/{{indexName}}/docs/$count?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+### Search for all documents (sample)
+POST {{baseUrl}}/indexes/{{indexName}}/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "search": "*",
+  "top": 10,
+  "select": "id,name,category,setNumber,partNumber,minifigNumber"
+}
+
+### Search for LEGO sets by name
+POST {{baseUrl}}/indexes/{{indexName}}/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "search": "Star Wars",
+  "searchFields": "name,description",
+  "filter": "setNumber ne null",
+  "top": 20,
+  "select": "id,name,setNumber,year,partsCount,imageUrls"
+}
+
+### Search for parts by name
+POST {{baseUrl}}/indexes/{{indexName}}/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "search": "brick 2x4",
+  "searchFields": "name,description",
+  "filter": "partNumber ne null",
+  "top": 20,
+  "select": "id,name,partNumber,category,availableColors"
+}
+
+### Search for minifigures
+POST {{baseUrl}}/indexes/{{indexName}}/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "search": "Darth Vader",
+  "searchFields": "name,description",
+  "filter": "minifigNumber ne null",
+  "top": 20,
+  "select": "id,name,minifigNumber,category,imageUrls"
+}
+
+### Search for colors
+POST {{baseUrl}}/indexes/{{indexName}}/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "search": "*",
+  "filter": "colorId ne null",
+  "top": 50,
+  "select": "id,name,colorId,rgbHex,isTransparent,timeline"
+}
+
+### Faceted search - Get category counts
+POST {{baseUrl}}/indexes/{{indexName}}/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "search": "*",
+  "facets": ["category,count:20", "year,count:50", "themeName,count:20"],
+  "top": 0
+}
+
+### Filter by year range
+POST {{baseUrl}}/indexes/{{indexName}}/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "search": "*",
+  "filter": "year ge 2020 and year le 2025 and setNumber ne null",
+  "orderby": "year desc, partsCount desc",
+  "top": 20,
+  "select": "id,name,setNumber,year,partsCount,themeName"
+}
+
+### Autocomplete/Suggestions
+POST {{baseUrl}}/indexes/{{indexName}}/docs/suggest?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "search": "mil",
+  "suggesterName": "lego-suggester",
+  "top": 10,
+  "select": "id,name,setNumber,partNumber"
+}
+
+### =====================================================
+### MANAGEMENT OPERATIONS
+### =====================================================
+
+### Reset indexer (clears all tracking state, re-indexes everything)
+POST {{baseUrl}}/indexers/{{indexerName}}/reset?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+### Get index definition
+GET {{baseUrl}}/indexes/{{indexName}}?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+### Get data source definition
+GET {{baseUrl}}/datasources/{{dataSourceName}}?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+### Get indexer definition
+GET {{baseUrl}}/indexers/{{indexerName}}?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+### List all indexes
+GET {{baseUrl}}/indexes?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+### List all data sources
+GET {{baseUrl}}/datasources?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+### List all indexers
+GET {{baseUrl}}/indexers?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+### =====================================================
+### CLEANUP (USE WITH CAUTION)
+### =====================================================
+
+### Delete indexer (run first before deleting data source)
+# DELETE {{baseUrl}}/indexers/{{indexerName}}?api-version={{apiVersion}}
+# api-key: {{apiKey}}
+
+### Delete data source
+# DELETE {{baseUrl}}/datasources/{{dataSourceName}}?api-version={{apiVersion}}
+# api-key: {{apiKey}}
+
+### Delete index (WARNING: deletes all indexed data)
+# DELETE {{baseUrl}}/indexes/{{indexName}}?api-version={{apiVersion}}
+# api-key: {{apiKey}}

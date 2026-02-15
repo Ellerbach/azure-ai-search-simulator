@@ -82,6 +82,8 @@ The API runs on `http://localhost:5260` with Swagger UI at the root.
 
 Use the [test-skills.http](test-skills.http) file to test individual skills.
 
+> **Note:** All `.http` files use environment variables from a `.env` file. Copy `.env.example` to `.env` in the workspace root and fill in your values before running requests.
+
 ### 3. Integration with Simulator
 
 1. Start the Azure AI Search Simulator:
