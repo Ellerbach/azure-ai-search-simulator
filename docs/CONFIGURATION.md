@@ -428,7 +428,7 @@ OutboundAuthentication__ServicePrincipal__ClientSecret=your-secret
 
 ## Docker Configuration
 
-When running in Docker, use environment variables:
+When running in Docker, use environment variables to override settings:
 
 ```yaml
 # docker-compose.yml
@@ -436,13 +436,85 @@ services:
   search-simulator:
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
-      - Simulator__AdminApiKey=my-secure-admin-key
-      - Simulator__QueryApiKey=my-secure-query-key
-      - AzureOpenAI__ApiKey=${AZURE_OPENAI_API_KEY}
+      - SimulatorSettings__AdminApiKey=my-secure-admin-key
+      - SimulatorSettings__QueryApiKey=my-secure-query-key
+      - SimulatorSettings__DataDirectory=/app/data
+      - LuceneSettings__IndexPath=/app/lucene-indexes
+      - Serilog__WriteTo__1__Args__path=/app/logs/simulator-.log
+      - AzureOpenAISettings__ApiKey=${AZURE_OPENAI_API_KEY}
     volumes:
       - ./data:/app/data
       - ./lucene-indexes:/app/lucene-indexes
+      - ./logs:/app/logs
+      - ./files:/app/files
 ```
+
+### Docker Volume Mapping
+
+The container declares four volumes for data persistence and file access:
+
+| Container Path | Purpose | Type | Description |
+| -------------- | ------- | ---- | ----------- |
+| `/app/data` | Database | Named volume or bind mount | LiteDB database files (index metadata, data sources, indexer state) |
+| `/app/lucene-indexes` | Search indexes | Named volume or bind mount | Lucene.NET index files for full-text and vector search |
+| `/app/logs` | Log files | Bind mount (recommended) | Serilog log files (`simulator-{date}.log`) for debugging and diagnostics |
+| `/app/files` | File processing | Bind mount (recommended) | Documents for indexer pull-mode file processing (PDF, Word, JSON, etc.) |
+
+**Named volumes** (managed by Docker) are ideal for `/app/data` and `/app/lucene-indexes` as they persist automatically and are not tied to a host path.
+
+**Bind mounts** are recommended for `/app/logs` and `/app/files` so you can easily access logs and manage documents from the host.
+
+#### Example: File Processing with Docker
+
+To use the indexer pull mode with documents on your host machine, bind mount your documents folder to `/app/files`:
+
+```bash
+docker run -p 7250:8443 -p 5250:8080 \
+  -v search-data:/app/data \
+  -v lucene-indexes:/app/lucene-indexes \
+  -v ./logs:/app/logs \
+  -v /path/to/your/documents:/app/files \
+  azure-ai-search-simulator
+```
+
+Then create a filesystem data source pointing to the container path:
+
+```http
+PUT https://localhost:7250/datasources/my-docs?api-version=2024-07-01
+Content-Type: application/json
+api-key: admin-key-12345
+
+{
+  "name": "my-docs",
+  "type": "filesystem",
+  "credentials": { "connectionString": "/app/files" },
+  "container": { "name": "subfolder" }
+}
+```
+
+#### Example: Accessing Logs
+
+Mount the logs directory to inspect simulator logs from the host:
+
+```bash
+docker run -p 7250:8443 \
+  -v ./simulator-logs:/app/logs \
+  azure-ai-search-simulator
+
+# View today's log
+cat ./simulator-logs/simulator-$(date +%Y%m%d).log
+```
+
+#### Environment Variable Reference
+
+| Environment Variable | Maps To | Default |
+| -------------------- | ------- | ------- |
+| `SimulatorSettings__DataDirectory` | `SimulatorSettings.DataDirectory` | `/app/data` |
+| `SimulatorSettings__AdminApiKey` | `SimulatorSettings.AdminApiKey` | `admin-key-12345` |
+| `SimulatorSettings__QueryApiKey` | `SimulatorSettings.QueryApiKey` | `query-key-67890` |
+| `LuceneSettings__IndexPath` | `LuceneSettings.IndexPath` | `/app/lucene-indexes` |
+| `Serilog__WriteTo__1__Args__path` | Serilog file sink path | `/app/logs/simulator-.log` |
+| `AzureOpenAISettings__ApiKey` | `AzureOpenAISettings.ApiKey` | *(empty)* |
 
 ## HTTPS Configuration
 

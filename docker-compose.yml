@@ -15,14 +15,22 @@ services:
       - ASPNETCORE_URLS=https://+:8443;http://+:8080
       - ASPNETCORE_Kestrel__Certificates__Default__Path=/app/certs/dev-cert.pfx
       - ASPNETCORE_Kestrel__Certificates__Default__Password=dev-password
-      - Simulator__AdminApiKey=admin-key-12345
-      - Simulator__QueryApiKey=query-key-67890
-      - AzureOpenAI__ApiKey=${AZURE_OPENAI_API_KEY:-}
+      - SimulatorSettings__AdminApiKey=admin-key-12345
+      - SimulatorSettings__QueryApiKey=query-key-67890
+      - SimulatorSettings__DataDirectory=/app/data
+      - LuceneSettings__IndexPath=/app/lucene-indexes
+      - Serilog__WriteTo__1__Args__path=/app/logs/simulator-.log
+      - AzureOpenAISettings__ApiKey=${AZURE_OPENAI_API_KEY:-}
     volumes:
-      # Persist data between container restarts
+      # Persist simulator data (LiteDB) between container restarts
       - simulator-data:/app/data
+      # Persist Lucene search indexes
       - lucene-indexes:/app/lucene-indexes
-      # Mount local test data (optional)
+      # Mount logs directory for access from host
+      - ./logs:/app/logs
+      # Mount local files for indexer file processing (pull mode)
+      - ./files:/app/files
+      # Mount local test data (optional, read-only)
       - ./testdata:/app/testdata:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]

@@ -85,9 +85,50 @@ docker-compose up -d
 
 # Or build the image manually
 docker build -t azure-ai-search-simulator .
-docker run -p 7250:8443 -p 5250:8080 -v search-data:/app/data azure-ai-search-simulator
+docker run -p 7250:8443 -p 5250:8080 \
+  -v search-data:/app/data \
+  -v lucene-indexes:/app/lucene-indexes \
+  -v ./logs:/app/logs \
+  -v ./files:/app/files \
+  azure-ai-search-simulator
 
 # API available at https://localhost:7250 (HTTPS) or http://localhost:5250 (HTTP)
+```
+
+#### Docker Volume Mapping
+
+The container exposes four mount points for data persistence and file access:
+
+| Mount Point | Purpose | Recommended Mount |
+| ----------- | ------- | ----------------- |
+| `/app/data` | LiteDB database (index metadata, data sources, indexer state) | Named volume |
+| `/app/lucene-indexes` | Lucene search index files | Named volume |
+| `/app/logs` | Serilog log files (`simulator-{date}.log`) | Bind mount for easy host access |
+| `/app/files` | Documents for indexer file processing (pull mode) | Bind mount to your documents folder |
+
+**Example: Mount a local documents folder for indexer processing**
+
+```bash
+# Mount your documents folder so indexers can access them inside the container
+docker run -p 7250:8443 -p 5250:8080 \
+  -v search-data:/app/data \
+  -v ./my-documents:/app/files \
+  azure-ai-search-simulator
+```
+
+Then create a filesystem data source pointing to `/app/files`:
+
+```http
+PUT https://localhost:7250/datasources/my-files?api-version=2024-07-01
+Content-Type: application/json
+api-key: admin-key-12345
+
+{
+  "name": "my-files",
+  "type": "filesystem",
+  "credentials": { "connectionString": "/app/files" },
+  "container": { "name": "subfolder" }
+}
 ```
 
 > **Note**: The Docker image generates a self-signed certificate for HTTPS. You'll need to skip certificate validation in your client (see Azure SDK example below).
