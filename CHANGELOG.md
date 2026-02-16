@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Simulator vs Azure AI Search comparison tooling**: Added `samples/compare-requests.http` with paired REST Client requests and `scripts/Compare-Results.ps1` PowerShell script to run queries against both the simulator and a real Azure AI Search service side by side, compare responses, and save results to a timestamped JSON report.
+
+### Added
+
 - **Dependabot configuration**: Added `.github/dependabot.yml` for automatic dependency updates across NuGet, GitHub Actions, Docker, and Python (pip) ecosystems.
 
 ### Fixed

@@ -416,7 +416,30 @@ All `.http` sample files use environment variables via `$dotenv`. To get started
 | [EmbeddingSkillNotebook](samples/EmbeddingSkillNotebook/) | Python notebook demonstrating Azure OpenAI Embedding skill, vector search, and hybrid search with RRF fusion |
 | [CustomSkillSample](samples/CustomSkillSample/) | ASP.NET Core API implementing custom Web API skills (text stats, keywords, sentiment, summarization) |
 | [sample-requests.http](samples/sample-requests.http) | REST Client file with comprehensive API examples |
+| [compare-requests.http](samples/compare-requests.http) | REST Client file to send identical requests to the simulator **and** real Azure AI Search side by side |
+| [Compare-Results.ps1](scripts/Compare-Results.ps1) | PowerShell script that automates comparison and shows a color-coded diff of responses |
 | [pull-mode-test.http](samples/pull-mode-test.http) | REST Client file for testing indexer pull mode workflow |
+
+### Comparing Simulator vs Real Azure AI Search
+
+You can run the same queries against both the local simulator and a real Azure AI Search service to verify behavioral parity:
+
+1. In `.env`, set `BASE_URL` / `ADMIN_KEY` / `QUERY_KEY` (simulator) **and** `AZURE_BASE_URL` / `AZURE_ADMIN_KEY` / `AZURE_QUERY_KEY` (real service).
+2. **Interactive** — Open [compare-requests.http](samples/compare-requests.http) and click "Send Request" on matched `[SIM]` / `[AZURE]` pairs. Use VS Code split tabs to view both responses.
+3. **Automated** — Run the PowerShell comparison script:
+
+```powershell
+# Run all scenarios (create index, upload docs, search, cleanup)
+.\scripts\Compare-Results.ps1
+
+# Run a single scenario
+.\scripts\Compare-Results.ps1 -Scenario SimpleSearch
+
+# Show full JSON even when responses match
+.\scripts\Compare-Results.ps1 -ShowFullResponse
+```
+
+The script highlights **MATCH** (green) or **DIFFERENCES** (red) for each scenario, ignoring dynamic fields like `@odata.etag` and `@odata.context`.
 
 ## Project Structure
 
