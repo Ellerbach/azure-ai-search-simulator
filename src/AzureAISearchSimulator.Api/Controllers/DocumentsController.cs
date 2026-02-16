@@ -202,7 +202,18 @@ public class DocumentsController : ControllerBase
                 return NotFound(new { error = new { message = $"Document with key '{key}' not found" } });
             }
 
-            return Ok(document);
+            // Add @odata.context to match Azure AI Search response
+            var selectClause = selectedFields != null
+                ? string.Join(",", selectedFields)
+                : "*";
+            var odataContext = $"{Request.Scheme}://{Request.Host}/indexes('{indexName}')/$metadata#docs({selectClause})/$entity";
+            var result = new Dictionary<string, object?> { ["@odata.context"] = odataContext };
+            foreach (var kvp in document)
+            {
+                result[kvp.Key] = kvp.Value;
+            }
+
+            return Ok(result);
         }
         catch (KeyNotFoundException)
         {
