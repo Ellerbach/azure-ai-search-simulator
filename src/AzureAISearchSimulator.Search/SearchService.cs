@@ -217,6 +217,10 @@ public class SearchService : ISearchService
         {
             var luceneDoc = docId >= 0 ? searcher.Doc(docId) : null;
             var searchResult = new SearchResult();
+
+            // Set score first to match Azure property ordering (@search.score before document fields)
+            // Replace NaN with 1.0 (occurs when Lucene uses sorted search without scoring, e.g. wildcard/filter queries)
+            searchResult.Score = double.IsNaN(score) ? 1.0 : score;
             
             if (luceneDoc != null)
             {
@@ -226,8 +230,6 @@ public class SearchService : ISearchService
                     searchResult[kvp.Key] = kvp.Value;
                 }
             }
-            
-            searchResult.Score = score;
             
             // Add highlights if requested
             if (textQuery != null && request.Highlight != null && luceneDoc != null)
@@ -273,8 +275,11 @@ public class SearchService : ISearchService
             }
         }
 
-        // Search coverage (always 100% for simulator)
-        response.SearchCoverage = 100.0;
+        // Search coverage - only include when minimumCoverage is specified (Azure behavior)
+        if (request.MinimumCoverage.HasValue)
+        {
+            response.SearchCoverage = 100.0;
+        }
 
         // Finalize debug info
         totalStopwatch.Stop();
@@ -674,7 +679,24 @@ public class SearchService : ISearchService
 
     private Query BuildNumericRangeQuery(string fieldName, string op, string value, string edmType)
     {
-        // For simplicity, convert all to long range queries
+        // Handle double/single types
+        if (edmType.Equals("edm.double", StringComparison.OrdinalIgnoreCase) ||
+            edmType.Equals("edm.single", StringComparison.OrdinalIgnoreCase))
+        {
+            if (double.TryParse(value, System.Globalization.CultureInfo.InvariantCulture, out var doubleValue))
+            {
+                return op switch
+                {
+                    "gt" => NumericRangeQuery.NewDoubleRange(fieldName, doubleValue, double.MaxValue, false, true),
+                    "ge" => NumericRangeQuery.NewDoubleRange(fieldName, doubleValue, double.MaxValue, true, true),
+                    "lt" => NumericRangeQuery.NewDoubleRange(fieldName, double.MinValue, doubleValue, true, false),
+                    "le" => NumericRangeQuery.NewDoubleRange(fieldName, double.MinValue, doubleValue, true, true),
+                    _ => new MatchAllDocsQuery()
+                };
+            }
+        }
+
+        // Handle integer types
         if (long.TryParse(value, out var longValue))
         {
             return op switch
@@ -683,6 +705,20 @@ public class SearchService : ISearchService
                 "ge" => NumericRangeQuery.NewInt64Range(fieldName, longValue, long.MaxValue, true, true),
                 "lt" => NumericRangeQuery.NewInt64Range(fieldName, long.MinValue, longValue - 1, true, true),
                 "le" => NumericRangeQuery.NewInt64Range(fieldName, long.MinValue, longValue, true, true),
+                _ => new MatchAllDocsQuery()
+            };
+        }
+
+        // Fallback: try parsing as double even for non-double types (e.g. "4.0" on an int field)
+        if (double.TryParse(value, System.Globalization.CultureInfo.InvariantCulture, out var fallbackDouble))
+        {
+            var fallbackLong = (long)fallbackDouble;
+            return op switch
+            {
+                "gt" => NumericRangeQuery.NewInt64Range(fieldName, fallbackLong + 1, long.MaxValue, true, true),
+                "ge" => NumericRangeQuery.NewInt64Range(fieldName, fallbackLong, long.MaxValue, true, true),
+                "lt" => NumericRangeQuery.NewInt64Range(fieldName, long.MinValue, fallbackLong - 1, true, true),
+                "le" => NumericRangeQuery.NewInt64Range(fieldName, long.MinValue, fallbackLong, true, true),
                 _ => new MatchAllDocsQuery()
             };
         }
