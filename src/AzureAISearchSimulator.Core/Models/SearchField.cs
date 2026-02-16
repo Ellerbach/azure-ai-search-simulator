@@ -56,6 +56,13 @@ public class SearchField
     public bool? Retrievable { get; set; }
 
     /// <summary>
+    /// Whether the field value is stored separately for retrieval.
+    /// Defaults to true. When false, the field can still be used in queries but won't be returned in results.
+    /// </summary>
+    [JsonPropertyName("stored")]
+    public bool? Stored { get; set; }
+
+    /// <summary>
     /// Analyzer name for indexing and queries.
     /// </summary>
     [JsonPropertyName("analyzer")]
@@ -104,6 +111,12 @@ public class SearchField
     /// </summary>
     [JsonPropertyName("vectorSearchProfile")]
     public string? VectorSearchProfile { get; set; }
+
+    /// <summary>
+    /// Vector encoding format for vector fields.
+    /// </summary>
+    [JsonPropertyName("vectorEncoding")]
+    public string? VectorEncoding { get; set; }
 
     /// <summary>
     /// Default value for the field.

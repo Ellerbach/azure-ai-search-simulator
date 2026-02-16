@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+### Fixed
+
+- **Create Index response parity with Azure AI Search**: The simulator now applies Azure-compatible defaults to index definitions on creation. Field-level properties (`searchable`, `filterable`, `retrievable`, `stored`, `sortable`, `facetable`, `synonymMaps`) are always populated with type-appropriate defaults. Index-level properties (`scoringProfiles`, `suggesters`, `analyzers`, `tokenizers`, `tokenFilters`, `charFilters`, `similarity`, `@odata.context`) are included in the response. Added `SimilarityAlgorithm` (BM25 default), `stored`, and `vectorEncoding` model properties.
+
 ### Added
 
 - **Simulator vs Azure AI Search comparison tooling**: Added `samples/compare-requests.http` with paired REST Client requests and `scripts/Compare-Results.ps1` PowerShell script to run queries against both the simulator and a real Azure AI Search service side by side, compare responses, and save results to a timestamped JSON report.
