@@ -1035,6 +1035,13 @@ public partial class IndexerService : IIndexerService
             docKey = idValue.ToString() ?? sourceDoc.Key;
         }
 
+        // Apply key field mapping function (e.g., base64Encode) before validation
+        var keyMapping = GetKeyFieldMapping(indexer);
+        if (keyMapping.MappingFunction != null)
+        {
+            docKey = ApplyMappingFunction(docKey, keyMapping.MappingFunction).ToString()!;
+        }
+
         // Validate document key
         ValidateDocumentKey(docKey, sourceDoc.Name, indexer.DataSourceName);
 
