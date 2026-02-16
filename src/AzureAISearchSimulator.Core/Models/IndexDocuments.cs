@@ -116,6 +116,7 @@ public class IndexingResult
     /// Error message if failed.
     /// </summary>
     [JsonPropertyName("errorMessage")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public string? ErrorMessage { get; set; }
 
     /// <summary>
