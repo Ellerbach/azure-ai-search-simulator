@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+### Fixed
+
+- Applying function for index `id` creation in json indexer before checking the validity.
+
 ### Improved
 
 - **Docker volume mapping & documentation**: Added `/app/logs` and `/app/files` mount points to the Dockerfile and docker-compose for log access and indexer file processing. Fixed environment variable names to match actual config sections. Updated README and CONFIGURATION.md with volume mapping tables and usage examples.
