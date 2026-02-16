@@ -8,6 +8,12 @@ namespace AzureAISearchSimulator.Core.Models;
 public class SearchIndex
 {
     /// <summary>
+    /// OData context URL for the entity.
+    /// </summary>
+    [JsonPropertyName("@odata.context")]
+    public string? ODataContext { get; set; }
+
+    /// <summary>
     /// Name of the index.
     /// </summary>
     [JsonPropertyName("name")]
@@ -86,6 +92,24 @@ public class SearchIndex
     /// </summary>
     [JsonPropertyName("corsOptions")]
     public CorsOptions? CorsOptions { get; set; }
+
+    /// <summary>
+    /// Encryption key for customer-managed encryption.
+    /// </summary>
+    [JsonPropertyName("encryptionKey")]
+    public object? EncryptionKey { get; set; }
+
+    /// <summary>
+    /// Similarity algorithm configuration (e.g., BM25).
+    /// </summary>
+    [JsonPropertyName("similarity")]
+    public SimilarityAlgorithm? Similarity { get; set; }
+
+    /// <summary>
+    /// Semantic search configuration.
+    /// </summary>
+    [JsonPropertyName("semantic")]
+    public object? Semantic { get; set; }
 
     /// <summary>
     /// ETag for optimistic concurrency.
@@ -411,4 +435,20 @@ public class CorsOptions
 
     [JsonPropertyName("maxAgeInSeconds")]
     public int? MaxAgeInSeconds { get; set; }
+}
+
+/// <summary>
+/// Similarity algorithm configuration.
+/// Azure AI Search defaults to BM25.
+/// </summary>
+public class SimilarityAlgorithm
+{
+    [JsonPropertyName("@odata.type")]
+    public string ODataType { get; set; } = "#Microsoft.Azure.Search.BM25Similarity";
+
+    [JsonPropertyName("k1")]
+    public double? K1 { get; set; }
+
+    [JsonPropertyName("b")]
+    public double? B { get; set; }
 }
