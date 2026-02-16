@@ -96,10 +96,8 @@ public class IndexerServiceKeyMappingTests
         Assert.Single(capturedRequest!.Value);
 
         // The key in the indexed document should be the base64-encoded value
-        var expectedKey = Convert.ToBase64String(Encoding.UTF8.GetBytes(jsonId))
-            .Replace('+', '-')
-            .Replace('/', '_')
-            .TrimEnd('=');
+        // ApplyMappingFunction uses standard base64 (not URL-safe)
+        var expectedKey = Convert.ToBase64String(Encoding.UTF8.GetBytes(jsonId));
 
         var indexedDoc = capturedRequest.Value[0];
         Assert.Equal(expectedKey, indexedDoc["id"]);
@@ -211,10 +209,7 @@ public class IndexerServiceKeyMappingTests
         Assert.NotNull(capturedRequest);
         Assert.Single(capturedRequest!.Value);
 
-        var expectedKey = Convert.ToBase64String(Encoding.UTF8.GetBytes(jsonId))
-            .Replace('+', '-')
-            .Replace('/', '_')
-            .TrimEnd('=');
+        var expectedKey = Convert.ToBase64String(Encoding.UTF8.GetBytes(jsonId));
 
         Assert.Equal(expectedKey, capturedRequest.Value[0]["id"]);
     }
