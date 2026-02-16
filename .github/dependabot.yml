@@ -1,0 +1,94 @@
+# Dependabot configuration
+# https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+
+version: 2
+updates:
+  # NuGet (.NET) dependencies
+  - package-ecosystem: "nuget"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "dotnet"
+    commit-message:
+      prefix: "deps(nuget)"
+    groups:
+      azure-packages:
+        patterns:
+          - "Azure.*"
+          - "Microsoft.Azure.*"
+      microsoft-packages:
+        patterns:
+          - "Microsoft.*"
+        exclude-patterns:
+          - "Microsoft.Azure.*"
+      testing:
+        patterns:
+          - "xunit*"
+          - "Moq*"
+          - "FluentAssertions*"
+          - "Microsoft.NET.Test.*"
+          - "coverlet.*"
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "deps(actions)"
+
+  # Docker base images
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "docker"
+    commit-message:
+      prefix: "deps(docker)"
+
+  # Python dependencies - sample notebooks
+  - package-ecosystem: "pip"
+    directory: "/samples/AzureSearchNotebook"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "python"
+    commit-message:
+      prefix: "deps(pip)"
+
+  - package-ecosystem: "pip"
+    directory: "/samples/EmbeddingSkillNotebook"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "python"
+    commit-message:
+      prefix: "deps(pip)"
+
+  - package-ecosystem: "pip"
+    directory: "/samples/IndexerTestNotebook"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "python"
+    commit-message:
+      prefix: "deps(pip)"
