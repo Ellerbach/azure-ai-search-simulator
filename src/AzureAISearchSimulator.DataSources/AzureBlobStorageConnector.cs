@@ -87,7 +87,7 @@ public class AzureBlobStorageConnector : IDataSourceConnector
             // Get prefix from query if specified
             var prefix = dataSource.Container?.Query;
 
-            await foreach (var blobItem in containerClient.GetBlobsAsync(prefix: prefix))
+            await foreach (var blobItem in containerClient.GetBlobsAsync(BlobTraits.Metadata, BlobStates.None, prefix, default))
             {
                 try
                 {
