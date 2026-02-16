@@ -127,7 +127,7 @@ public class AdlsGen2Connector : IDataSourceConnector
 
         try
         {
-            await foreach (var pathItem in fileSystemClient.GetPathsAsync(directoryPath, recursive: true))
+            await foreach (var pathItem in fileSystemClient.GetPathsAsync(directoryPath, true, false, default))
             {
                 // Skip directories
                 if (pathItem.IsDirectory == true)
@@ -205,7 +205,7 @@ public class AdlsGen2Connector : IDataSourceConnector
             if (!await fileClient.ExistsAsync())
             {
                 // Try to find by iterating (in case key encoding differs)
-                await foreach (var pathItem in fileSystemClient.GetPathsAsync(recursive: true))
+                await foreach (var pathItem in fileSystemClient.GetPathsAsync("/", true, false, default))
                 {
                     if (pathItem.IsDirectory == true) continue;
                     
