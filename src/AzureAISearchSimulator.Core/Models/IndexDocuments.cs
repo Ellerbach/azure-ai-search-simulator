@@ -27,16 +27,28 @@ public class IndexAction : Dictionary<string, object?>
     {
         get
         {
-            if (TryGetValue("@search.action", out var action) && action is string actionStr)
+            if (TryGetValue("@search.action", out var action))
             {
-                return actionStr.ToLowerInvariant() switch
+                // Handle both string and JsonElement (System.Text.Json deserializes
+                // Dictionary<string, object?> values as JsonElement, not string)
+                var actionStr = action switch
                 {
-                    "upload" => IndexActionType.Upload,
-                    "merge" => IndexActionType.Merge,
-                    "mergeorupload" => IndexActionType.MergeOrUpload,
-                    "delete" => IndexActionType.Delete,
-                    _ => IndexActionType.Upload
+                    string s => s,
+                    System.Text.Json.JsonElement je when je.ValueKind == System.Text.Json.JsonValueKind.String => je.GetString(),
+                    _ => null
                 };
+
+                if (actionStr != null)
+                {
+                    return actionStr.ToLowerInvariant() switch
+                    {
+                        "upload" => IndexActionType.Upload,
+                        "merge" => IndexActionType.Merge,
+                        "mergeorupload" => IndexActionType.MergeOrUpload,
+                        "delete" => IndexActionType.Delete,
+                        _ => IndexActionType.Upload
+                    };
+                }
             }
             return IndexActionType.Upload; // Default action
         }
@@ -116,6 +128,7 @@ public class IndexingResult
     /// Error message if failed.
     /// </summary>
     [JsonPropertyName("errorMessage")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public string? ErrorMessage { get; set; }
 
     /// <summary>
