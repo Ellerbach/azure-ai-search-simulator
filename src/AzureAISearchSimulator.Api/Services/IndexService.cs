@@ -51,6 +51,9 @@ public partial class IndexService : IIndexService
                 $"Maximum number of indexes ({_settings.MaxIndexes}) reached");
         }
 
+        // Apply Azure-compatible defaults before storing
+        ApplyIndexDefaults(index);
+
         _logger.LogInformation("Creating index {IndexName} with {FieldCount} fields", 
             index.Name, index.Fields.Count);
 
@@ -67,6 +70,9 @@ public partial class IndexService : IIndexService
             throw new InvalidOperationException(
                 $"Invalid index definition: {string.Join("; ", validation.Errors)}");
         }
+
+        // Apply Azure-compatible defaults before storing
+        ApplyIndexDefaults(index);
 
         var existing = await _repository.GetByNameAsync(indexName, cancellationToken);
         if (existing != null)
@@ -107,6 +113,75 @@ public partial class IndexService : IIndexService
     public Task<bool> IndexExistsAsync(string indexName, CancellationToken cancellationToken = default)
     {
         return _repository.ExistsAsync(indexName, cancellationToken);
+    }
+
+    /// <summary>
+    /// Applies Azure AI Search-compatible defaults to an index definition.
+    /// Azure always returns all field properties with their default values,
+    /// so we normalize the index to match that behavior.
+    /// </summary>
+    private static void ApplyIndexDefaults(SearchIndex index)
+    {
+        // Apply field-level defaults
+        if (index.Fields != null)
+        {
+            foreach (var field in index.Fields)
+            {
+                ApplyFieldDefaults(field);
+            }
+        }
+
+        // Apply index-level defaults for empty collections
+        // Azure always returns these as empty arrays rather than omitting them
+        index.ScoringProfiles ??= new List<ScoringProfile>();
+        index.Suggesters ??= new List<Suggester>();
+        index.Analyzers ??= new List<CustomAnalyzer>();
+        index.Tokenizers ??= new List<CustomTokenizer>();
+        index.TokenFilters ??= new List<CustomTokenFilter>();
+        index.CharFilters ??= new List<CustomCharFilter>();
+
+        // Azure defaults to BM25 similarity
+        index.Similarity ??= new SimilarityAlgorithm();
+    }
+
+    /// <summary>
+    /// Applies Azure AI Search-compatible defaults to a field definition.
+    /// Azure always returns all field attributes explicitly, applying defaults
+    /// based on the field's data type when not specified in the request.
+    /// </summary>
+    private static void ApplyFieldDefaults(SearchField field)
+    {
+        var type = field.Type;
+
+        // searchable: defaults to true for Edm.String and Collection(Edm.String), false for others
+        field.Searchable ??= SearchFieldDataType.SupportsSearchable(type) && !field.IsVector;
+
+        // filterable: defaults to true for non-complex, non-vector types
+        field.Filterable ??= SearchFieldDataType.SupportsFilterable(type);
+
+        // retrievable: defaults to true
+        field.Retrievable ??= true;
+
+        // stored: defaults to true
+        field.Stored ??= true;
+
+        // sortable: defaults to true for non-collection, non-complex types
+        field.Sortable ??= SearchFieldDataType.SupportsSortable(type);
+
+        // facetable: defaults to true for supported types
+        field.Facetable ??= SearchFieldDataType.SupportsFacetable(type);
+
+        // synonymMaps: defaults to empty array
+        field.SynonymMaps ??= new List<string>();
+
+        // Apply defaults recursively for complex type sub-fields
+        if (field.Fields != null)
+        {
+            foreach (var subField in field.Fields)
+            {
+                ApplyFieldDefaults(subField);
+            }
+        }
     }
 
     public IndexValidationResult ValidateIndex(SearchIndex index)

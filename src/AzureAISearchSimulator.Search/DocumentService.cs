@@ -139,7 +139,8 @@ public class DocumentService : IDocumentService
             switch (actionType)
             {
                 case IndexActionType.Upload:
-                    return await UploadDocumentAsync(indexName, schema, writer, term, key, action.Document);
+                    var existingDoc = await GetDocumentAsync(indexName, key);
+                    return await UploadDocumentAsync(indexName, schema, writer, term, key, action.Document, isMerge: existingDoc != null);
 
                 case IndexActionType.Merge:
                     return await MergeDocumentAsync(indexName, schema, writer, term, key, action.Document);
@@ -299,7 +300,8 @@ public class DocumentService : IDocumentService
         IndexWriter writer,
         Term keyTerm,
         string key,
-        Dictionary<string, object?> document)
+        Dictionary<string, object?> document,
+        bool isMerge = false)
     {
         // Validate document fields against schema
         var validationErrors = ValidateDocument(schema, document, key);
@@ -327,7 +329,7 @@ public class DocumentService : IDocumentService
         {
             Key = key,
             Status = true,
-            StatusCode = 200
+            StatusCode = isMerge ? 200 : 201
         });
     }
 
@@ -358,7 +360,7 @@ public class DocumentService : IDocumentService
             existing[kvp.Key] = kvp.Value;
         }
 
-        return await UploadDocumentAsync(indexName, schema, writer, keyTerm, key, existing);
+        return await UploadDocumentAsync(indexName, schema, writer, keyTerm, key, existing, isMerge: true);
     }
 
     private async Task<IndexingResult> MergeOrUploadDocumentAsync(
@@ -381,7 +383,7 @@ public class DocumentService : IDocumentService
             document = existing;
         }
 
-        return await UploadDocumentAsync(indexName, schema, writer, keyTerm, key, document);
+        return await UploadDocumentAsync(indexName, schema, writer, keyTerm, key, document, isMerge: existing != null);
     }
 
     private IndexingResult DeleteDocument(
