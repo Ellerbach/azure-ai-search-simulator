@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Search result payload to add score first and remove non needed parameters.
+
+### Fixed
+
 - **Upload Documents status code parity**: Upload now returns `201` for new documents and `200` when overwriting an existing document, matching Azure AI Search behavior.
 
 ### Fixed
