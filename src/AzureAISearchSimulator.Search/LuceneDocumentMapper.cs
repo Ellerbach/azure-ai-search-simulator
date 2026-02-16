@@ -163,6 +163,18 @@ public static class LuceneDocumentMapper
         {
             // Searchable - use TextField for full-text search (analyzer handles normalization)
             fields.Add(new TextField(field.Name, strValue, field.Retrievable != false ? Field.Store.YES : Field.Store.NO));
+
+            // If also filterable, add exact-match StringField so filter queries work
+            // (TextField lowercases via analyzer; filters need exact case matching)
+            if (field.Filterable == true)
+            {
+                fields.Add(new StringField(field.Name, normalizedValue, Field.Store.NO));
+            }
+
+            if (field.Sortable == true)
+            {
+                fields.Add(new SortedDocValuesField(field.Name, new BytesRef(normalizedValue)));
+            }
         }
         else if (field.Filterable == true || field.Sortable == true)
         {

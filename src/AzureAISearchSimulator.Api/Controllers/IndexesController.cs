@@ -59,6 +59,7 @@ public class IndexesController : ControllerBase
         try
         {
             var created = await _indexService.CreateIndexAsync(index, cancellationToken);
+            created.ODataContext = $"{Request.Scheme}://{Request.Host}/$metadata#indexes/$entity";
             return CreatedAtAction(
                 nameof(GetIndex), 
                 new { indexName = created.Name, apiVersion }, 
@@ -98,6 +99,7 @@ public class IndexesController : ControllerBase
         }
 
         // Add OData context
+        index.ODataContext = $"{Request.Scheme}://{Request.Host}/$metadata#indexes/$entity";
         Response.Headers["ETag"] = index.ETag;
         return Ok(index);
     }
@@ -151,6 +153,7 @@ public class IndexesController : ControllerBase
             var existed = await _indexService.IndexExistsAsync(indexName, cancellationToken);
             var result = await _indexService.CreateOrUpdateIndexAsync(indexName, index, cancellationToken);
 
+            result.ODataContext = $"{Request.Scheme}://{Request.Host}/$metadata#indexes/$entity";
             Response.Headers["ETag"] = result.ETag;
 
             if (existed)
