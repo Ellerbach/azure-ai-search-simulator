@@ -221,26 +221,28 @@ public class SearchService : ISearchService
             // Set score first to match Azure property ordering (@search.score before document fields)
             // Replace NaN with 1.0 (occurs when Lucene uses sorted search without scoring, e.g. wildcard/filter queries)
             searchResult.Score = double.IsNaN(score) ? 1.0 : score;
-            
+
+            // Add highlights right after score (before document fields) to match Azure property ordering
+            Dictionary<string, List<string>>? highlights = null;
+            if (textQuery != null && request.Highlight != null && luceneDoc != null)
+            {
+                highlights = GetHighlights(
+                    indexName, index, textQuery, luceneDoc, 
+                    request.Highlight,
+                    request.HighlightPreTag ?? "<em>",
+                    request.HighlightPostTag ?? "</em>");
+                if (highlights.Any())
+                {
+                    searchResult.Highlights = highlights;
+                }
+            }
+
             if (luceneDoc != null)
             {
                 var doc = LuceneDocumentMapper.FromLuceneDocument(luceneDoc, selectedFields);
                 foreach (var kvp in doc)
                 {
                     searchResult[kvp.Key] = kvp.Value;
-                }
-            }
-            
-            // Add highlights if requested
-            if (textQuery != null && request.Highlight != null && luceneDoc != null)
-            {
-                var highlights = GetHighlights(
-                    indexName, index, textQuery, luceneDoc, 
-                    request.HighlightPreTag ?? "<em>",
-                    request.HighlightPostTag ?? "</em>");
-                if (highlights.Any())
-                {
-                    searchResult.Highlights = highlights;
                 }
             }
 
@@ -832,6 +834,7 @@ public class SearchService : ISearchService
         SearchIndex schema,
         Query query,
         Document doc,
+        string highlightFields,
         string preTag,
         string postTag)
     {
@@ -847,7 +850,13 @@ public class SearchService : ISearchService
                 TextFragmenter = new SimpleFragmenter(150)
             };
 
-            foreach (var field in schema.Fields.Where(f => f.Searchable == true))
+            // Only highlight the fields specified in the highlight parameter
+            var requestedFields = highlightFields
+                .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                .Select(f => f.Trim())
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var field in schema.Fields.Where(f => f.Searchable == true && requestedFields.Contains(f.Name)))
             {
                 var text = doc.Get(field.Name);
                 if (string.IsNullOrEmpty(text))
