@@ -1,0 +1,555 @@
+### Azure AI Search — Simulator vs Real Azure — Side-by-Side Comparison
+### ====================================================================
+### This file sends identical requests to BOTH the simulator and the real
+### Azure AI Search service so you can compare responses side by side.
+###
+### Usage:
+###   1. Copy .env.example → .env in the workspace root
+###   2. Fill in BASE_URL/ADMIN_KEY/QUERY_KEY (simulator) and AZURE_* variables
+###   3. Click "Send Request" on each pair and compare the responses
+###
+### Tip: In VS Code, use "REST Client: Split Response" to keep both
+###      response tabs visible at the same time.
+
+# ─── Variables ────────────────────────────────────────────────────────
+@simBaseUrl = {{$dotenv BASE_URL}}
+@azureBaseUrl = {{$dotenv AZURE_BASE_URL}}
+@apiVersion = {{$dotenv API_VERSION}}
+@simAdminKey = {{$dotenv ADMIN_KEY}}
+@simQueryKey = {{$dotenv QUERY_KEY}}
+@azureAdminKey = {{$dotenv AZURE_ADMIN_KEY}}
+@azureQueryKey = {{$dotenv AZURE_QUERY_KEY}}
+
+# =====================================================================
+# INDEX MANAGEMENT
+# =====================================================================
+
+### [SIM] List all indexes
+GET {{simBaseUrl}}/indexes?api-version={{apiVersion}}
+api-key: {{simAdminKey}}
+
+### [AZURE] List all indexes
+GET {{azureBaseUrl}}/indexes?api-version={{apiVersion}}
+api-key: {{azureAdminKey}}
+
+###
+
+### [SIM] Create "hotels" index
+POST {{simBaseUrl}}/indexes?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{simAdminKey}}
+
+{
+  "name": "hotels",
+  "fields": [
+    { "name": "hotelId", "type": "Edm.String", "key": true, "filterable": true },
+    { "name": "hotelName", "type": "Edm.String", "searchable": true, "filterable": true, "sortable": true },
+    { "name": "description", "type": "Edm.String", "searchable": true },
+    { "name": "category", "type": "Edm.String", "searchable": true, "filterable": true, "facetable": true },
+    { "name": "rating", "type": "Edm.Double", "filterable": true, "sortable": true },
+    { "name": "parkingIncluded", "type": "Edm.Boolean", "filterable": true },
+    { "name": "lastRenovationDate", "type": "Edm.DateTimeOffset", "filterable": true, "sortable": true },
+    { "name": "tags", "type": "Collection(Edm.String)", "searchable": true, "filterable": true }
+  ]
+}
+
+### [AZURE] Create "hotels" index
+POST {{azureBaseUrl}}/indexes?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{azureAdminKey}}
+
+{
+  "name": "hotels",
+  "fields": [
+    { "name": "hotelId", "type": "Edm.String", "key": true, "filterable": true },
+    { "name": "hotelName", "type": "Edm.String", "searchable": true, "filterable": true, "sortable": true },
+    { "name": "description", "type": "Edm.String", "searchable": true },
+    { "name": "category", "type": "Edm.String", "searchable": true, "filterable": true, "facetable": true },
+    { "name": "rating", "type": "Edm.Double", "filterable": true, "sortable": true },
+    { "name": "parkingIncluded", "type": "Edm.Boolean", "filterable": true },
+    { "name": "lastRenovationDate", "type": "Edm.DateTimeOffset", "filterable": true, "sortable": true },
+    { "name": "tags", "type": "Collection(Edm.String)", "searchable": true, "filterable": true }
+  ]
+}
+
+###
+
+### [SIM] Get "hotels" index
+GET {{simBaseUrl}}/indexes/hotels?api-version={{apiVersion}}
+api-key: {{simAdminKey}}
+
+### [AZURE] Get "hotels" index
+GET {{azureBaseUrl}}/indexes/hotels?api-version={{apiVersion}}
+api-key: {{azureAdminKey}}
+
+###
+
+### [SIM] Delete "hotels" index
+DELETE {{simBaseUrl}}/indexes/hotels?api-version={{apiVersion}}
+api-key: {{simAdminKey}}
+
+### [AZURE] Delete "hotels" index
+DELETE {{azureBaseUrl}}/indexes/hotels?api-version={{apiVersion}}
+api-key: {{azureAdminKey}}
+
+# =====================================================================
+# DOCUMENT OPERATIONS (Push Model)
+# =====================================================================
+
+### [SIM] Upload documents
+POST {{simBaseUrl}}/indexes/hotels/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{simAdminKey}}
+
+{
+  "value": [
+    {
+      "@search.action": "upload",
+      "hotelId": "1",
+      "hotelName": "Grand Azure Hotel",
+      "description": "A luxurious hotel in the heart of downtown with stunning views and world-class amenities.",
+      "category": "Luxury",
+      "rating": 4.8,
+      "parkingIncluded": true,
+      "lastRenovationDate": "2023-06-15T00:00:00Z",
+      "tags": ["luxury", "spa", "pool", "wifi"]
+    },
+    {
+      "@search.action": "upload",
+      "hotelId": "2",
+      "hotelName": "Budget Inn Express",
+      "description": "Affordable accommodation for business travelers with free breakfast and parking.",
+      "category": "Budget",
+      "rating": 3.5,
+      "parkingIncluded": true,
+      "lastRenovationDate": "2020-01-10T00:00:00Z",
+      "tags": ["budget", "breakfast", "wifi"]
+    },
+    {
+      "@search.action": "upload",
+      "hotelId": "3",
+      "hotelName": "Seaside Resort & Spa",
+      "description": "Beachfront resort with private beach access, multiple pools, and a full-service spa.",
+      "category": "Resort",
+      "rating": 4.5,
+      "parkingIncluded": false,
+      "lastRenovationDate": "2022-09-01T00:00:00Z",
+      "tags": ["beach", "spa", "pool", "restaurant"]
+    },
+    {
+      "@search.action": "upload",
+      "hotelId": "4",
+      "hotelName": "Mountain Lodge Retreat",
+      "description": "Cozy mountain retreat perfect for hiking enthusiasts and nature lovers.",
+      "category": "Boutique",
+      "rating": 4.2,
+      "parkingIncluded": true,
+      "lastRenovationDate": "2021-05-20T00:00:00Z",
+      "tags": ["hiking", "nature", "fireplace", "pets"]
+    },
+    {
+      "@search.action": "upload",
+      "hotelId": "5",
+      "hotelName": "City Center Suites",
+      "description": "Modern suites in the business district with kitchenette and workspace.",
+      "category": "Business",
+      "rating": 4.0,
+      "parkingIncluded": false,
+      "lastRenovationDate": "2024-02-28T00:00:00Z",
+      "tags": ["business", "wifi", "workspace", "kitchen"]
+    }
+  ]
+}
+
+### [AZURE] Upload documents
+POST {{azureBaseUrl}}/indexes/hotels/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{azureAdminKey}}
+
+{
+  "value": [
+    {
+      "@search.action": "upload",
+      "hotelId": "1",
+      "hotelName": "Grand Azure Hotel",
+      "description": "A luxurious hotel in the heart of downtown with stunning views and world-class amenities.",
+      "category": "Luxury",
+      "rating": 4.8,
+      "parkingIncluded": true,
+      "lastRenovationDate": "2023-06-15T00:00:00Z",
+      "tags": ["luxury", "spa", "pool", "wifi"]
+    },
+    {
+      "@search.action": "upload",
+      "hotelId": "2",
+      "hotelName": "Budget Inn Express",
+      "description": "Affordable accommodation for business travelers with free breakfast and parking.",
+      "category": "Budget",
+      "rating": 3.5,
+      "parkingIncluded": true,
+      "lastRenovationDate": "2020-01-10T00:00:00Z",
+      "tags": ["budget", "breakfast", "wifi"]
+    },
+    {
+      "@search.action": "upload",
+      "hotelId": "3",
+      "hotelName": "Seaside Resort & Spa",
+      "description": "Beachfront resort with private beach access, multiple pools, and a full-service spa.",
+      "category": "Resort",
+      "rating": 4.5,
+      "parkingIncluded": false,
+      "lastRenovationDate": "2022-09-01T00:00:00Z",
+      "tags": ["beach", "spa", "pool", "restaurant"]
+    },
+    {
+      "@search.action": "upload",
+      "hotelId": "4",
+      "hotelName": "Mountain Lodge Retreat",
+      "description": "Cozy mountain retreat perfect for hiking enthusiasts and nature lovers.",
+      "category": "Boutique",
+      "rating": 4.2,
+      "parkingIncluded": true,
+      "lastRenovationDate": "2021-05-20T00:00:00Z",
+      "tags": ["hiking", "nature", "fireplace", "pets"]
+    },
+    {
+      "@search.action": "upload",
+      "hotelId": "5",
+      "hotelName": "City Center Suites",
+      "description": "Modern suites in the business district with kitchenette and workspace.",
+      "category": "Business",
+      "rating": 4.0,
+      "parkingIncluded": false,
+      "lastRenovationDate": "2024-02-28T00:00:00Z",
+      "tags": ["business", "wifi", "workspace", "kitchen"]
+    }
+  ]
+}
+
+###
+
+### [SIM] Merge document
+POST {{simBaseUrl}}/indexes/hotels/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{simAdminKey}}
+
+{
+  "value": [
+    {
+      "@search.action": "merge",
+      "hotelId": "1",
+      "rating": 4.9
+    }
+  ]
+}
+
+### [AZURE] Merge document
+POST {{azureBaseUrl}}/indexes/hotels/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{azureAdminKey}}
+
+{
+  "value": [
+    {
+      "@search.action": "merge",
+      "hotelId": "1",
+      "rating": 4.9
+    }
+  ]
+}
+
+###
+
+### [SIM] Get document by key
+GET {{simBaseUrl}}/indexes/hotels/docs/1?api-version={{apiVersion}}
+api-key: {{simQueryKey}}
+
+### [AZURE] Get document by key
+GET {{azureBaseUrl}}/indexes/hotels/docs/1?api-version={{apiVersion}}
+api-key: {{azureQueryKey}}
+
+###
+
+### [SIM] Get document count
+GET {{simBaseUrl}}/indexes/hotels/docs/$count?api-version={{apiVersion}}
+api-key: {{simQueryKey}}
+
+### [AZURE] Get document count
+GET {{azureBaseUrl}}/indexes/hotels/docs/$count?api-version={{apiVersion}}
+api-key: {{azureQueryKey}}
+
+# =====================================================================
+# SEARCH OPERATIONS
+# =====================================================================
+
+### [SIM] Simple search
+POST {{simBaseUrl}}/indexes/hotels/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{simQueryKey}}
+
+{
+  "search": "luxury spa",
+  "top": 10
+}
+
+### [AZURE] Simple search
+POST {{azureBaseUrl}}/indexes/hotels/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{azureQueryKey}}
+
+{
+  "search": "luxury spa",
+  "top": 10
+}
+
+###
+
+### [SIM] Search with filter & order
+POST {{simBaseUrl}}/indexes/hotels/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{simQueryKey}}
+
+{
+  "search": "*",
+  "filter": "rating ge 4.0",
+  "orderby": "rating desc",
+  "top": 10
+}
+
+### [AZURE] Search with filter & order
+POST {{azureBaseUrl}}/indexes/hotels/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{azureQueryKey}}
+
+{
+  "search": "*",
+  "filter": "rating ge 4.0",
+  "orderby": "rating desc",
+  "top": 10
+}
+
+###
+
+### [SIM] Search with multiple filters & select
+POST {{simBaseUrl}}/indexes/hotels/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{simQueryKey}}
+
+{
+  "search": "hotel",
+  "filter": "rating ge 4.0 and parkingIncluded eq true",
+  "select": "hotelId,hotelName,rating,category",
+  "top": 5
+}
+
+### [AZURE] Search with multiple filters & select
+POST {{azureBaseUrl}}/indexes/hotels/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{azureQueryKey}}
+
+{
+  "search": "hotel",
+  "filter": "rating ge 4.0 and parkingIncluded eq true",
+  "select": "hotelId,hotelName,rating,category",
+  "top": 5
+}
+
+###
+
+### [SIM] Search with highlighting
+POST {{simBaseUrl}}/indexes/hotels/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{simQueryKey}}
+
+{
+  "search": "spa pool",
+  "highlight": "description",
+  "highlightPreTag": "<em>",
+  "highlightPostTag": "</em>",
+  "top": 10
+}
+
+### [AZURE] Search with highlighting
+POST {{azureBaseUrl}}/indexes/hotels/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{azureQueryKey}}
+
+{
+  "search": "spa pool",
+  "highlight": "description",
+  "highlightPreTag": "<em>",
+  "highlightPostTag": "</em>",
+  "top": 10
+}
+
+###
+
+### [SIM] Full Lucene query
+POST {{simBaseUrl}}/indexes/hotels/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{simQueryKey}}
+
+{
+  "search": "description:luxury OR description:spa",
+  "queryType": "full",
+  "searchMode": "all",
+  "top": 10
+}
+
+### [AZURE] Full Lucene query
+POST {{azureBaseUrl}}/indexes/hotels/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{azureQueryKey}}
+
+{
+  "search": "description:luxury OR description:spa",
+  "queryType": "full",
+  "searchMode": "all",
+  "top": 10
+}
+
+###
+
+### [SIM] Search with count
+POST {{simBaseUrl}}/indexes/hotels/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{simQueryKey}}
+
+{
+  "search": "*",
+  "count": true,
+  "top": 3
+}
+
+### [AZURE] Search with count
+POST {{azureBaseUrl}}/indexes/hotels/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{azureQueryKey}}
+
+{
+  "search": "*",
+  "count": true,
+  "top": 3
+}
+
+###
+
+### [SIM] Search with paging
+POST {{simBaseUrl}}/indexes/hotels/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{simQueryKey}}
+
+{
+  "search": "*",
+  "orderby": "hotelName",
+  "top": 2,
+  "skip": 2
+}
+
+### [AZURE] Search with paging
+POST {{azureBaseUrl}}/indexes/hotels/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{azureQueryKey}}
+
+{
+  "search": "*",
+  "orderby": "hotelName",
+  "top": 2,
+  "skip": 2
+}
+
+###
+
+### [SIM] Search with search.in filter
+POST {{simBaseUrl}}/indexes/hotels/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{simQueryKey}}
+
+{
+  "search": "*",
+  "filter": "search.in(category, 'Luxury,Resort,Boutique')",
+  "top": 10
+}
+
+### [AZURE] Search with search.in filter
+POST {{azureBaseUrl}}/indexes/hotels/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{azureQueryKey}}
+
+{
+  "search": "*",
+  "filter": "search.in(category, 'Luxury,Resort,Boutique')",
+  "top": 10
+}
+
+###
+
+### [SIM] GET search
+GET {{simBaseUrl}}/indexes/hotels/docs?api-version={{apiVersion}}&search=luxury&$filter=rating ge 4&$top=5&$orderby=rating desc
+api-key: {{simQueryKey}}
+
+### [AZURE] GET search
+GET {{azureBaseUrl}}/indexes/hotels/docs?api-version={{apiVersion}}&search=luxury&$filter=rating ge 4&$top=5&$orderby=rating desc
+api-key: {{azureQueryKey}}
+
+# =====================================================================
+# AUTOCOMPLETE & SUGGESTIONS
+# =====================================================================
+
+### [SIM] Autocomplete
+POST {{simBaseUrl}}/indexes/hotels/docs/autocomplete?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{simQueryKey}}
+
+{
+  "search": "lux",
+  "suggesterName": "sg",
+  "autocompleteMode": "oneTerm"
+}
+
+### [AZURE] Autocomplete
+POST {{azureBaseUrl}}/indexes/hotels/docs/autocomplete?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{azureQueryKey}}
+
+{
+  "search": "lux",
+  "suggesterName": "sg",
+  "autocompleteMode": "oneTerm"
+}
+
+###
+
+### [SIM] Suggestions
+POST {{simBaseUrl}}/indexes/hotels/docs/suggest?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{simQueryKey}}
+
+{
+  "search": "grand",
+  "suggesterName": "sg",
+  "select": "hotelId,hotelName"
+}
+
+### [AZURE] Suggestions
+POST {{azureBaseUrl}}/indexes/hotels/docs/suggest?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{azureQueryKey}}
+
+{
+  "search": "grand",
+  "suggesterName": "sg",
+  "select": "hotelId,hotelName"
+}
+
+# =====================================================================
+# SERVICE INFO
+# =====================================================================
+
+### [SIM] Get service statistics
+GET {{simBaseUrl}}/servicestats?api-version={{apiVersion}}
+api-key: {{simAdminKey}}
+
+### [AZURE] Get service statistics
+GET {{azureBaseUrl}}/servicestats?api-version={{apiVersion}}
+api-key: {{azureAdminKey}}
