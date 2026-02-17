@@ -81,6 +81,7 @@ The notebook integrates with the [CustomSkillSample](../CustomSkillSample/) proj
 ### Connection Refused
 
 Make sure the simulator is running:
+
 ```bash
 curl -k https://localhost:7250/indexes?api-version=2024-07-01 -H "api-key: admin-key-12345"
 ```
@@ -90,6 +91,7 @@ curl -k https://localhost:7250/indexes?api-version=2024-07-01 -H "api-key: admin
 ### Custom Skills Not Working
 
 Ensure CustomSkillSample is running:
+
 ```bash
 curl http://localhost:5260/api/skills/health
 ```
