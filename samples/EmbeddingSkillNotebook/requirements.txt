@@ -10,6 +10,9 @@ requests>=2.31.0
 pandas>=2.0.0
 numpy>=1.24.0
 
+# Environment variable loading
+python-dotenv>=1.0.0
+
 # Jupyter notebook support
 jupyter>=1.0.0
 ipykernel>=6.0.0

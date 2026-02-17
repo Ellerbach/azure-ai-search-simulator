@@ -24,7 +24,25 @@ The data is located at `../IndexerTestNotebook/data/`
 
 ## Prerequisites
 
-### 1. Start the Azure AI Search Simulator
+### 1. Configure Azure OpenAI credentials
+
+Copy the workspace root `.env.example` to `.env` and fill in your Azure OpenAI values:
+
+```bash
+cp .env.example .env
+```
+
+Then edit `.env` and set:
+
+```dotenv
+AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com
+AZURE_OPENAI_API_KEY=your-api-key
+AZURE_OPENAI_DEPLOYMENT=text-embedding-3-small
+```
+
+> The notebook loads these variables automatically via `python-dotenv`. The `.env` file is gitignored.
+
+### 2. Start the Azure AI Search Simulator
 
 ```bash
 cd src/AzureAISearchSimulator.Api
@@ -32,20 +50,6 @@ dotnet run --urls "https://localhost:7250"
 ```
 
 > ⚠️ **Important**: The Azure SDK requires HTTPS. Make sure to use the `--urls` parameter.
-
-### 2. Configure Azure OpenAI
-
-Update `src/AzureAISearchSimulator.Api/appsettings.json` with your Azure OpenAI credentials:
-
-```json
-{
-  "AzureOpenAI": {
-    "Endpoint": "https://your-resource.openai.azure.com",
-    "ApiKey": "your-api-key",
-    "EmbeddingDeployment": "text-embedding-ada-002"
-  }
-}
-```
 
 ### 3. Install Python Dependencies
 
@@ -56,7 +60,7 @@ pip install -r requirements.txt
 Or install manually:
 
 ```bash
-pip install azure-search-documents requests pandas numpy jupyter ipykernel
+pip install azure-search-documents requests pandas numpy python-dotenv jupyter ipykernel
 ```
 
 ## Running the Notebook
@@ -69,13 +73,7 @@ pip install azure-search-documents requests pandas numpy jupyter ipykernel
 
 2. Open `embedding_skill_demo.ipynb`
 
-3. Update the Azure OpenAI configuration in cell 2:
-
-   ```python
-   AZURE_OPENAI_ENDPOINT = "https://your-resource.openai.azure.com"
-   AZURE_OPENAI_DEPLOYMENT = "text-embedding-ada-002"
-   AZURE_OPENAI_API_KEY = "YOUR-AZURE-OPENAI-API-KEY-HERE"
-   ```
+3. Make sure your `.env` file is configured (see Prerequisites above)
 
 4. Run all cells sequentially
 
