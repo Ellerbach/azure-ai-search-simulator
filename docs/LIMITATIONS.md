@@ -60,7 +60,7 @@ The simulator is designed for **development, learning, and testing purposes only
 | ------- | ---------- |
 | Scoring profiles | Basic profiles supported, some functions may differ |
 | Analyzers | All Lucene language analyzers supported (27 languages); `.microsoft` names accepted and mapped to Lucene equivalents |
-| Synonym maps | Not yet implemented |
+| Synonym maps | CRUD management and query-time expansion supported; Solr format only |
 | Custom analyzers | Basic tokenizers and filters only |
 | CORS | Simplified implementation |
 | Service statistics | Quotas and limits use hardcoded S1 tier defaults; not enforced |
@@ -326,9 +326,8 @@ Not supported:
 
 The `GET /servicestats` endpoint returns resource counters and service limits. Because the simulator has no real quota system:
 
-- **Usage values** (`documentCount`, `indexesCount`, `indexersCount`, `dataSourcesCount`, `storageSize`, `skillsetCount`, `vectorIndexSize`) are computed from actual simulator state.
+- **Usage values** (`documentCount`, `indexesCount`, `indexersCount`, `dataSourcesCount`, `storageSize`, `skillsetCount`, `synonymMaps`, `vectorIndexSize`) are computed from actual simulator state.
 - **Quota values** and **limits** are hardcoded to Azure AI Search **Standard (S1) tier** defaults and are **not enforced**.
-- `synonymMaps` usage is always `0` because synonym map management is not yet implemented.
 - `documentCount.quota` is `null` (unlimited), matching Azure's Standard tier behavior.
 
 ## Recommendations

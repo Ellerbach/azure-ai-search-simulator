@@ -21,17 +21,20 @@ public class SearchService : ISearchService
     private readonly LuceneIndexManager _indexManager;
     private readonly IVectorSearchService _vectorSearchService;
     private readonly IIndexService _indexService;
+    private readonly ISynonymMapResolver _synonymMapResolver;
 
     public SearchService(
         ILogger<SearchService> logger,
         LuceneIndexManager indexManager,
         IVectorSearchService vectorSearchService,
-        IIndexService indexService)
+        IIndexService indexService,
+        ISynonymMapResolver synonymMapResolver)
     {
         _logger = logger;
         _indexManager = indexManager;
         _vectorSearchService = vectorSearchService;
         _indexService = indexService;
+        _synonymMapResolver = synonymMapResolver;
     }
 
     public async Task<SearchResponse> SearchAsync(string indexName, SearchRequest request)
@@ -527,13 +530,92 @@ public class SearchService : ISearchService
         try
         {
             var searchText = EscapeForSimpleQuery(request.Search ?? "*", request.QueryType);
-            return parser.Parse(searchText);
+            var baseQuery = parser.Parse(searchText);
+
+            // Expand with synonyms if any searchable fields have synonym maps
+            var synonymExpandedQuery = ExpandWithSynonyms(schema, request, baseQuery, analyzer);
+            return synonymExpandedQuery ?? baseQuery;
         }
         catch (ParseException ex)
         {
             _logger.LogWarning(ex, "Failed to parse query '{Query}', falling back to match all", request.Search);
             return new MatchAllDocsQuery();
         }
+    }
+
+    /// <summary>
+    /// Expands a text query with synonym terms for fields that have synonym maps configured.
+    /// Returns null if no synonym expansion is applicable.
+    /// </summary>
+    private Query? ExpandWithSynonyms(SearchIndex schema, SearchRequest request, Query baseQuery, Lucene.Net.Analysis.Analyzer analyzer)
+    {
+        if (string.IsNullOrWhiteSpace(request.Search) || request.Search == "*")
+        {
+            return null;
+        }
+
+        // Find searchable fields that have synonym maps
+        var fieldsWithSynonyms = schema.Fields
+            .Where(f => f.Searchable == true && f.SynonymMaps != null && f.SynonymMaps.Count > 0)
+            .ToList();
+
+        if (fieldsWithSynonyms.Count == 0)
+        {
+            return null;
+        }
+
+        // Determine which fields are being searched
+        var searchFieldNames = !string.IsNullOrWhiteSpace(request.SearchFields)
+            ? request.SearchFields.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(f => f.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase)
+            : schema.Fields.Where(f => f.Searchable == true).Select(f => f.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        // Filter to only fields being searched that have synonyms
+        var activeFields = fieldsWithSynonyms
+            .Where(f => searchFieldNames.Contains(f.Name))
+            .ToList();
+
+        if (activeFields.Count == 0)
+        {
+            return null;
+        }
+
+        // Tokenize the search text into terms
+        var searchTerms = request.Search.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (searchTerms.Length == 0)
+        {
+            return null;
+        }
+
+        // Build expanded query: for each field with synonyms, add synonym-expanded terms
+        var expandedQuery = new BooleanQuery();
+        expandedQuery.Add(baseQuery, Occur.SHOULD); // Original query
+
+        var hasExpansions = false;
+
+        foreach (var field in activeFields)
+        {
+            foreach (var term in searchTerms)
+            {
+                var expanded = _synonymMapResolver.ExpandTerms(field.SynonymMaps!, term);
+                if (expanded.Count > 1) // Has actual synonyms (more than just the original term)
+                {
+                    hasExpansions = true;
+                    foreach (var synonymTerm in expanded)
+                    {
+                        if (!string.Equals(synonymTerm, term, StringComparison.OrdinalIgnoreCase))
+                        {
+                            var synonymQuery = new Lucene.Net.Search.TermQuery(
+                                new Lucene.Net.Index.Term(field.Name, synonymTerm.ToLowerInvariant()));
+                            expandedQuery.Add(synonymQuery, Occur.SHOULD);
+                            _logger.LogDebug("Synonym expansion: '{Original}' -> '{Synonym}' on field '{Field}'",
+                                term, synonymTerm, field.Name);
+                        }
+                    }
+                }
+            }
+        }
+
+        return hasExpansions ? expandedQuery : null;
     }
 
     private string EscapeForSimpleQuery(string query, string? queryType)

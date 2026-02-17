@@ -35,6 +35,7 @@ public class ServiceStatsController : ControllerBase
     private readonly IIndexerService _indexerService;
     private readonly IDataSourceService _dataSourceService;
     private readonly ISkillsetService _skillsetService;
+    private readonly ISynonymMapService _synonymMapService;
     private readonly LuceneIndexManager _luceneManager;
     private readonly IHnswIndexManager _hnswManager;
     private readonly IAuthorizationService _authorizationService;
@@ -46,6 +47,7 @@ public class ServiceStatsController : ControllerBase
         IIndexerService indexerService,
         IDataSourceService dataSourceService,
         ISkillsetService skillsetService,
+        ISynonymMapService synonymMapService,
         LuceneIndexManager luceneManager,
         IHnswIndexManager hnswManager,
         IAuthorizationService authorizationService,
@@ -56,6 +58,7 @@ public class ServiceStatsController : ControllerBase
         _indexerService = indexerService;
         _dataSourceService = dataSourceService;
         _skillsetService = skillsetService;
+        _synonymMapService = synonymMapService;
         _luceneManager = luceneManager;
         _hnswManager = hnswManager;
         _authorizationService = authorizationService;
@@ -81,6 +84,7 @@ public class ServiceStatsController : ControllerBase
         var indexers = await _indexerService.ListAsync();
         var dataSources = await _dataSourceService.ListAsync();
         var skillsets = await _skillsetService.ListAsync(cancellationToken);
+        var synonymMapCount = await _synonymMapService.CountAsync(cancellationToken);
 
         // Sum document counts and storage sizes across all indexes
         long totalDocumentCount = 0;
@@ -126,7 +130,7 @@ public class ServiceStatsController : ControllerBase
                 },
                 SynonymMaps = new ResourceCounter
                 {
-                    Usage = 0, // Synonym maps not yet implemented
+                    Usage = synonymMapCount,
                     Quota = DefaultSynonymMapsQuota
                 },
                 SkillsetCount = new ResourceCounter

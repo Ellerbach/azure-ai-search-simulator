@@ -84,6 +84,7 @@ try
     builder.Services.AddSingleton<IDataSourceRepository, LiteDbDataSourceRepository>();
     builder.Services.AddSingleton<IIndexerRepository, LiteDbIndexerRepository>();
     builder.Services.AddSingleton<ISkillsetRepository, LiteDbSkillsetRepository>();
+    builder.Services.AddSingleton<ISynonymMapRepository, LiteDbSynonymMapRepository>();
 
     // Register Search infrastructure
     builder.Services.AddSingleton<LuceneIndexManager>();
@@ -137,6 +138,8 @@ try
     builder.Services.AddScoped<IDataSourceService, DataSourceService>();
     builder.Services.AddScoped<IIndexerService, IndexerService>();
     builder.Services.AddScoped<ISkillsetService, SkillsetService>();
+    builder.Services.AddScoped<ISynonymMapService, SynonymMapService>();
+    builder.Services.AddScoped<ISynonymMapResolver>(sp => (ISynonymMapResolver)sp.GetRequiredService<ISynonymMapService>());
 
     // Register background services
     builder.Services.AddSingleton<IndexerSchedulerService>();

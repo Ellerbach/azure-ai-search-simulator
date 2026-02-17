@@ -45,12 +45,12 @@ The Azure AI Search Simulator provides a local implementation of the Azure AI Se
 - **Docker Support**: Containerized deployment with docker-compose
 - **Azure SDK Compatibility**: Works with official Azure.Search.Documents SDK
 - **Search Debug**: Query diagnostics with subscore breakdown for hybrid/vector searches (`debug` parameter)
+- **Synonym Maps**: CRUD management, Solr format, query-time synonym expansion
 
 ### 🔜 Planned (Future Phases)
 
 - Scoring profiles
 - Local embedding models
-- Synonym maps
 - Azure SQL / Cosmos DB connectors
 - Admin UI dashboard
 
@@ -476,6 +476,7 @@ All `.http` sample files use environment variables via `$dotenv`. To get started
 | [CustomSkillSample](samples/CustomSkillSample/) | ASP.NET Core API implementing custom Web API skills (text stats, keywords, sentiment, summarization) |
 | [sample-requests.http](samples/sample-requests.http) | REST Client file with comprehensive API examples |
 | [compare-requests.http](samples/compare-requests.http) | REST Client file to send identical requests to the simulator **and** real Azure AI Search side by side |
+| [synonym-map-sample.http](samples/synonym-map-sample.http) | REST Client file demonstrating synonym maps (CRUD + search expansion), with `[SIM]` / `[AZURE]` pairs |
 | [Compare-Results.ps1](scripts/Compare-Results.ps1) | PowerShell script that automates comparison and shows a color-coded diff of responses |
 | [pull-mode-test.http](samples/pull-mode-test.http) | REST Client file for testing indexer pull mode workflow |
 

@@ -97,7 +97,8 @@ public class HnswTestFixture : IDisposable
             Mock.Of<ILogger<SearchService>>(),
             LuceneManager,
             VectorSearchService,
-            IndexServiceMock.Object);
+            IndexServiceMock.Object,
+            Mock.Of<ISynonymMapResolver>());
 
         // Initialize Lucene index
         LuceneManager.GetWriter("test-index");
