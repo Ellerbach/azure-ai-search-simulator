@@ -74,7 +74,6 @@ The simulator is designed for **development, learning, and testing purposes only
 | **Pre-filtering for vectors** | HNSW does not support native filtering; uses post-filter |
 | **Knowledge stores** | Complex Azure Storage integration |
 | **AI enrichment skills** | OCR, Entity Recognition, etc. require Azure AI Services |
-| **Managed Identity** | Azure-specific security feature |
 | **Private endpoints** | Azure networking feature |
 | **Customer-managed keys** | Azure Key Vault integration |
 | **Debug sessions (skillset)** | Complex debugging infrastructure |
@@ -228,19 +227,20 @@ The following table lists **all skills available in Azure AI Search** and their 
 
 | Feature | Status | Notes |
 | ------- | ------ | ----- |
-| Scheduled runs | ✅ | Minimum 5 minutes |
+| Scheduled runs | ✅ | Minimum 5 minutes, ISO 8601 intervals |
 | On-demand runs | ✅ | - |
-| Field mappings | ✅ | Basic functions |
+| Field mappings | ✅ | base64Encode, base64Decode, urlEncode, urlDecode, extractTokenAtPosition |
 | Output field mappings | ✅ | - |
-| Change detection | ⚠️ | File timestamp only |
-| Soft delete | ⚠️ | Metadata-based only |
-| Parallel execution | ⚠️ | Limited |
+| Change detection | ✅ | High Water Mark policy (metadata_storage_last_modified or custom column) |
+| Parsing modes | ⚠️ | `default`, `json`, `jsonArray` supported; `jsonLines` and `delimitedText` not implemented |
+| Soft delete | ❌ | Model accepted but not processed during indexing |
+| Parallel execution | ⚠️ | Semaphore-bounded parallelism within batches |
 | Incremental enrichment | ❌ | Not supported |
 | Enrichment cache | ❌ | Not supported |
 
 ## Normalizer Limitations
 
-Normalizers apply text transformations to keyword fields during filtering, sorting, and faceting. The simulator implements most of the Azure AI Search normalizers.
+Normalizers apply text transformations to keyword fields during filtering, sorting, and faceting. The simulator implements all Azure AI Search normalizers, including all 14 token filters and all 3 character filter types for custom normalizers.
 
 ### Predefined Normalizers
 
@@ -261,15 +261,15 @@ Normalizers apply text transformations to keyword fields during filtering, sorti
 | `asciifolding` | ✅ | ✅ | Removes diacritics |
 | `trim` | ✅ | ✅ | Removes leading/trailing whitespace |
 | `elision` | ✅ | ✅ | English contraction removal |
-| `arabic_normalization` | ✅ | ❌ | Language-specific |
-| `german_normalization` | ✅ | ❌ | Language-specific |
-| `hindi_normalization` | ✅ | ❌ | Language-specific |
-| `indic_normalization` | ✅ | ❌ | Language-specific |
-| `persian_normalization` | ✅ | ❌ | Language-specific |
-| `scandinavian_normalization` | ✅ | ❌ | Language-specific |
-| `scandinavian_folding` | ✅ | ❌ | Language-specific |
-| `sorani_normalization` | ✅ | ❌ | Language-specific |
-| `cjk_width` | ✅ | ❌ | CJK width normalization |
+| `arabic_normalization` | ✅ | ✅ | Normalizes Arabic orthography (alef variants, tatweel, diacritics) |
+| `german_normalization` | ✅ | ✅ | Normalizes umlauts (ä→a, ö→o, ü→u) and ß→ss |
+| `hindi_normalization` | ✅ | ✅ | Normalizes Devanagari nukta composites |
+| `indic_normalization` | ✅ | ✅ | Removes zero-width joiners/non-joiners |
+| `persian_normalization` | ✅ | ✅ | Normalizes Arabic keh/yeh to Persian equivalents |
+| `scandinavian_normalization` | ✅ | ✅ | Normalizes interchangeable Scandinavian chars (æ→ä, ø→ö) |
+| `scandinavian_folding` | ✅ | ✅ | Folds Scandinavian chars to ASCII (å→a, ä/æ→a, ö/ø→o) |
+| `sorani_normalization` | ✅ | ✅ | Normalizes Sorani Kurdish text |
+| `cjk_width` | ✅ | ✅ | Fullwidth→halfwidth ASCII, halfwidth→fullwidth Katakana |
 
 ### Character Filters (for Custom Normalizers)
 
@@ -283,11 +283,9 @@ Normalizers apply text transformations to keyword fields during filtering, sorti
 
 The simulator supports custom normalizers with the following configuration:
 
-- **Token filters**: `lowercase`, `uppercase`, `asciifolding`, `trim`, `elision`
+- **Token filters**: `lowercase`, `uppercase`, `asciifolding`, `trim`, `elision`, `arabic_normalization`, `cjk_width`, `german_normalization`, `hindi_normalization`, `indic_normalization`, `persian_normalization`, `scandinavian_folding`, `scandinavian_normalization`, `sorani_normalization`
 - **Character filters**: `html_strip`, `mapping`, `pattern_replace`
 - Custom normalizers can be defined in the index schema and will be validated
-
-**Note**: Language-specific normalizers (Arabic, German, Hindi, etc.) are not implemented. For these languages, consider pre-processing your data before indexing.
 
 ## Search Query Limitations
 
@@ -316,9 +314,10 @@ Not supported:
 | Feature | Status |
 | ------- | ------ |
 | API keys | ✅ Supported |
+| Entra ID authentication | ✅ Supported |
+| Managed Identity (data sources) | ✅ Supported (system & user-assigned) |
 | Key rotation | ⚠️ Manual only |
 | RBAC | ❌ Not supported |
-| Managed Identity | ❌ Not supported |
 | IP restrictions | ❌ Not supported |
 | Private endpoints | ❌ Not supported |
 | Document-level security | ❌ Not supported |
@@ -359,4 +358,4 @@ When moving from the simulator to Azure AI Search:
 
 ---
 
-*Last updated: February 13, 2026*
+*Last updated: February 17, 2026*

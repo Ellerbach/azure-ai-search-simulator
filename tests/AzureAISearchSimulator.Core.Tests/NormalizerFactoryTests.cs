@@ -449,4 +449,303 @@ public class NormalizerFactoryTests
         // Assert
         Assert.Equal(string.Empty, result);
     }
+
+    [Fact]
+    public void TokenFilter_ArabicNormalization_ShouldNormalizeAlefVariants()
+    {
+        // Arrange - Alef with hamza above (U+0623) should become bare alef (U+0627)
+        var value = "\u0623\u0647\u0644\u0627";
+        var customNormalizers = new List<CustomNormalizer>
+        {
+            new()
+            {
+                Name = "arabic_norm",
+                TokenFilters = new List<string> { "arabic_normalization" }
+            }
+        };
+
+        // Act
+        var result = NormalizerFactory.Normalize(value, "arabic_norm", customNormalizers);
+
+        // Assert - alef hamza should be normalized to bare alef
+        Assert.Equal("\u0627\u0647\u0644\u0627", result);
+    }
+
+    [Fact]
+    public void TokenFilter_ArabicNormalization_ShouldRemoveTatweel()
+    {
+        // Arrange - word with tatweel/kashida (U+0640) between characters
+        var value = "ab\u0640cd";
+        var customNormalizers = new List<CustomNormalizer>
+        {
+            new()
+            {
+                Name = "arabic_norm",
+                TokenFilters = new List<string> { "arabic_normalization" }
+            }
+        };
+
+        // Act
+        var result = NormalizerFactory.Normalize(value, "arabic_norm", customNormalizers);
+
+        // Assert - tatweel should be removed
+        Assert.Equal("abcd", result);
+    }
+
+    [Fact]
+    public void TokenFilter_CjkWidth_ShouldNormalizeFullwidthToHalfwidth()
+    {
+        // Arrange - fullwidth "ABC123"
+        var value = "\uFF21\uFF22\uFF23\uFF11\uFF12\uFF13";
+        var customNormalizers = new List<CustomNormalizer>
+        {
+            new()
+            {
+                Name = "cjk_norm",
+                TokenFilters = new List<string> { "cjk_width" }
+            }
+        };
+
+        // Act
+        var result = NormalizerFactory.Normalize(value, "cjk_norm", customNormalizers);
+
+        // Assert
+        Assert.Equal("ABC123", result);
+    }
+
+    [Fact]
+    public void TokenFilter_CjkWidth_ShouldNormalizeFullwidthSpace()
+    {
+        // Arrange - fullwidth space (U+3000)
+        var value = "Hello\u3000World";
+        var customNormalizers = new List<CustomNormalizer>
+        {
+            new()
+            {
+                Name = "cjk_norm",
+                TokenFilters = new List<string> { "cjk_width" }
+            }
+        };
+
+        // Act
+        var result = NormalizerFactory.Normalize(value, "cjk_norm", customNormalizers);
+
+        // Assert
+        Assert.Equal("Hello World", result);
+    }
+
+    [Fact]
+    public void TokenFilter_GermanNormalization_ShouldNormalizeUmlauts()
+    {
+        // Arrange
+        var value = "Stra\u00dfe \u00fcber Br\u00fccke M\u00fcnchen";
+        var customNormalizers = new List<CustomNormalizer>
+        {
+            new()
+            {
+                Name = "german_norm",
+                TokenFilters = new List<string> { "german_normalization" }
+            }
+        };
+
+        // Act
+        var result = NormalizerFactory.Normalize(value, "german_norm", customNormalizers);
+
+        // Assert
+        Assert.Equal("Strasse uber Brucke Munchen", result);
+    }
+
+    [Fact]
+    public void TokenFilter_GermanNormalization_ShouldHandleAllUmlauts()
+    {
+        // Arrange
+        var value = "\u00e4\u00f6\u00fc\u00c4\u00d6\u00dc\u00df";
+        var customNormalizers = new List<CustomNormalizer>
+        {
+            new()
+            {
+                Name = "german_norm",
+                TokenFilters = new List<string> { "german_normalization" }
+            }
+        };
+
+        // Act
+        var result = NormalizerFactory.Normalize(value, "german_norm", customNormalizers);
+
+        // Assert
+        Assert.Equal("aouAOUss", result);
+    }
+
+    [Fact]
+    public void TokenFilter_HindiNormalization_ShouldRemoveNukta()
+    {
+        // Arrange - letter with nukta (U+093C)
+        var value = "\u0915\u093C";
+        var customNormalizers = new List<CustomNormalizer>
+        {
+            new()
+            {
+                Name = "hindi_norm",
+                TokenFilters = new List<string> { "hindi_normalization" }
+            }
+        };
+
+        // Act
+        var result = NormalizerFactory.Normalize(value, "hindi_norm", customNormalizers);
+
+        // Assert - nukta should be removed
+        Assert.Equal("\u0915", result);
+    }
+
+    [Fact]
+    public void TokenFilter_IndicNormalization_ShouldRemoveZeroWidthChars()
+    {
+        // Arrange - text with zero-width joiner and non-joiner
+        var value = "Hello\u200DWorld\u200C!";
+        var customNormalizers = new List<CustomNormalizer>
+        {
+            new()
+            {
+                Name = "indic_norm",
+                TokenFilters = new List<string> { "indic_normalization" }
+            }
+        };
+
+        // Act
+        var result = NormalizerFactory.Normalize(value, "indic_norm", customNormalizers);
+
+        // Assert
+        Assert.Equal("HelloWorld!", result);
+    }
+
+    [Fact]
+    public void TokenFilter_PersianNormalization_ShouldNormalizeKehAndYeh()
+    {
+        // Arrange - Arabic keh (U+0643) and Arabic yeh (U+064A)
+        var value = "\u0643\u062A\u0627\u0628 \u0639\u0631\u0628\u064A";
+        var customNormalizers = new List<CustomNormalizer>
+        {
+            new()
+            {
+                Name = "persian_norm",
+                TokenFilters = new List<string> { "persian_normalization" }
+            }
+        };
+
+        // Act
+        var result = NormalizerFactory.Normalize(value, "persian_norm", customNormalizers);
+
+        // Assert - keh should become keheh, yeh should become Persian yeh
+        Assert.Contains("\u06A9", result); // Persian keheh
+        Assert.Contains("\u06CC", result); // Persian yeh
+    }
+
+    [Fact]
+    public void TokenFilter_ScandinavianFolding_ShouldFoldCharacters()
+    {
+        // Arrange
+        var value = "\u00e5\u00e4\u00e6\u00f6\u00f8";
+        var customNormalizers = new List<CustomNormalizer>
+        {
+            new()
+            {
+                Name = "scand_fold",
+                TokenFilters = new List<string> { "scandinavian_folding" }
+            }
+        };
+
+        // Act
+        var result = NormalizerFactory.Normalize(value, "scand_fold", customNormalizers);
+
+        // Assert - all should fold to simple a/o
+        Assert.Equal("aaaoo", result);
+    }
+
+    [Fact]
+    public void TokenFilter_ScandinavianFolding_ShouldHandleUppercase()
+    {
+        // Arrange
+        var value = "\u00c5\u00c4\u00c6\u00d6\u00d8";
+        var customNormalizers = new List<CustomNormalizer>
+        {
+            new()
+            {
+                Name = "scand_fold",
+                TokenFilters = new List<string> { "scandinavian_folding" }
+            }
+        };
+
+        // Act
+        var result = NormalizerFactory.Normalize(value, "scand_fold", customNormalizers);
+
+        // Assert
+        Assert.Equal("AAAOO", result);
+    }
+
+    [Fact]
+    public void TokenFilter_ScandinavianNormalization_ShouldNormalizeInterchangeable()
+    {
+        // Arrange - \u00e6 and \u00f8 should normalize to \u00e4 and \u00f6
+        var value = "\u00e6\u00f8";
+        var customNormalizers = new List<CustomNormalizer>
+        {
+            new()
+            {
+                Name = "scand_norm",
+                TokenFilters = new List<string> { "scandinavian_normalization" }
+            }
+        };
+
+        // Act
+        var result = NormalizerFactory.Normalize(value, "scand_norm", customNormalizers);
+
+        // Assert
+        Assert.Equal("\u00e4\u00f6", result);
+    }
+
+    [Fact]
+    public void TokenFilter_SoraniNormalization_ShouldNormalizeYehAndKeh()
+    {
+        // Arrange - Arabic yeh and keh
+        var value = "\u064A\u0643";
+        var customNormalizers = new List<CustomNormalizer>
+        {
+            new()
+            {
+                Name = "sorani_norm",
+                TokenFilters = new List<string> { "sorani_normalization" }
+            }
+        };
+
+        // Act
+        var result = NormalizerFactory.Normalize(value, "sorani_norm", customNormalizers);
+
+        // Assert
+        Assert.Contains("\u06CC", result); // Farsi yeh
+        Assert.Contains("\u06A9", result); // Keheh
+    }
+
+    [Fact]
+    public void GetSupportedTokenFilters_ShouldIncludeAllFilters()
+    {
+        // Act
+        var filters = NormalizerFactory.GetSupportedTokenFilters();
+
+        // Assert - check all 14 filters
+        Assert.Contains("arabic_normalization", filters);
+        Assert.Contains("asciifolding", filters);
+        Assert.Contains("cjk_width", filters);
+        Assert.Contains("elision", filters);
+        Assert.Contains("german_normalization", filters);
+        Assert.Contains("hindi_normalization", filters);
+        Assert.Contains("indic_normalization", filters);
+        Assert.Contains("lowercase", filters);
+        Assert.Contains("persian_normalization", filters);
+        Assert.Contains("scandinavian_folding", filters);
+        Assert.Contains("scandinavian_normalization", filters);
+        Assert.Contains("sorani_normalization", filters);
+        Assert.Contains("trim", filters);
+        Assert.Contains("uppercase", filters);
+        Assert.Equal(14, filters.Length);
+    }
 }
