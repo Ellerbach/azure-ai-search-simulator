@@ -45,6 +45,7 @@ The Azure AI Search Simulator provides a local implementation of the Azure AI Se
 - **Docker Support**: Containerized deployment with docker-compose
 - **Azure SDK Compatibility**: Works with official Azure.Search.Documents SDK
 - **Search Debug**: Query diagnostics with subscore breakdown for hybrid/vector searches (`debug` parameter)
+- **Synonym Maps**: CRUD management, Solr format, query-time synonym expansion
 
 ### 🔜 Planned (Future Phases)
 

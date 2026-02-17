@@ -56,6 +56,7 @@ This document outlines the comprehensive plan for building an Azure AI Search Si
 - Facets (count and value facets)
 - Azure SDK compatibility (Azure.Search.Documents)
 - Docker support with multi-stage build
+- Synonym maps (CRUD management, Solr format, query-time expansion)
 
 #### In Progress 🔄
 
@@ -77,7 +78,7 @@ This document outlines the comprehensive plan for building an Azure AI Search Si
 - Semantic search/ranking
 - Azure-hosted AI skills (OCR, Entity Recognition, etc.)
 - Knowledge stores
-- Synonym maps
+- ~~Synonym maps~~ ✅ Implemented
 - Debug sessions
 
 ---
