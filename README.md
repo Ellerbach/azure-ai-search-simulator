@@ -79,6 +79,65 @@ dotnet run --project src/AzureAISearchSimulator.Api --urls "https://localhost:72
 
 ### Running with Docker
 
+#### Using the Pre-built Image (Recommended)
+
+A pre-built Docker image is published to GitHub Container Registry on every release:
+
+```bash
+# Pull the latest image
+docker pull ghcr.io/your-org/azure-ai-search-simulator:latest
+
+# Or pull a specific version
+docker pull ghcr.io/your-org/azure-ai-search-simulator:1.0.0
+
+# Run the container
+docker run -d --name azure-ai-search-simulator \
+  -p 7250:8443 -p 5250:8080 \
+  -v search-data:/app/data \
+  -v lucene-indexes:/app/lucene-indexes \
+  -v ./logs:/app/logs \
+  -v ./files:/app/files \
+  ghcr.io/your-org/azure-ai-search-simulator:latest
+
+# API available at https://localhost:7250 (HTTPS) or http://localhost:5250 (HTTP)
+```
+
+You can also use it in a `docker-compose.yml`:
+
+```yaml
+services:
+  search-simulator:
+    image: ghcr.io/your-org/azure-ai-search-simulator:latest
+    ports:
+      - "7250:8443"
+      - "5250:8080"
+    environment:
+      - SimulatorSettings__AdminApiKey=admin-key-12345
+      - SimulatorSettings__QueryApiKey=query-key-67890
+    volumes:
+      - search-data:/app/data
+      - lucene-indexes:/app/lucene-indexes
+      - ./logs:/app/logs
+      - ./files:/app/files
+
+volumes:
+  search-data:
+  lucene-indexes:
+```
+
+Available image tags:
+
+| Tag | Description |
+| --- | ----------- |
+| `latest` | Latest release |
+| `x.y.z` (e.g. `1.0.0`) | Specific version |
+| `x.y` (e.g. `1.0`) | Latest patch for a minor version |
+| `x` (e.g. `1`) | Latest minor/patch for a major version |
+
+#### Building from Source
+
+If you prefer to build the image yourself:
+
 ```bash
 # Build and run with docker-compose
 docker-compose up -d

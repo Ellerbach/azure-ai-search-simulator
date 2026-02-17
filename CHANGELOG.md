@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **README: pre-built Docker image instructions**: Updated the README to document how to pull and run the pre-built image from `ghcr.io` (with `docker run` and `docker-compose` examples) and added a tag reference table.
+- Cleaned Notebook from previous run.
+
+### Added
+
 - **Automatic PR labeling**: Added `.github/workflows/pr-labels.yml` workflow that automatically applies labels based on PR template checkboxes (bug, feature, breaking-change, etc.) and changed file types (dotnet, python, documentation, docker, configuration, samples).
 - **Docker image publishing on release**: Added `.github/workflows/release-docker.yml` workflow that builds and pushes the Docker image to GitHub Container Registry (ghcr.io) with semver tags when a release is published.
 
