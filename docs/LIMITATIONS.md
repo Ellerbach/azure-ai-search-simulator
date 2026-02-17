@@ -63,7 +63,7 @@ The simulator is designed for **development, learning, and testing purposes only
 | Synonym maps | Not yet implemented |
 | Custom analyzers | Basic tokenizers and filters only |
 | CORS | Simplified implementation |
-| Service statistics | Basic stats only |
+| Service statistics | Quotas and limits use hardcoded S1 tier defaults; not enforced |
 
 ### ❌ Not Supported
 
@@ -321,6 +321,15 @@ Not supported:
 | IP restrictions | ❌ Not supported |
 | Private endpoints | ❌ Not supported |
 | Document-level security | ❌ Not supported |
+
+## Service Statistics Limitations
+
+The `GET /servicestats` endpoint returns resource counters and service limits. Because the simulator has no real quota system:
+
+- **Usage values** (`documentCount`, `indexesCount`, `indexersCount`, `dataSourcesCount`, `storageSize`, `skillsetCount`, `vectorIndexSize`) are computed from actual simulator state.
+- **Quota values** and **limits** are hardcoded to Azure AI Search **Standard (S1) tier** defaults and are **not enforced**.
+- `synonymMaps` usage is always `0` because synonym map management is not yet implemented.
+- `documentCount.quota` is `null` (unlimited), matching Azure's Standard tier behavior.
 
 ## Recommendations
 

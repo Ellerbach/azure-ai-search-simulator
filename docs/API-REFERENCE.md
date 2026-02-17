@@ -14,6 +14,7 @@ This document provides a detailed reference for all REST API endpoints supported
 | Indexers | ✅ Implemented | Full CRUD, run, reset, status, scheduled execution |
 | Document Cracking | ✅ Implemented | PDF, Word, Excel, HTML, JSON, CSV, TXT |
 | Skillsets | ✅ Implemented | Text skills, embedding skill, custom Web API skill |
+| Service Statistics | ✅ Implemented | Counters and limits (quotas use S1 defaults) |
 
 ## Base URL
 
@@ -1559,6 +1560,59 @@ api-key: <admin-key>
 | `configuration.dataToExtract` | string | `contentAndMetadata`, `storageMetadata` |
 | `configuration.indexedFileNameExtensions` | string | Comma-separated extensions to include |
 | `configuration.excludedFileNameExtensions` | string | Comma-separated extensions to exclude |
+
+---
+
+## Service Statistics
+
+Returns service-level resource counters and limits.
+
+### [Get Service Statistics](https://learn.microsoft.com/en-us/rest/api/searchservice/get-service-statistics)
+
+```http
+GET /servicestats?api-version=2024-07-01
+api-key: <admin-key>
+```
+
+**Response:**
+
+```json
+{
+  "@odata.context": "https://localhost:7250/$metadata#Microsoft.Azure.Search.V2024_07_01.ServiceStatistics",
+  "counters": {
+    "documentCount": { "usage": 153956, "quota": null },
+    "indexesCount": { "usage": 2, "quota": 15 },
+    "indexersCount": { "usage": 1, "quota": 15 },
+    "dataSourcesCount": { "usage": 1, "quota": 15 },
+    "storageSize": { "usage": 274215358, "quota": 16106127360 },
+    "synonymMaps": { "usage": 0, "quota": 3 },
+    "skillsetCount": { "usage": 0, "quota": 15 },
+    "vectorIndexSize": { "usage": 0, "quota": 5368709120 }
+  },
+  "limits": {
+    "maxStoragePerIndex": 16106127360,
+    "maxFieldsPerIndex": 1000,
+    "maxFieldNestingDepthPerIndex": 10,
+    "maxComplexCollectionFieldsPerIndex": 40,
+    "maxComplexObjectsInCollectionsPerDocument": 3000
+  }
+}
+```
+
+**Counter Details:**
+
+| Counter | Usage | Quota |
+| ------- | ----- | ----- |
+| `documentCount` | Actual total across all indexes | `null` (unlimited, same as Azure) |
+| `indexesCount` | Actual count | Hardcoded S1 default (15) |
+| `indexersCount` | Actual count | Hardcoded S1 default (15) |
+| `dataSourcesCount` | Actual count | Hardcoded S1 default (15) |
+| `storageSize` | Actual Lucene index storage in bytes | Hardcoded S1 default (~15 GB) |
+| `synonymMaps` | Always 0 (not yet implemented) | Hardcoded S1 default (3) |
+| `skillsetCount` | Actual count | Hardcoded S1 default (15) |
+| `vectorIndexSize` | Actual HNSW index size in bytes | Hardcoded S1 default (5 GB) |
+
+> **Note**: The simulator does not enforce quotas. All `quota` values and `limits` are hardcoded to Azure AI Search **Standard (S1) tier** defaults. The `usage` values for `documentCount`, `indexesCount`, `indexersCount`, `dataSourcesCount`, `storageSize`, `skillsetCount`, and `vectorIndexSize` reflect actual simulator state. `synonymMaps` usage is always 0 because synonym map management is not yet implemented.
 
 ---
 
