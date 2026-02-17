@@ -1,0 +1,132 @@
+name: PR Auto Labels
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize]
+
+jobs:
+  label:
+    name: Set labels from PR template
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+
+    steps:
+    - name: Get changed files
+      id: changed-files
+      uses: actions/github-script@v8
+      with:
+        script: |
+          const files = await github.paginate(github.rest.pulls.listFiles, {
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            pull_number: context.issue.number,
+          });
+          const filenames = files.map(f => f.filename);
+          const hasDotnet = filenames.some(f => f.endsWith('.cs') || f.endsWith('.csproj') || f.endsWith('.sln'));
+          const hasDocs = filenames.some(f => f.endsWith('.md'));
+          const hasPython = filenames.some(f => f.endsWith('.py') || f.endsWith('.ipynb') || /requirements.*\.txt$/.test(f));
+          const hasGitHub = filenames.some(f => f.startsWith('.github/'));
+          const hasDocker = filenames.some(f => /dockerfile/i.test(f) || /docker-compose/i.test(f) || /\.dockerignore$/i.test(f));
+          const hasSamples = filenames.some(f => f.startsWith('samples/'));
+          core.setOutput('has-dotnet', hasDotnet);
+          core.setOutput('has-docs', hasDocs);
+          core.setOutput('has-python', hasPython);
+          core.setOutput('has-github', hasGitHub);
+          core.setOutput('has-docker', hasDocker);
+          core.setOutput('has-samples', hasSamples);
+
+    - name: Apply file-based labels
+      uses: actions/github-script@v8
+      with:
+        script: |
+          const hasDotnet = '${{ steps.changed-files.outputs.has-dotnet }}' === 'true';
+          const hasDocs = '${{ steps.changed-files.outputs.has-docs }}' === 'true';
+          const hasPython = '${{ steps.changed-files.outputs.has-python }}' === 'true';
+          const hasGitHub = '${{ steps.changed-files.outputs.has-github }}' === 'true';
+          const hasDocker = '${{ steps.changed-files.outputs.has-docker }}' === 'true';
+          const hasSamples = '${{ steps.changed-files.outputs.has-samples }}' === 'true';
+
+          const current = (await github.rest.issues.listLabelsOnIssue({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+          })).data.map(l => l.name);
+
+          const fileLabels = [
+            { detected: hasDotnet, label: 'dotnet' },
+            { detected: hasDocs,   label: 'documentation' },
+            { detected: hasPython, label: 'python' },
+            { detected: hasGitHub, label: 'configuration' },
+            { detected: hasDocker, label: 'docker' },
+            { detected: hasSamples, label: 'samples' },
+          ];
+
+          for (const { detected, label } of fileLabels) {
+            if (detected && !current.includes(label)) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                labels: [label],
+              });
+            } else if (!detected && current.includes(label)) {
+              await github.rest.issues.removeLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                name: label,
+              });
+            }
+          }
+
+    - name: Apply labels from Type of Change
+      uses: actions/github-script@v8
+      with:
+        script: |
+          const body = context.payload.pull_request.body || '';
+
+          const mapping = [
+            { pattern: /- \[x\] 🐛 Bug fix/i,            label: 'bug' },
+            { pattern: /- \[x\] ✨ New feature/i,          label: 'feature' },
+            { pattern: /- \[x\] 💥 Breaking change/i,     label: 'breaking-change' },
+            { pattern: /- \[x\] 📝 Documentation update/i, label: 'documentation' },
+            { pattern: /- \[x\] 🔧 Configuration change/i, label: 'configuration' },
+            { pattern: /- \[x\] ♻️ Refactoring/i,          label: 'refactoring' },
+          ];
+
+          const allLabels = mapping.map(m => m.label);
+          const toAdd = mapping.filter(m => m.pattern.test(body)).map(m => m.label);
+          const toRemove = allLabels.filter(l => !toAdd.includes(l));
+
+          // Remove unchecked labels
+          const current = (await github.rest.issues.listLabelsOnIssue({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+          })).data.map(l => l.name);
+
+          for (const label of toRemove) {
+            if (current.includes(label)) {
+              await github.rest.issues.removeLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                name: label,
+              });
+            }
+          }
+
+          // Add checked labels
+          if (toAdd.length > 0) {
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              labels: toAdd,
+            });
+          }
+
+          core.summary.addRaw(`Applied labels: ${toAdd.join(', ') || 'none'}`);
+          await core.summary.write();
