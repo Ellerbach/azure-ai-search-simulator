@@ -97,7 +97,7 @@ While the simulator is compatible with the Azure SDK for most operations, there 
 
 - **Vector Search**: Uses brute-force cosine similarity instead of HNSW
 - **Semantic Search**: Not supported (requires Azure AI models)
-- **Some Analyzers**: Only Lucene analyzers are available
+- **Analyzers**: All Lucene language analyzers are available (27 languages); Microsoft-only languages fall back to the standard analyzer
 - **Geo-spatial**: Limited support for geography types
 
 See [LIMITATIONS.md](../../docs/LIMITATIONS.md) for a full list of differences.

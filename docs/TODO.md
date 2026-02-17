@@ -229,7 +229,7 @@
 ### Future Enhancements
 
 - [ ] Synonym maps
-- [ ] More language analyzers
+- [x] More language analyzers (27 Lucene-backed + 22 Microsoft-only fallback languages)
 - [ ] Azure SQL data source connector
 - [ ] Azure Cosmos DB connector
 - [ ] Knowledge store (Azure Storage projections)

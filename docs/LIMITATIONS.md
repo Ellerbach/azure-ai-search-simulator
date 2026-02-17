@@ -59,7 +59,7 @@ The simulator is designed for **development, learning, and testing purposes only
 | Feature | Limitation |
 | ------- | ---------- |
 | Scoring profiles | Basic profiles supported, some functions may differ |
-| Analyzers | Built-in Lucene analyzers only, no language-specific Microsoft analyzers |
+| Analyzers | All Lucene language analyzers supported (27 languages); `.microsoft` names accepted and mapped to Lucene equivalents |
 | Synonym maps | Not yet implemented |
 | Custom analyzers | Basic tokenizers and filters only |
 | CORS | Simplified implementation |
