@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+### Added
+
+- **Automatic PR labeling**: Added `.github/workflows/pr-labels.yml` workflow that automatically applies labels based on PR template checkboxes (bug, feature, breaking-change, etc.) and changed file types (dotnet, python, documentation, docker, configuration, samples).
+- **Docker image publishing on release**: Added `.github/workflows/release-docker.yml` workflow that builds and pushes the Docker image to GitHub Container Registry (ghcr.io) with semver tags when a release is published.
+
 ### Fixed
 
 - **Search response parity**: Removed `@search.coverage` unless `minimumCoverage` is set. Moved `@search.score` before document fields. Replaced `NaN` scores with `1.0` for wildcard/filter-only searches.
