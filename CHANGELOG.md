@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Expanded language analyzer support**: AnalyzerFactory now supports all 27 Lucene-backed language analyzers (Arabic, Armenian, Basque, Brazilian Portuguese, Bulgarian, Catalan, CJK, Czech, Danish, Dutch, English, Finnish, French, Galician, German, Greek, Hindi, Hungarian, Indonesian, Irish, Italian, Latvian, Norwegian, Persian, Portuguese, Romanian, Russian, Spanish, Swedish, Turkish) plus 22 Microsoft-only languages that fall back to StandardAnalyzer. Both `.lucene` and `.microsoft` name variants are accepted.
+
+### Added
+
 - **Embedding notebook: `.env`-based configuration**: Azure OpenAI credentials (`AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_DEPLOYMENT`) are now loaded from the workspace root `.env` file via `python-dotenv` instead of being hardcoded in the notebook. Updated `.env.example`, `requirements.txt`, and README accordingly.
 
 ### Added
