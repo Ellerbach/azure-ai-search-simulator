@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Synonym map support**: Full CRUD for synonym maps (`POST/GET/PUT/DELETE /synonymmaps`) with Solr format parsing, query-time synonym expansion on fields with `synonymMaps` configured, LiteDB persistence, authorization, caching, and live service statistics. Includes 20 unit tests and a side-by-side comparison sample (`synonym-map-sample.http`).
+
+### Added
+
 - **Service statistics endpoint**: Implemented `GET /servicestats` returning resource counters (documents, indexes, indexers, data sources, storage, synonym maps, skillsets, vector index size) and service limits. Usage values are computed from actual simulator state; quotas and limits use Azure AI Search Standard (S1) tier defaults.
 
 ### Added
