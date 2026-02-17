@@ -50,7 +50,6 @@ The Azure AI Search Simulator provides a local implementation of the Azure AI Se
 
 - Scoring profiles
 - Local embedding models
-- Synonym maps
 - Azure SQL / Cosmos DB connectors
 - Admin UI dashboard
 

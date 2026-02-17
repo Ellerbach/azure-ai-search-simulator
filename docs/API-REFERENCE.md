@@ -14,6 +14,7 @@ This document provides a detailed reference for all REST API endpoints supported
 | Indexers | ✅ Implemented | Full CRUD, run, reset, status, scheduled execution |
 | Document Cracking | ✅ Implemented | PDF, Word, Excel, HTML, JSON, CSV, TXT |
 | Skillsets | ✅ Implemented | Text skills, embedding skill, custom Web API skill |
+| Synonym Maps | ✅ Implemented | Full CRUD, Solr format, query-time expansion |
 | Service Statistics | ✅ Implemented | Counters and limits (quotas use S1 defaults) |
 
 ## Base URL
@@ -1166,6 +1167,101 @@ The skill's `resourceUri` and `deploymentId` are specified in the skill definiti
 
 ---
 
+## Synonym Map Operations ✅
+
+Synonym maps define synonym rules that expand search queries at query time. Fields can reference synonym maps via the `synonymMaps` property. Only the Apache Solr synonym format is supported.
+
+### [Create Synonym Map](https://learn.microsoft.com/en-us/rest/api/searchservice/synonym-maps/create)
+
+```http
+POST /synonymmaps?api-version=2024-07-01
+Content-Type: application/json
+api-key: your-admin-key
+
+{
+  "name": "my-synonym-map",
+  "format": "solr",
+  "synonyms": "usa, united states, america\nautomobile => car, vehicle"
+}
+```
+
+**Response:** `201 Created` with the synonym map definition including `@odata.etag`.
+
+### [Get Synonym Map](https://learn.microsoft.com/en-us/rest/api/searchservice/synonym-maps/get)
+
+```http
+GET /synonymmaps/{synonymMapName}?api-version=2024-07-01
+api-key: your-admin-key
+```
+
+**Response:** `200 OK` with the synonym map definition.
+
+### [List Synonym Maps](https://learn.microsoft.com/en-us/rest/api/searchservice/synonym-maps/list)
+
+```http
+GET /synonymmaps?api-version=2024-07-01
+api-key: your-admin-key
+```
+
+**Response:** `200 OK` with `{ "value": [...] }`.
+
+### [Create or Update Synonym Map](https://learn.microsoft.com/en-us/rest/api/searchservice/synonym-maps/create-or-update)
+
+```http
+PUT /synonymmaps/{synonymMapName}?api-version=2024-07-01
+Content-Type: application/json
+api-key: your-admin-key
+
+{
+  "name": "my-synonym-map",
+  "format": "solr",
+  "synonyms": "usa, united states, america\nautomobile => car, vehicle"
+}
+```
+
+**Response:** `200 OK` (updated) or `201 Created` (new).
+
+### [Delete Synonym Map](https://learn.microsoft.com/en-us/rest/api/searchservice/synonym-maps/delete)
+
+```http
+DELETE /synonymmaps/{synonymMapName}?api-version=2024-07-01
+api-key: your-admin-key
+```
+
+**Response:** `204 No Content`.
+
+### Synonym Rule Format (Solr)
+
+| Format | Example | Behavior |
+| ------ | ------- | -------- |
+| Equivalent | `usa, united states, america` | Bidirectional: searching any term finds documents with any of the others |
+| Explicit mapping | `automobile => car, vehicle` | Unidirectional: searching "automobile" also finds "car" and "vehicle", but not vice versa |
+
+Lines starting with `#` are treated as comments. Each rule is on a separate line.
+
+### Using Synonym Maps with Index Fields
+
+To enable synonym expansion on a field, reference the synonym map in the field's `synonymMaps` property when creating or updating an index:
+
+```json
+{
+  "name": "my-index",
+  "fields": [
+    { "name": "id", "type": "Edm.String", "key": true },
+    {
+      "name": "description",
+      "type": "Edm.String",
+      "searchable": true,
+      "synonymMaps": ["my-synonym-map"]
+    }
+  ]
+}
+```
+
+When a search query matches a term in the synonym map on a field with `synonymMaps` configured, the query is automatically expanded with the synonym terms.
+
+---
+
 ## Supported Field Types
 
 | Type | Description | Example |
@@ -1608,11 +1704,11 @@ api-key: <admin-key>
 | `indexersCount` | Actual count | Hardcoded S1 default (15) |
 | `dataSourcesCount` | Actual count | Hardcoded S1 default (15) |
 | `storageSize` | Actual Lucene index storage in bytes | Hardcoded S1 default (~15 GB) |
-| `synonymMaps` | Always 0 (not yet implemented) | Hardcoded S1 default (3) |
+| `synonymMaps` | Actual count | Hardcoded S1 default (3) |
 | `skillsetCount` | Actual count | Hardcoded S1 default (15) |
 | `vectorIndexSize` | Actual HNSW index size in bytes | Hardcoded S1 default (5 GB) |
 
-> **Note**: The simulator does not enforce quotas. All `quota` values and `limits` are hardcoded to Azure AI Search **Standard (S1) tier** defaults. The `usage` values for `documentCount`, `indexesCount`, `indexersCount`, `dataSourcesCount`, `storageSize`, `skillsetCount`, and `vectorIndexSize` reflect actual simulator state. `synonymMaps` usage is always 0 because synonym map management is not yet implemented.
+> **Note**: The simulator does not enforce quotas. All `quota` values and `limits` are hardcoded to Azure AI Search **Standard (S1) tier** defaults. The `usage` values for `documentCount`, `indexesCount`, `indexersCount`, `dataSourcesCount`, `storageSize`, `skillsetCount`, `synonymMaps`, and `vectorIndexSize` reflect actual simulator state.
 
 ---
 
