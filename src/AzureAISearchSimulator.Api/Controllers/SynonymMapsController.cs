@@ -115,8 +115,8 @@ public class SynonymMapsController : ControllerBase
     /// Creates or updates a synonym map.
     /// </summary>
     [HttpPut("{synonymMapName}")]
-    [ProducesResponseType(typeof(SynonymMap), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(SynonymMap), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> CreateOrUpdateSynonymMap(
@@ -141,7 +141,8 @@ public class SynonymMapsController : ControllerBase
 
             if (exists)
             {
-                return Ok(result);
+                // Azure AI Search returns 204 No Content for updates
+                return NoContent();
             }
             else
             {

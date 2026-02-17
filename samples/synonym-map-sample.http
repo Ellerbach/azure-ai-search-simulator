@@ -1,0 +1,328 @@
+### Azure AI Search — Synonym Maps — Simulator vs Real Azure
+### ===========================================================
+### Sends identical requests to BOTH the simulator and real Azure AI Search
+### so you can compare synonym map behavior side by side.
+###
+### Usage:
+###   1. Copy .env.example → .env in the workspace root
+###   2. Fill in BASE_URL/ADMIN_KEY/QUERY_KEY (simulator) and AZURE_* variables
+###   3. Click "Send Request" on each [SIM]/[AZURE] pair and compare
+###
+### Tip: Use "REST Client: Split Response" in VS Code to view both at once.
+
+# ─── Variables ────────────────────────────────────────────────────────
+@simBaseUrl = {{$dotenv BASE_URL}}
+@azureBaseUrl = {{$dotenv AZURE_BASE_URL}}
+@apiVersion = {{$dotenv API_VERSION}}
+@simAdminKey = {{$dotenv ADMIN_KEY}}
+@simQueryKey = {{$dotenv QUERY_KEY}}
+@azureAdminKey = {{$dotenv AZURE_ADMIN_KEY}}
+@azureQueryKey = {{$dotenv AZURE_QUERY_KEY}}
+
+# =====================================================================
+# 1. CREATE A SYNONYM MAP
+# =====================================================================
+
+### [SIM] Create synonym map
+POST {{simBaseUrl}}/synonymmaps?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{simAdminKey}}
+
+{
+  "name": "my-synonym-map",
+  "format": "solr",
+  "synonyms": "hotel, motel, inn\nluxury, premium, deluxe\ncheap, budget, affordable\npool => swimming pool\nwifi => internet, wireless"
+}
+
+### [AZURE] Create synonym map
+POST {{azureBaseUrl}}/synonymmaps?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{azureAdminKey}}
+
+{
+  "name": "my-synonym-map",
+  "format": "solr",
+  "synonyms": "hotel, motel, inn\nluxury, premium, deluxe\ncheap, budget, affordable\npool => swimming pool\nwifi => internet, wireless"
+}
+
+# =====================================================================
+# 2. MANAGE SYNONYM MAPS
+# =====================================================================
+
+### [SIM] List all synonym maps
+GET {{simBaseUrl}}/synonymmaps?api-version={{apiVersion}}
+api-key: {{simAdminKey}}
+
+### [AZURE] List all synonym maps
+GET {{azureBaseUrl}}/synonymmaps?api-version={{apiVersion}}
+api-key: {{azureAdminKey}}
+
+###
+
+### [SIM] Get a specific synonym map
+GET {{simBaseUrl}}/synonymmaps/my-synonym-map?api-version={{apiVersion}}
+api-key: {{simAdminKey}}
+
+### [AZURE] Get a specific synonym map
+GET {{azureBaseUrl}}/synonymmaps/my-synonym-map?api-version={{apiVersion}}
+api-key: {{azureAdminKey}}
+
+###
+
+### [SIM] Update synonym map (add more rules)
+PUT {{simBaseUrl}}/synonymmaps/my-synonym-map?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{simAdminKey}}
+
+{
+  "name": "my-synonym-map",
+  "format": "solr",
+  "synonyms": "hotel, motel, inn\nluxury, premium, deluxe\ncheap, budget, affordable\npool => swimming pool\nwifi => internet, wireless\nrestaurant, dining, eatery"
+}
+
+### [AZURE] Update synonym map (add more rules)
+PUT {{azureBaseUrl}}/synonymmaps/my-synonym-map?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{azureAdminKey}}
+
+{
+  "name": "my-synonym-map",
+  "format": "solr",
+  "synonyms": "hotel, motel, inn\nluxury, premium, deluxe\ncheap, budget, affordable\npool => swimming pool\nwifi => internet, wireless\nrestaurant, dining, eatery"
+}
+
+# =====================================================================
+# 3. CREATE AN INDEX THAT USES THE SYNONYM MAP
+# =====================================================================
+
+### [SIM] Create index with synonymMaps on searchable fields
+POST {{simBaseUrl}}/indexes?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{simAdminKey}}
+
+{
+  "name": "hotels-synonyms",
+  "fields": [
+    { "name": "hotelId", "type": "Edm.String", "key": true, "filterable": true },
+    { "name": "hotelName", "type": "Edm.String", "searchable": true, "sortable": true },
+    { "name": "description", "type": "Edm.String", "searchable": true, "synonymMaps": ["my-synonym-map"] },
+    { "name": "category", "type": "Edm.String", "searchable": true, "filterable": true, "synonymMaps": ["my-synonym-map"] },
+    { "name": "rating", "type": "Edm.Double", "filterable": true, "sortable": true }
+  ]
+}
+
+### [AZURE] Create index with synonymMaps on searchable fields
+POST {{azureBaseUrl}}/indexes?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{azureAdminKey}}
+
+{
+  "name": "hotels-synonyms",
+  "fields": [
+    { "name": "hotelId", "type": "Edm.String", "key": true, "filterable": true },
+    { "name": "hotelName", "type": "Edm.String", "searchable": true, "sortable": true },
+    { "name": "description", "type": "Edm.String", "searchable": true, "synonymMaps": ["my-synonym-map"] },
+    { "name": "category", "type": "Edm.String", "searchable": true, "filterable": true, "synonymMaps": ["my-synonym-map"] },
+    { "name": "rating", "type": "Edm.Double", "filterable": true, "sortable": true }
+  ]
+}
+
+# =====================================================================
+# 4. UPLOAD DOCUMENTS
+# =====================================================================
+
+### [SIM] Upload sample hotel documents
+POST {{simBaseUrl}}/indexes/hotels-synonyms/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{simAdminKey}}
+
+{
+  "value": [
+    {
+      "@search.action": "upload",
+      "hotelId": "1",
+      "hotelName": "Seaside Inn",
+      "description": "A charming inn by the ocean with a swimming pool and free wifi.",
+      "category": "budget",
+      "rating": 4.2
+    },
+    {
+      "@search.action": "upload",
+      "hotelId": "2",
+      "hotelName": "Grand Palace Hotel",
+      "description": "A premium hotel with luxury amenities, fine dining, and a rooftop pool.",
+      "category": "luxury",
+      "rating": 4.8
+    },
+    {
+      "@search.action": "upload",
+      "hotelId": "3",
+      "hotelName": "Budget Motel Express",
+      "description": "An affordable motel with basic amenities and internet access.",
+      "category": "cheap",
+      "rating": 3.1
+    },
+    {
+      "@search.action": "upload",
+      "hotelId": "4",
+      "hotelName": "Mountain Lodge Retreat",
+      "description": "A cozy retreat in the mountains with a restaurant and deluxe spa.",
+      "category": "deluxe",
+      "rating": 4.5
+    }
+  ]
+}
+
+### [AZURE] Upload sample hotel documents
+POST {{azureBaseUrl}}/indexes/hotels-synonyms/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{azureAdminKey}}
+
+{
+  "value": [
+    {
+      "@search.action": "upload",
+      "hotelId": "1",
+      "hotelName": "Seaside Inn",
+      "description": "A charming inn by the ocean with a swimming pool and free wifi.",
+      "category": "budget",
+      "rating": 4.2
+    },
+    {
+      "@search.action": "upload",
+      "hotelId": "2",
+      "hotelName": "Grand Palace Hotel",
+      "description": "A premium hotel with luxury amenities, fine dining, and a rooftop pool.",
+      "category": "luxury",
+      "rating": 4.8
+    },
+    {
+      "@search.action": "upload",
+      "hotelId": "3",
+      "hotelName": "Budget Motel Express",
+      "description": "An affordable motel with basic amenities and internet access.",
+      "category": "cheap",
+      "rating": 3.1
+    },
+    {
+      "@search.action": "upload",
+      "hotelId": "4",
+      "hotelName": "Mountain Lodge Retreat",
+      "description": "A cozy retreat in the mountains with a restaurant and deluxe spa.",
+      "category": "deluxe",
+      "rating": 4.5
+    }
+  ]
+}
+
+# =====================================================================
+# 5. SEARCH WITH SYNONYM EXPANSION
+# =====================================================================
+
+### [SIM] Search "hotel" — should also match "inn" and "motel" via synonyms
+POST {{simBaseUrl}}/indexes/hotels-synonyms/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{simQueryKey}}
+
+{
+  "search": "hotel",
+  "select": "hotelId, hotelName, description, category"
+}
+
+### [AZURE] Search "hotel" — should also match "inn" and "motel" via synonyms
+POST {{azureBaseUrl}}/indexes/hotels-synonyms/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{azureQueryKey}}
+
+{
+  "search": "hotel",
+  "select": "hotelId, hotelName, description, category"
+}
+
+###
+
+### [SIM] Search "cheap" — should also match "budget" and "affordable"
+POST {{simBaseUrl}}/indexes/hotels-synonyms/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{simQueryKey}}
+
+{
+  "search": "cheap",
+  "select": "hotelId, hotelName, description, category"
+}
+
+### [AZURE] Search "cheap" — should also match "budget" and "affordable"
+POST {{azureBaseUrl}}/indexes/hotels-synonyms/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{azureQueryKey}}
+
+{
+  "search": "cheap",
+  "select": "hotelId, hotelName, description, category"
+}
+
+###
+
+### [SIM] Search "pool" — explicit mapping expands to "swimming pool"
+POST {{simBaseUrl}}/indexes/hotels-synonyms/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{simQueryKey}}
+
+{
+  "search": "pool",
+  "select": "hotelId, hotelName, description, category"
+}
+
+### [AZURE] Search "pool" — explicit mapping expands to "swimming pool"
+POST {{azureBaseUrl}}/indexes/hotels-synonyms/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{azureQueryKey}}
+
+{
+  "search": "pool",
+  "select": "hotelId, hotelName, description, category"
+}
+
+###
+
+### [SIM] Search "luxury" — should match "premium" and "deluxe" too
+POST {{simBaseUrl}}/indexes/hotels-synonyms/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{simQueryKey}}
+
+{
+  "search": "luxury",
+  "select": "hotelId, hotelName, description, category"
+}
+
+### [AZURE] Search "luxury" — should match "premium" and "deluxe" too
+POST {{azureBaseUrl}}/indexes/hotels-synonyms/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{azureQueryKey}}
+
+{
+  "search": "luxury",
+  "select": "hotelId, hotelName, description, category"
+}
+
+# =====================================================================
+# 6. CLEANUP
+# =====================================================================
+
+### [SIM] Delete the index
+DELETE {{simBaseUrl}}/indexes/hotels-synonyms?api-version={{apiVersion}}
+api-key: {{simAdminKey}}
+
+### [AZURE] Delete the index
+DELETE {{azureBaseUrl}}/indexes/hotels-synonyms?api-version={{apiVersion}}
+api-key: {{azureAdminKey}}
+
+###
+
+### [SIM] Delete the synonym map
+DELETE {{simBaseUrl}}/synonymmaps/my-synonym-map?api-version={{apiVersion}}
+api-key: {{simAdminKey}}
+
+### [AZURE] Delete the synonym map
+DELETE {{azureBaseUrl}}/synonymmaps/my-synonym-map?api-version={{apiVersion}}
+api-key: {{azureAdminKey}}
