@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Embedding notebook: `.env`-based configuration**: Azure OpenAI credentials (`AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_DEPLOYMENT`) are now loaded from the workspace root `.env` file via `python-dotenv` instead of being hardcoded in the notebook. Updated `.env.example`, `requirements.txt`, and README accordingly.
+
+### Added
+
 - **README: pre-built Docker image instructions**: Updated the README to document how to pull and run the pre-built image from `ghcr.io` (with `docker run` and `docker-compose` examples) and added a tag reference table.
 - Cleaned Notebook from previous run.
 
