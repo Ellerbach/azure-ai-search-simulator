@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Expanded language analyzer support**: AnalyzerFactory now supports all 27 Lucene-backed language analyzers (Arabic, Armenian, Basque, Brazilian Portuguese, Bulgarian, Catalan, CJK, Czech, Danish, Dutch, English, Finnish, French, Galician, German, Greek, Hindi, Hungarian, Indonesian, Irish, Italian, Latvian, Norwegian, Persian, Portuguese, Romanian, Russian, Spanish, Swedish, Turkish) plus 22 Microsoft-only languages that fall back to StandardAnalyzer. Both `.lucene` and `.microsoft` name variants are accepted.
+- **Complete normalizer token filter support**: NormalizerFactory now implements all 14 Azure AI Search token filters for custom normalizers: `arabic_normalization`, `asciifolding`, `cjk_width`, `elision`, `german_normalization`, `hindi_normalization`, `indic_normalization`, `lowercase`, `persian_normalization`, `scandinavian_folding`, `scandinavian_normalization`, `sorani_normalization`, `trim`, `uppercase`.
 
 ### Added
 
