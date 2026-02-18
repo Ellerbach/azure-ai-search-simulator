@@ -48,11 +48,17 @@ The simulator is designed for **development, learning, and testing purposes only
 | Highlighting | Hit highlighting in search results |
 | Autocomplete | Term completion suggestions |
 | Suggestions | Type-ahead suggestions |
-| Indexers | Automated document ingestion |
-| Data sources | Local file system as blob storage |
+| Indexers | Automated document ingestion with scheduled runs |
+| Data sources | Local file system, Azure Blob Storage, ADLS Gen2 |
 | Skillsets | Utility skills (see below) |
 | **Azure OpenAI Embedding** | Requires Azure OpenAI endpoint |
 | API key authentication | Admin and query keys |
+| **Entra ID authentication** | Real or simulated JWT tokens with role mapping |
+| **Role-Based Access Control** | Full RBAC with 6 Azure Search roles |
+| **Managed Identity** | System and user-assigned for data sources and skills |
+| **Normalizers** | All predefined and custom normalizer configurations |
+| **Search debug** | Subscore breakdown for hybrid/vector queries |
+| **Synonym maps** | CRUD management and query-time expansion (Solr format) |
 
 ### ⚠️ Partially Supported
 
@@ -86,6 +92,8 @@ The simulator is designed for **development, learning, and testing purposes only
 
 - **Target version**: `2024-07-01`
 - Most requests compatible with `2023-11-01` through `2024-07-01`
+
+> [!Important] The simulator is **not** checking the version. It fully ignores it.
 
 ### Request/Response Differences
 
@@ -316,8 +324,8 @@ Not supported:
 | API keys | ✅ Supported |
 | Entra ID authentication | ✅ Supported |
 | Managed Identity (data sources) | ✅ Supported (system & user-assigned) |
+| RBAC | ✅ Supported (6 Azure Search roles) |
 | Key rotation | ⚠️ Manual only |
-| RBAC | ❌ Not supported |
 | IP restrictions | ❌ Not supported |
 | Private endpoints | ❌ Not supported |
 | Document-level security | ❌ Not supported |
@@ -358,12 +366,12 @@ The `GET /servicestats` endpoint returns resource counters and service limits. B
 
 When moving from the simulator to Azure AI Search:
 
-1. **Index definitions**: Should work with minimal changes
+1. **Index definitions**: Should work with no changes
 2. **Queries**: Should be fully compatible
-3. **Skillsets**: Replace Document Extraction with Azure native skills
-4. **Data sources**: Update connection strings to Azure resources
+3. **Skillsets**: Should work with no changes, but Document Extraction will work much better with Azure native skills
+4. **Data sources**: Update connection strings to Azure resources if needed
 5. **Authentication**: Update to Azure API keys or managed identity
 
 ---
 
-*Last updated: February 17, 2026*
+*Last updated: February 18, 2026*

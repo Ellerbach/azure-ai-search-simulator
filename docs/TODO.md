@@ -111,8 +111,7 @@
 
 - [x] Create IndexerEngine for execution (in IndexerService)
 - [x] Implement on-demand run
-- [ ] Add Quartz.NET scheduler (deferred - manual scheduling works)
-- [ ] Implement scheduled runs (deferred)
+- [x] Implement scheduled runs (IndexerSchedulerService as BackgroundService, no Quartz.NET needed)
 - [x] Add indexer status tracking
 - [x] Implement reset functionality
 - [x] Add change detection (file timestamps)
@@ -322,7 +321,7 @@
 - [x] Write unit tests for BruteForceVectorSearchService (3 tests)
 - [x] Write unit tests for HybridSearchService (25 tests)
 - [x] Write integration tests for DocumentService + HNSW (10 tests)
-- [ ] Write filtered vector search accuracy tests
+- [x] Write filtered vector search accuracy tests (HnswVectorSearchServiceTests + HnswIntegrationTests)
 - [ ] Add performance benchmarks (10K, 50K, 100K vectors)
 
 ---

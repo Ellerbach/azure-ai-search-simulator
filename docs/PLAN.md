@@ -56,7 +56,7 @@ This document outlines the comprehensive plan for building an Azure AI Search Si
 - Facets (count and value facets)
 - Azure SDK compatibility (Azure.Search.Documents)
 - Docker support with multi-stage build
-- Synonym maps (CRUD management, Solr format, query-time expansion)
+- Synonym maps (CRUD management, Solr format, query-time expansion)\n- Scheduled indexer runs (BackgroundService-based scheduler)
 
 #### In Progress 🔄
 
@@ -66,10 +66,7 @@ This document outlines the comprehensive plan for building an Azure AI Search Si
   - ✅ Normalizers for case-insensitive filtering
   - Truncated dimensions (MRL)
   - Rescoring options
-  - Truncated dimensions for MRL models
-  - Rescoring options for compressed vectors
 - Scoring profiles
-- Scheduled indexer runs (Quartz.NET)
 
 #### Future Phases
 
@@ -585,7 +582,7 @@ AzureAISearchSimulator/
 - Sample applications
 - Docker deployment option
 
-### Phase 7: HNSW Vector Search (Week 11-12) 🔄 PLANNED
+### Phase 7: HNSW Vector Search (Week 11-12) ✅ COMPLETED
 
 **Goal**: Replace brute-force vector search with efficient HNSW algorithm using HNSWlib.NET
 
@@ -610,46 +607,46 @@ The HNSW implementation follows a dual-storage pattern:
 
 #### Tasks
 
-1. [ ] Add HNSWlib.NET NuGet package
-2. [ ] Create `IHnswIndexManager` interface
-3. [ ] Implement `HnswIndexManager` class
-   - [ ] Index lifecycle management (create, open, close, delete)
-   - [ ] Persist HNSW index to disk alongside Lucene index
-   - [ ] Support multiple vector fields per index
-4. [ ] Create `IVectorSearchService` interface
-5. [ ] Implement `HnswVectorSearchService`
-   - [ ] Basic KNN search
-   - [ ] Oversampling for filtered queries (K × multiplier)
-   - [ ] Distance-to-score conversion (cosine, euclidean, dot product)
-6. [ ] Implement filtered vector search
-   - [ ] Post-filter pattern: Vector search → Metadata fetch → Filter → Return
-   - [ ] Configurable oversampling multiplier
-   - [ ] Support all Lucene-stored metadata fields as filters
-7. [ ] Implement hybrid search with score fusion
-   - [ ] Reciprocal Rank Fusion (RRF) algorithm
-   - [ ] Weighted score combination (configurable weights)
-   - [ ] Normalize vector distances and Lucene scores
-8. [ ] Update `DocumentService` to sync HNSW index
-   - [ ] Add vectors on document upload
-   - [ ] Update vectors on document merge
-   - [ ] Remove vectors on document delete
-9. [ ] Update `IndexerService` for HNSW integration
-   - [ ] Sync HNSW index during indexer runs
-   - [ ] Handle embedding generation with skillsets
-10. [ ] Add HNSW configuration to `VectorSearchSettings`
-    - [ ] `M` parameter (number of connections)
-    - [ ] `EfConstruction` (index build quality)
-    - [ ] `EfSearch` (search quality vs speed)
-    - [ ] Distance metric (cosine, euclidean, inner product)
-11. [ ] Implement index persistence
-    - [ ] Save HNSW index to file on commit
-    - [ ] Load HNSW index on startup
-    - [ ] Handle index corruption gracefully
-12. [ ] Write comprehensive tests
-    - [ ] Basic HNSW CRUD operations
-    - [ ] Filtered vector search accuracy
-    - [ ] Hybrid search scoring
-    - [ ] Performance benchmarks
+1. [x] Add HNSWlib.NET NuGet package
+2. [x] Create `IHnswIndexManager` interface
+3. [x] Implement `HnswIndexManager` class
+   - [x] Index lifecycle management (create, open, close, delete)
+   - [x] Persist HNSW index to disk alongside Lucene index
+   - [x] Support multiple vector fields per index
+4. [x] Create `IVectorSearchService` interface
+5. [x] Implement `HnswVectorSearchService`
+   - [x] Basic KNN search
+   - [x] Oversampling for filtered queries (K × multiplier)
+   - [x] Distance-to-score conversion (cosine → similarity score)
+6. [x] Implement filtered vector search
+   - [x] Post-filter pattern: Vector search → Metadata fetch → Filter → Return
+   - [x] Configurable oversampling multiplier
+   - [x] Support all Lucene-stored metadata fields as filters
+7. [x] Implement hybrid search with score fusion
+   - [x] Reciprocal Rank Fusion (RRF) algorithm
+   - [x] Weighted score combination (configurable weights)
+   - [x] Normalize vector distances and Lucene scores
+8. [x] Update `DocumentService` to sync HNSW index
+   - [x] Add vectors on document upload
+   - [x] Update vectors on document merge
+   - [x] Remove vectors on document delete
+9. [x] Update `IndexerService` for HNSW integration
+   - [x] Sync HNSW index during indexer runs
+   - [x] Handle embedding generation with skillsets
+10. [x] Add HNSW configuration to `VectorSearchSettings`
+    - [x] `M` parameter (number of connections)
+    - [x] `EfConstruction` (index build quality)
+    - [x] `EfSearch` (search quality vs speed)
+    - [x] Distance metric (cosine)
+11. [x] Implement index persistence
+    - [x] Save HNSW index to file on commit
+    - [x] Load HNSW index on startup
+    - [x] Handle index corruption gracefully
+12. [x] Write comprehensive tests
+    - [x] Basic HNSW CRUD operations (HnswIndexManagerTests - 22 tests)
+    - [x] Filtered vector search accuracy
+    - [x] Hybrid search scoring (HybridSearchServiceTests - 25 tests)
+    - [ ] Performance benchmarks (deferred)
 
 #### Data Model
 
@@ -779,8 +776,8 @@ The simulator will target API version **2024-07-01** as the baseline, with compa
 
 | Feature | Azure AI Search | Simulator | Notes |
 | ------- | --------------- | --------- | ----- |
-| Vector Search (HNSW) | ✅ | 🔄 | HNSWlib.NET for fast ANN search |
-| Filtered Vector Search | ✅ | 🔄 | Post-filter pattern with oversampling |
+| Vector Search (HNSW) | ✅ | ✅ | HNSWlib.NET for fast ANN search |
+| Filtered Vector Search | ✅ | ✅ | Post-filter pattern with oversampling |
 | Azure OpenAI Embedding | ✅ | ✅ | Requires Azure OpenAI endpoint |
 | Hybrid Search | ✅ | ✅ | Text + vector with score fusion |
 | Facets | ✅ | ✅ | Count and value facets |
@@ -792,6 +789,7 @@ The simulator will target API version **2024-07-01** as the baseline, with compa
 | Knowledge Store | ✅ | ❌ | Future phase |
 | Azure AI Skills (OCR, etc.) | ✅ | ❌ | Requires Azure AI Services |
 | Scoring Profiles | ✅ | ⚠️ | Basic support, some functions may differ |
+| Synonym Maps | ✅ | ✅ | CRUD management, Solr format, query-time expansion |
 | SLA/Availability | 99.9%+ | N/A | Local dev tool |
 | Scale | Millions of docs | Limited | Dev/test only |
 
@@ -858,85 +856,67 @@ The simulator will target API version **2024-07-01** as the baseline, with compa
 
 ## 8. Dependencies (NuGet Packages)
 
-```xml
-<!-- Core -->
-<PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.*" />
-<PackageReference Include="Swashbuckle.AspNetCore" Version="6.*" />
+Package versions are managed per project and kept up-to-date by Dependabot. See each `.csproj` for the current pinned versions.
 
-<!-- Search Engine -->
-<PackageReference Include="Lucene.Net" Version="4.8.0-beta00016" />
-<PackageReference Include="Lucene.Net.Analysis.Common" Version="4.8.0-beta00016" />
-<PackageReference Include="Lucene.Net.QueryParser" Version="4.8.0-beta00016" />
-<PackageReference Include="Lucene.Net.Facet" Version="4.8.0-beta00016" />
-<PackageReference Include="Lucene.Net.Highlighter" Version="4.8.0-beta00016" />
-<PackageReference Include="Lucene.Net.Suggest" Version="4.8.0-beta00016" />
+### [AzureAISearchSimulator.Api](../src/AzureAISearchSimulator.Api/AzureAISearchSimulator.Api.csproj)
 
-<!-- Vector Search (HNSW) -->
-<PackageReference Include="HNSWlib.Net" Version="1.*" />
+| Package | Purpose |
+| ------- | ------- |
+| Microsoft.AspNetCore.Authentication.JwtBearer | JWT / Entra ID authentication |
+| Microsoft.AspNetCore.OpenApi | OpenAPI metadata |
+| Microsoft.Identity.Web | Entra ID integration |
+| Scalar.AspNetCore | API documentation UI (replaced Swashbuckle) |
+| Serilog.AspNetCore, Serilog.Sinks.Console/File | Structured logging |
+| System.IdentityModel.Tokens.Jwt | Token validation |
 
-<!-- Storage -->
-<PackageReference Include="LiteDB" Version="5.*" />
+### [AzureAISearchSimulator.Core](../src/AzureAISearchSimulator.Core/AzureAISearchSimulator.Core.csproj)
 
-<!-- Azure OpenAI (for embedding skill) -->
-<PackageReference Include="Azure.AI.OpenAI" Version="2.*" />
+| Package | Purpose |
+| ------- | ------- |
+| Azure.Core | Azure credential types |
+| LiteDB | Embedded NoSQL metadata storage |
 
-<!-- Document Cracking -->
-<PackageReference Include="PdfPig" Version="0.1.*" />
-<PackageReference Include="DocumentFormat.OpenXml" Version="3.*" />
+### [AzureAISearchSimulator.Search](../src/AzureAISearchSimulator.Search/AzureAISearchSimulator.Search.csproj)
 
-<!-- Scheduling -->
-<PackageReference Include="Quartz" Version="3.*" />
+| Package | Purpose |
+| ------- | ------- |
+| Lucene.Net, Lucene.Net.Analysis.Common | Full-text indexing and analysis |
+| Lucene.Net.QueryParser | Simple + full Lucene query syntax |
+| Lucene.Net.Facet | Faceted navigation |
+| Lucene.Net.Highlighter | Hit highlighting |
+| Lucene.Net.Suggest | Autocomplete and suggestions |
+| HNSW | Approximate nearest-neighbour vector search |
+| PdfPig | PDF text extraction |
+| DocumentFormat.OpenXml | Word / Excel document cracking |
+| HtmlAgilityPack | HTML tag stripping |
 
-<!-- Utilities -->
-<PackageReference Include="Serilog.AspNetCore" Version="8.*" />
-<PackageReference Include="Newtonsoft.Json" Version="13.*" />
+### [AzureAISearchSimulator.Storage](../src/AzureAISearchSimulator.Storage/AzureAISearchSimulator.Storage.csproj)
 
-<!-- Testing -->
-<PackageReference Include="xunit" Version="2.*" />
-<PackageReference Include="Moq" Version="4.*" />
-<PackageReference Include="FluentAssertions" Version="6.*" />
-```
+| Package | Purpose |
+| ------- | ------- |
+| LiteDB | Persistent repositories (indexes, indexers, data sources, skillsets, synonym maps) |
+
+### [AzureAISearchSimulator.DataSources](../src/AzureAISearchSimulator.DataSources/AzureAISearchSimulator.DataSources.csproj)
+
+| Package | Purpose |
+| ------- | ------- |
+| Azure.Storage.Blobs | Azure Blob Storage connector |
+| Azure.Storage.Files.DataLake | ADLS Gen2 connector |
+| Azure.Identity | Managed Identity / credential chain |
+
+### Test projects
+
+| Project | Key packages |
+| ------- | ------------ |
+| [Api.Tests](../tests/AzureAISearchSimulator.Api.Tests/AzureAISearchSimulator.Api.Tests.csproj) | xUnit, Moq, Microsoft.AspNetCore.Mvc.Testing |
+| [Core.Tests](../tests/AzureAISearchSimulator.Core.Tests/AzureAISearchSimulator.Core.Tests.csproj) | xUnit, Moq |
+| [Integration.Tests](../tests/AzureAISearchSimulator.Integration.Tests/AzureAISearchSimulator.Integration.Tests.csproj) | xUnit, Moq |
 
 ---
 
-## 9. Getting Started (Future README content)
+## 9. Getting Started
 
-### Prerequisites
-
-- .NET 10.0 SDK
-- Visual Studio 2022 / VS Code / Rider
-
-### Quick Start
-
-```bash
-# Clone the repository
-git clone https://github.com/your-org/azure-ai-search-simulator.git
-cd azure-ai-search-simulator
-
-# Build the solution
-dotnet build
-
-# Run the simulator
-cd src/AzureAISearchSimulator.Api
-dotnet run
-
-# The API will be available at https://localhost:7001
-```
-
-### Test with Azure SDK
-
-```csharp
-using Azure;
-using Azure.Search.Documents;
-using Azure.Search.Documents.Indexes;
-
-// Point to local simulator
-var endpoint = new Uri("https://localhost:7001");
-var credential = new AzureKeyCredential("admin-key-12345");
-
-var indexClient = new SearchIndexClient(endpoint, credential);
-var searchClient = new SearchClient(endpoint, "my-index", credential);
-```
+See the main [README.md](../README.md) for prerequisites, quick start, Docker usage, and Azure SDK examples.
 
 ---
 
@@ -969,7 +949,7 @@ var searchClient = new SearchClient(endpoint, "my-index", credential);
 
 ## 12. Future Enhancements (Phase 3+)
 
-1. **Synonym Maps** - Word mappings for search expansion
+1. ~~**Synonym Maps** - Word mappings for search expansion~~ ✅ Done — full CRUD, Solr format, query-time expansion
 2. ~~**More Analyzers** - Language-specific analyzers~~ ✅ Done — 27 Lucene-backed language analyzers + 22 Microsoft-only fallbacks
 3. **More Data Sources** - SQL database connector
 4. **Knowledge Store** - Projection to external storage
@@ -979,6 +959,7 @@ var searchClient = new SearchClient(endpoint, "my-index", credential);
 8. **Local Embedding Models** - ML.NET or ONNX for offline embedding generation
 9. **Pre-filtering for Vector Search** - Build filtered HNSW sub-indexes for common filter values
 10. **Multiple Vector Fields** - Support for multiple vector fields per document
+11. **Enforce SimulatorSettings Limits** - Wire up `MaxIndexes`, `MaxDocumentsPerIndex`, `MaxFieldsPerIndex`, `DefaultPageSize`, and `MaxPageSize` so the API rejects requests that exceed configured limits (currently defined but not enforced)
 
 ---
 
@@ -1029,5 +1010,5 @@ This is the same pattern used by production vector databases like Elasticsearch.
 
 ---
 
-*Document Version: 2.0*  
-*Last Updated: February 13, 2026*
+*Document Version: 2.1*  
+*Last Updated: February 18, 2026*
