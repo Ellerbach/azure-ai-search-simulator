@@ -307,12 +307,21 @@ public class DocumentService : IDocumentService
         var validationErrors = ValidateDocument(schema, document, key);
         if (validationErrors.Any())
         {
-            _logger.LogWarning(
-                "Document '{Key}' has validation errors: {Errors}", 
+            // Azure AI Search silently drops fields not in the schema.
+            // Log at Debug instead of Warning to reduce noise, and strip the unknown fields.
+            _logger.LogDebug(
+                "Document '{Key}' has fields not in schema (will be dropped): {Errors}", 
                 key, string.Join("; ", validationErrors));
             
-            // Note: Azure AI Search is lenient - it logs warnings but still indexes documents
-            // For the simulator, we'll do the same - warn but continue
+            // Remove fields that are not defined in the index schema (matching Azure behavior)
+            var schemaFields = schema.Fields.Select(f => f.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var keysToRemove = document.Keys
+                .Where(k => !k.StartsWith("@search.") && !schemaFields.Contains(k))
+                .ToList();
+            foreach (var k in keysToRemove)
+            {
+                document.Remove(k);
+            }
         }
 
         // Delete existing document if present
