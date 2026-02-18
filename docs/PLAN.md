@@ -16,6 +16,7 @@ This document outlines the comprehensive plan for building an Azure AI Search Si
 | Phase 6: Polish & Docs | ✅ Complete | Error handling, Docker support, SDK samples, documentation |
 | Phase 7: HNSW Vector Search | ✅ Complete | HNSWlib.NET integration, filtered vector search, hybrid ranking |
 | Phase 8: API 2025-09-01 | 🔄 In Progress | Index description ✅, debug subscores ✅, normalizers ✅ — remaining: truncated dimensions, rescoring |
+| Phase 9: Local Embeddings | 📋 Planned | ONNX Runtime local embedding models, zero-dependency vector generation |
 
 ## 1. Project Overview
 
@@ -70,6 +71,7 @@ This document outlines the comprehensive plan for building an Azure AI Search Si
 
 #### Future Phases
 
+- Local embedding models (ONNX Runtime — Phase 9)
 - OneLake indexer (2025-09-01)
 - Document Layout skill (2025-09-01)
 - Semantic search/ranking
@@ -292,6 +294,7 @@ DELETE /datasources/{dataSourceName}   - Delete data source
 - Document Extraction skill
 - Custom Web API skill (call external endpoints)
 - **Azure OpenAI Embedding skill** (generate vector embeddings)
+- **Azure OpenAI Embedding skill — local mode** (same skill, runs locally via ONNX when `resourceUri` = `local://model-name`)
 - Skill input/output mappings
 
 #### Built-in Skills to Implement
@@ -305,6 +308,7 @@ DELETE /datasources/{dataSourceName}   - Delete data source
 | Document Extraction | Extract content from files | PdfPig, OpenXML |
 | Custom Web API | Call external HTTP endpoints | HttpClient |
 | **AzureOpenAIEmbedding** | Generate vector embeddings | Azure.AI.OpenAI SDK |
+| **AzureOpenAIEmbedding (local)** | Local vector embeddings | ONNX Runtime + BERT models (triggered by `local://` resourceUri) |
 
 #### API Endpoints
 
@@ -757,6 +761,263 @@ public async Task<List<SearchResult>> HybridSearchAsync(
 - Persistence of HNSW indexes to disk
 - Comprehensive test coverage
 
+### Phase 9: Local Embedding Models (Week 13-14) 📋 PLANNED
+
+**Goal**: Generate vector embeddings locally using ONNX Runtime, with zero external dependencies. The existing `AzureOpenAIEmbeddingSkill` gains a **local mode** — same OData type, same skillset JSON, same everything — triggered by setting `resourceUri` to `local://model-name`.
+
+#### Architecture Overview
+
+```text
+┌──────────────────────────────────────────────────────────────────────┐
+│              AzureOpenAIEmbeddingSkillExecutor                       │
+│  ┌────────────────────────┐   ┌──────────────────────────────────┐  │
+│  │  resourceUri starts    │   │  resourceUri starts              │  │
+│  │  with https://         │   │  with local://                   │  │
+│  │  → HTTP call to Azure  │   │  → Delegate to LocalOnnx-        │  │
+│  │    OpenAI API          │   │    EmbeddingService (in-process) │  │
+│  └────────────────────────┘   └──────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────────────┘
+                                         │
+                                         ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│                    LocalOnnxEmbeddingService                         │
+│  ┌─────────────────┐  ┌──────────────────┐  ┌────────────────────┐  │
+│  │  FastBertTokenizer  │  ONNX Runtime    │  │  Mean Pooling +   │  │
+│  │  (vocab.txt)    │  │  InferenceSession│  │  L2 Normalization  │  │
+│  └─────────────────┘  └──────────────────┘  └────────────────────┘  │
+│  ┌─────────────────────────────────────────────────────────────────┐ │
+│  │               Model Cache (data/models/)                        │ │
+│  │  all-MiniLM-L6-v2/model.onnx + vocab.txt  (384 dims, ~80 MB)   │ │
+│  │  bge-small-en-v1.5/model.onnx + vocab.txt (384 dims, ~130 MB)  │ │
+│  │  all-mpnet-base-v2/model.onnx + vocab.txt (768 dims, ~420 MB)  │ │
+│  └─────────────────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+#### Local Mode Trigger
+
+The local mode is activated by using a **`local://` URI scheme** as the skill's `resourceUri`. This means users keep the exact same skillset JSON with the same `@odata.type` — only the `resourceUri` changes:
+
+```json
+{
+  "@odata.type": "#Microsoft.Skills.Text.AzureOpenAIEmbeddingSkill",
+  "name": "embedding",
+  "description": "Generate embeddings locally",
+  "resourceUri": "local://all-MiniLM-L6-v2",
+  "deploymentId": "ignored-in-local-mode",
+  "modelName": "all-MiniLM-L6-v2",
+  "inputs": [
+    { "name": "text", "source": "/document/content" }
+  ],
+  "outputs": [
+    { "name": "embedding", "targetName": "contentVector" }
+  ]
+}
+```
+
+Compare with the cloud version — only `resourceUri` and `deploymentId` differ:
+
+```json
+{
+  "@odata.type": "#Microsoft.Skills.Text.AzureOpenAIEmbeddingSkill",
+  "name": "embedding",
+  "description": "Generate embeddings via Azure OpenAI",
+  "resourceUri": "https://my-openai.openai.azure.com",
+  "deploymentId": "text-embedding-ada-002",
+  "modelName": "text-embedding-ada-002",
+  "inputs": [
+    { "name": "text", "source": "/document/content" }
+  ],
+  "outputs": [
+    { "name": "embedding", "targetName": "contentVector" }
+  ]
+}
+```
+
+#### Detection Logic in AzureOpenAIEmbeddingSkillExecutor
+
+```csharp
+public async Task<SkillExecutionResult> ExecuteAsync(
+    Skill skill, EnrichedDocument document, CancellationToken ct)
+{
+    if (skill.ResourceUri?.StartsWith("local://", StringComparison.OrdinalIgnoreCase) == true)
+    {
+        // Extract model name from URI: "local://all-MiniLM-L6-v2" → "all-MiniLM-L6-v2"
+        var modelName = skill.ResourceUri["local://".Length..];
+        return await _localEmbeddingService.GenerateEmbeddingAsync(
+            modelName, skill, document, ct);
+    }
+
+    // Existing Azure OpenAI HTTP path...
+}
+```
+
+#### Supported Models
+
+| Model | Dimensions | Size | Speed (CPU) | Quality | Default |
+| ----- | ---------- | ---- | ----------- | ------- | ------- |
+| `all-MiniLM-L6-v2` | 384 | ~80 MB | ~5 ms/embed | Good | ✅ |
+| `bge-small-en-v1.5` | 384 | ~130 MB | ~8 ms/embed | Better | |
+| `all-mpnet-base-v2` | 768 | ~420 MB | ~15 ms/embed | Best | |
+
+All models are BERT-based sentence-transformers exported to ONNX format from HuggingFace.
+
+#### Tasks
+
+1. [ ] Add NuGet packages: `Microsoft.ML.OnnxRuntime`, `FastBertTokenizer`
+2. [ ] Create `LocalEmbeddingSettings` configuration class
+   - [ ] `ModelsDirectory` (default: `./data/models`)
+   - [ ] `DefaultModel` (default: `all-MiniLM-L6-v2`)
+   - [ ] `MaximumTokens` (default: `512`)
+   - [ ] `NormalizeEmbeddings` (default: `true`)
+   - [ ] `PoolingMode` (default: `Mean`)
+3. [ ] Create `ILocalEmbeddingService` interface
+   ```csharp
+   public interface ILocalEmbeddingService
+   {
+       Task<SkillExecutionResult> GenerateEmbeddingAsync(
+           string modelName,
+           Skill skill,
+           EnrichedDocument document,
+           CancellationToken ct);
+       float[] GenerateEmbedding(string modelName, string text);
+       bool IsModelAvailable(string modelName);
+       int GetModelDimensions(string modelName);
+   }
+   ```
+4. [ ] Implement `LocalOnnxEmbeddingService`
+   - [ ] Load ONNX model + vocab from `data/models/{modelName}/`
+   - [ ] Lazy-load and cache `InferenceSession` per model (thread-safe)
+   - [ ] Tokenize input text with `FastBertTokenizer`
+   - [ ] Run ONNX inference (input_ids, attention_mask, token_type_ids)
+   - [ ] Apply mean pooling over token embeddings
+   - [ ] L2-normalize the output vector
+   - [ ] Return `float[]` embeddings
+5. [ ] Modify `AzureOpenAIEmbeddingSkillExecutor`
+   - [ ] Inject `ILocalEmbeddingService`
+   - [ ] Detect `local://` scheme in `resourceUri`
+   - [ ] Delegate to `ILocalEmbeddingService` when local mode is detected
+   - [ ] Keep existing Azure OpenAI HTTP path unchanged
+6. [ ] Implement model management
+   - [ ] Auto-detect available models in `data/models/` directory
+   - [ ] Provide download instructions in logs when model not found
+   - [ ] Ship a PowerShell/bash script to download models from HuggingFace
+   - [ ] Optionally auto-download from HuggingFace on first use (behind config flag `AutoDownloadModels`)
+7. [ ] Add configuration to `appsettings.json`
+8. [ ] Register services in DI (`Program.cs`)
+9. [ ] Write unit tests
+   - [ ] Local embedding generation produces correct dimension vectors
+   - [ ] `local://` URI detection and delegation
+   - [ ] Cloud URI still routes to Azure OpenAI
+   - [ ] Model not found returns helpful error
+   - [ ] Thread safety with concurrent embedding requests
+10. [ ] Create sample `.http` file demonstrating local embedding skillset
+11. [ ] Update documentation (CONFIGURATION.md, LIMITATIONS.md, README.md)
+
+#### ONNX Inference Pipeline
+
+```csharp
+public float[] GenerateEmbedding(string modelName, string text)
+{
+    var (session, tokenizer, dimensions) = GetOrLoadModel(modelName);
+
+    // 1. Tokenize
+    int maxTokens = _options.MaximumTokens;
+    long[] inputIds = new long[maxTokens];
+    long[] attentionMask = new long[maxTokens];
+    int tokenCount = tokenizer.Encode(text, inputIds, attentionMask);
+
+    // 2. Build tensors
+    var shape = new long[] { 1, tokenCount };
+    using var inputIdsOrt = OrtValue.CreateTensorValueFromMemory(
+        inputIds.AsMemory(0, tokenCount), shape);
+    using var attMaskOrt = OrtValue.CreateTensorValueFromMemory(
+        attentionMask.AsMemory(0, tokenCount), shape);
+    using var typeIdsOrt = OrtValue.CreateTensorValueFromMemory(
+        new long[tokenCount].AsMemory(), shape); // all zeros
+
+    // 3. Run inference
+    var inputs = new[] { inputIdsOrt, attMaskOrt, typeIdsOrt };
+    using var outputs = session.Run(
+        s_runOptions,
+        new[] { "input_ids", "attention_mask", "token_type_ids" },
+        inputs,
+        session.OutputNames);
+
+    // 4. Mean pooling
+    ReadOnlySpan<float> rawOutput = outputs[0].GetTensorDataAsSpan<float>();
+    float[] result = MeanPool(rawOutput, tokenCount, dimensions);
+
+    // 5. L2 normalize
+    float norm = TensorPrimitives.Norm(result);
+    TensorPrimitives.Divide(result, norm, result);
+
+    return result;
+}
+```
+
+#### Configuration
+
+```json
+{
+  "LocalEmbeddingSettings": {
+    "ModelsDirectory": "./data/models",
+    "DefaultModel": "all-MiniLM-L6-v2",
+    "MaximumTokens": 512,
+    "NormalizeEmbeddings": true,
+    "PoolingMode": "Mean",
+    "AutoDownloadModels": false
+  }
+}
+```
+
+#### Model Directory Structure
+
+```text
+data/
+  models/
+    all-MiniLM-L6-v2/
+      model.onnx          # ONNX model file (~80 MB)
+      vocab.txt           # BERT vocabulary file
+    bge-small-en-v1.5/
+      model.onnx
+      vocab.txt
+```
+
+#### Model Download Script
+
+```powershell
+# scripts/Download-EmbeddingModel.ps1
+param(
+    [string]$ModelName = "all-MiniLM-L6-v2",
+    [string]$OutputDir = "./data/models"
+)
+
+$models = @{
+    "all-MiniLM-L6-v2"  = "sentence-transformers/all-MiniLM-L6-v2"
+    "bge-small-en-v1.5" = "BAAI/bge-small-en-v1.5"
+    "all-mpnet-base-v2" = "sentence-transformers/all-mpnet-base-v2"
+}
+
+$repo = $models[$ModelName]
+$dir = Join-Path $OutputDir $ModelName
+New-Item -ItemType Directory -Force -Path $dir | Out-Null
+
+Write-Host "Downloading $ModelName from HuggingFace ($repo)..."
+Invoke-WebRequest "https://huggingface.co/$repo/resolve/main/onnx/model.onnx" -OutFile "$dir/model.onnx"
+Invoke-WebRequest "https://huggingface.co/$repo/resolve/main/vocab.txt" -OutFile "$dir/vocab.txt"
+Write-Host "Done. Model saved to $dir"
+```
+
+#### Deliverables
+
+- Local ONNX-based embedding generation (zero external dependencies)
+- Transparent local mode for the existing `AzureOpenAIEmbeddingSkill` via `local://` URI
+- Support for multiple BERT sentence-transformer models
+- Model download script for HuggingFace models
+- Unit tests for local embedding pipeline
+- Updated documentation
+
 ---
 
 ## 6. API Compatibility
@@ -779,6 +1040,7 @@ The simulator will target API version **2024-07-01** as the baseline, with compa
 | Vector Search (HNSW) | ✅ | ✅ | HNSWlib.NET for fast ANN search |
 | Filtered Vector Search | ✅ | ✅ | Post-filter pattern with oversampling |
 | Azure OpenAI Embedding | ✅ | ✅ | Requires Azure OpenAI endpoint |
+| Local Embedding (ONNX) | N/A | ✅ | Simulator-only: in-process BERT models via `local://` resourceUri |
 | Hybrid Search | ✅ | ✅ | Text + vector with score fusion |
 | Facets | ✅ | ✅ | Count and value facets |
 | Azure Blob Storage | ✅ | ✅ | Full support with connection string, SAS, Managed Identity |
@@ -844,6 +1106,14 @@ The simulator will target API version **2024-07-01** as the baseline, with compa
     "DeploymentName": "text-embedding-ada-002",
     "ModelDimensions": 1536
   },
+  "LocalEmbeddingSettings": {
+    "ModelsDirectory": "./data/models",
+    "DefaultModel": "all-MiniLM-L6-v2",
+    "MaximumTokens": 512,
+    "NormalizeEmbeddings": true,
+    "PoolingMode": "Mean",
+    "AutoDownloadModels": false
+  },
   "Logging": {
     "LogLevel": {
       "Default": "Information"
@@ -886,6 +1156,8 @@ Package versions are managed per project and kept up-to-date by Dependabot. See 
 | Lucene.Net.Highlighter | Hit highlighting |
 | Lucene.Net.Suggest | Autocomplete and suggestions |
 | HNSW | Approximate nearest-neighbour vector search |
+| Microsoft.ML.OnnxRuntime | Local ONNX model inference for embeddings |
+| FastBertTokenizer | BERT tokenization for local embedding models |
 | PdfPig | PDF text extraction |
 | DocumentFormat.OpenXml | Word / Excel document cracking |
 | HtmlAgilityPack | HTML tag stripping |
@@ -943,6 +1215,8 @@ See the main [README.md](../README.md) for prerequisites, quick start, Docker us
 | OData filter complexity | Medium | Implement subset, document limitations |
 | PDF extraction quality | Medium | PdfPig handles most cases, document limitations |
 | SDK compatibility issues | High | Test with official Azure SDK regularly |
+| ONNX model download size | Medium | Provide download script, document sizes, support multiple model tiers |
+| ONNX model compatibility | Low | Pin to well-tested HuggingFace ONNX exports, test on CI |
 | Performance at scale | Low | Document as dev/test tool only |
 
 ---
@@ -956,7 +1230,7 @@ See the main [README.md](../README.md) for prerequisites, quick start, Docker us
 5. **Admin UI** - Web-based management interface
 6. **Metrics Dashboard** - Search analytics
 7. **Import/Export** - Backup and restore indexes
-8. **Local Embedding Models** - ML.NET or ONNX for offline embedding generation
+~~8. **Local Embedding Models** - ML.NET or ONNX for offline embedding generation~~ 📋 Planned — Phase 9: ONNX Runtime + BERT models, `local://` URI trigger in existing AzureOpenAIEmbeddingSkill
 9. **Pre-filtering for Vector Search** - Build filtered HNSW sub-indexes for common filter values
 10. **Multiple Vector Fields** - Support for multiple vector fields per document
 11. **Enforce SimulatorSettings Limits** - Wire up `MaxIndexes`, `MaxDocumentsPerIndex`, `MaxFieldsPerIndex`, `DefaultPageSize`, and `MaxPageSize` so the API rejects requests that exceed configured limits (currently defined but not enforced)
@@ -1010,5 +1284,5 @@ This is the same pattern used by production vector databases like Elasticsearch.
 
 ---
 
-*Document Version: 2.1*  
+*Document Version: 2.2*  
 *Last Updated: February 18, 2026*
