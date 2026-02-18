@@ -32,7 +32,7 @@ RUN getent group 1000 || groupadd --gid 1000 appuser && \
     id -u 1000 >/dev/null 2>&1 || useradd --uid 1000 --gid 1000 --shell /bin/bash --create-home appuser
 
 # Create directories for data persistence, logs, and file processing
-RUN mkdir -p /app/data /app/lucene-indexes /app/logs /app/files /app/certs && \
+RUN mkdir -p /app/data /app/lucene-indexes /app/logs /app/files /app/models /app/certs && \
     chown -R 1000:1000 /app
 
 # Generate self-signed certificate for HTTPS
@@ -58,9 +58,10 @@ ENV ASPNETCORE_Kestrel__Certificates__Default__Password=dev-password
 ENV SimulatorSettings__DataDirectory=/app/data
 ENV LuceneSettings__IndexPath=/app/lucene-indexes
 ENV Serilog__WriteTo__1__Args__path=/app/logs/simulator-.log
+ENV LocalEmbeddingSettings__ModelsDirectory=/app/models
 
-# Declare volumes for data persistence, logs, and file processing
-VOLUME ["/app/data", "/app/lucene-indexes", "/app/logs", "/app/files"]
+# Declare volumes for data persistence, logs, file processing, and ONNX models
+VOLUME ["/app/data", "/app/lucene-indexes", "/app/logs", "/app/files", "/app/models"]
 
 # Switch to non-root user
 USER 1000

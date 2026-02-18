@@ -40,6 +40,7 @@ The Azure AI Search Simulator provides a local implementation of the Azure AI Se
 - **Document Cracking**: Extract text/metadata from PDF, Word, Excel, HTML, JSON, CSV, TXT
 - **Skillsets**: Skill pipeline with text transformation and embedding skills
 - **Azure OpenAI Embedding Skill**: Generate vector embeddings via Azure OpenAI API
+- **Local Embedding Models**: Generate embeddings locally via ONNX Runtime (no Azure OpenAI required)
 - **Custom Web API Skill**: Call external REST APIs for custom processing
 - **Error Handling**: OData-compliant error responses
 - **Docker Support**: Containerized deployment with docker-compose
@@ -50,7 +51,6 @@ The Azure AI Search Simulator provides a local implementation of the Azure AI Se
 ### 🔜 Planned (Future Phases)
 
 - Scoring profiles
-- Local embedding models
 - Azure SQL / Cosmos DB connectors
 - Admin UI dashboard
 
@@ -97,6 +97,7 @@ docker run -d --name azure-ai-search-simulator \
   -v lucene-indexes:/app/lucene-indexes \
   -v ./logs:/app/logs \
   -v ./files:/app/files \
+  -v ./src/AzureAISearchSimulator.Api/data/models:/app/models:ro \
   ghcr.io/your-org/azure-ai-search-simulator:latest
 
 # API available at https://localhost:7250 (HTTPS) or http://localhost:5250 (HTTP)
@@ -119,6 +120,8 @@ services:
       - lucene-indexes:/app/lucene-indexes
       - ./logs:/app/logs
       - ./files:/app/files
+      # Mount ONNX models for local embedding (download first with scripts/Download-EmbeddingModel.ps1)
+      - ./src/AzureAISearchSimulator.Api/data/models:/app/models:ro
 
 volumes:
   search-data:
@@ -149,6 +152,7 @@ docker run -p 7250:8443 -p 5250:8080 \
   -v lucene-indexes:/app/lucene-indexes \
   -v ./logs:/app/logs \
   -v ./files:/app/files \
+  -v ./src/AzureAISearchSimulator.Api/data/models:/app/models:ro \
   azure-ai-search-simulator
 
 # API available at https://localhost:7250 (HTTPS) or http://localhost:5250 (HTTP)
@@ -164,6 +168,7 @@ The container exposes four mount points for data persistence and file access:
 | `/app/lucene-indexes` | Lucene search index files | Named volume |
 | `/app/logs` | Serilog log files (`simulator-{date}.log`) | Bind mount for easy host access |
 | `/app/files` | Documents for indexer file processing (pull mode) | Bind mount to your documents folder |
+| `/app/models` | ONNX embedding models for local `local://` skill mode | Bind mount (read-only) |
 
 **Example: Mount a local documents folder for indexer processing**
 
@@ -172,6 +177,18 @@ The container exposes four mount points for data persistence and file access:
 docker run -p 7250:8443 -p 5250:8080 \
   -v search-data:/app/data \
   -v ./my-documents:/app/files \
+  azure-ai-search-simulator
+```
+
+**Example: Mount ONNX models for local embedding**
+
+```bash
+# Download a model first, then mount the models directory
+.\scripts\Download-EmbeddingModel.ps1 -ModelName all-MiniLM-L6-v2
+
+docker run -p 7250:8443 -p 5250:8080 \
+  -v search-data:/app/data \
+  -v ./src/AzureAISearchSimulator.Api/data/models:/app/models:ro \
   azure-ai-search-simulator
 ```
 
@@ -479,6 +496,8 @@ All `.http` sample files use environment variables via `$dotenv`. To get started
 | [synonym-map-sample.http](samples/synonym-map-sample.http) | REST Client file demonstrating synonym maps (CRUD + search expansion), with `[SIM]` / `[AZURE]` pairs |
 | [Compare-Results.ps1](scripts/Compare-Results.ps1) | PowerShell script that automates comparison and shows a color-coded diff of responses |
 | [pull-mode-test.http](samples/pull-mode-test.http) | REST Client file for testing indexer pull mode workflow |
+| [local-embedding-sample.http](samples/local-embedding-sample.http) | REST Client file demonstrating local ONNX embedding skill (no Azure OpenAI required) |
+| [Download-EmbeddingModel.ps1](scripts/Download-EmbeddingModel.ps1) | PowerShell script to download ONNX embedding models from HuggingFace |
 
 ### Comparing Simulator vs Real Azure AI Search
 

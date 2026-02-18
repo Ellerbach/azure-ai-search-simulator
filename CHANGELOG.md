@@ -11,6 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Local embedding models (Phase 9)**: Generate vector embeddings locally via ONNX Runtime without an Azure OpenAI endpoint. Use the `local://model-name` URI scheme in `AzureOpenAIEmbeddingSkill` resource URIs. Ships with support for all-MiniLM-L6-v2, bge-small-en-v1.5, and all-mpnet-base-v2. Includes `LocalEmbeddingSettings` configuration, `ILocalEmbeddingService` interface, `LocalOnnxEmbeddingService`, `Download-EmbeddingModel.ps1` script, and `local-embedding-sample.http`.
+
+### Changed
+
+- **Documentation audit**: Updated CONFIGURATION.md, PLAN.md, LIMITATIONS.md, TODO.md, API-REFERENCE.md, and README.md to reflect current codebase. Fixed incorrect section names, property names, and defaults. Added missing Diagnostic Logging section. Noted unenforced configuration limits.
+
+### Added
+
 - **Synonym map support**: Full CRUD for synonym maps (`POST/GET/PUT/DELETE /synonymmaps`) with Solr format parsing, query-time synonym expansion on fields with `synonymMaps` configured, LiteDB persistence, authorization, caching, and live service statistics. Includes 20 unit tests and a side-by-side comparison sample (`synonym-map-sample.http`).
 
 ### Added

@@ -51,7 +51,7 @@ The simulator is designed for **development, learning, and testing purposes only
 | Indexers | Automated document ingestion with scheduled runs |
 | Data sources | Local file system, Azure Blob Storage, ADLS Gen2 |
 | Skillsets | Utility skills (see below) |
-| **Azure OpenAI Embedding** | Requires Azure OpenAI endpoint |
+| **Azure OpenAI Embedding** | Azure OpenAI endpoint or `local://` ONNX mode (no Azure dependency) |
 | API key authentication | Admin and query keys |
 | **Entra ID authentication** | Real or simulated JWT tokens with role mapping |
 | **Role-Based Access Control** | Full RBAC with 6 Azure Search roles |
@@ -125,7 +125,7 @@ The simulator is designed for **development, learning, and testing purposes only
 | Shaper | ✅ Full | - |
 | Document Extraction | ⚠️ Partial | PDF, Office, JSON, text only |
 | Custom Web API | ✅ Full | Calls external HTTP endpoints |
-| Azure OpenAI Embedding | ✅ Full | Requires Azure OpenAI endpoint config |
+| Azure OpenAI Embedding | ✅ Full | Azure OpenAI endpoint or `local://` ONNX mode |
 
 ### Complete Skills Reference
 
@@ -150,7 +150,7 @@ The following table lists **all skills available in Azure AI Search** and their 
 
 | @odata.type | Skill Name | Azure | Simulator | Notes |
 | --- | --- | --- | --- | --- |
-| `#Microsoft.Skills.Text.AzureOpenAIEmbeddingSkill` | Azure OpenAI Embedding | ✅ | ✅ | Requires Azure OpenAI endpoint |
+| `#Microsoft.Skills.Text.AzureOpenAIEmbeddingSkill` | Azure OpenAI Embedding | ✅ | ✅ | Azure OpenAI or `local://` ONNX mode |
 | `#Microsoft.Skills.Custom.AzureContentUnderstandingSkill` | Azure Content Understanding | ✅ | ❌ | Requires Azure AI Document Intelligence |
 | `#Microsoft.Skills.Text.GenAIPromptSkill` | GenAI Prompt | ✅ | ❌ | Requires Azure OpenAI |
 
@@ -175,9 +175,31 @@ The following table lists **all skills available in Azure AI Search** and their 
 ### Summary
 
 - **Implemented**: 6 skills (Text Split, Text Merge, Shaper, Conditional, Web API, Azure OpenAI Embedding)
+- **Local mode**: Azure OpenAI Embedding skill also supports `local://` ONNX mode — same skill, no Azure dependency
 - **Not Implemented**: 14 skills (require Azure AI Services or are not yet added)
 
 **Workaround**: Use the Custom Web API skill to call your own implementations of missing skills. See the [CustomSkillSample](../samples/CustomSkillSample/) for examples of PII detection, sentiment analysis, keyword extraction, and more.
+
+## Local Embedding Limitations
+
+The simulator supports local ONNX-based embedding generation via the `local://` URI scheme in `AzureOpenAIEmbeddingSkill`.
+
+### Supported Models
+
+| Model | Dimensions | Size | Notes |
+| ----- | ---------- | ---- | ----- |
+| `all-MiniLM-L6-v2` | 384 | ~80 MB | Default model |
+| `bge-small-en-v1.5` | 384 | ~130 MB | - |
+| `all-mpnet-base-v2` | 768 | ~420 MB | Higher quality |
+
+### Limitations
+
+- **English only** — all shipped models are English sentence-transformers
+- **CPU inference** — no GPU acceleration (ONNX Runtime CPU provider only)
+- **Model download required** — models are not bundled; use `scripts/Download-EmbeddingModel.ps1`
+- **Custom models** — any ONNX-exported BERT model with `model.onnx` + `vocab.txt` can be used, but only tested with the three models above
+- **Max 512 tokens** — input text exceeding `MaximumTokens` is truncated (configurable)
+- **Dimensions fixed per model** — cannot change output dimensions (unlike Azure OpenAI text-embedding-3-* with MRL)
 
 ## Document Cracking Limitations
 
@@ -369,8 +391,9 @@ When moving from the simulator to Azure AI Search:
 1. **Index definitions**: Should work with no changes
 2. **Queries**: Should be fully compatible
 3. **Skillsets**: Should work with no changes, but Document Extraction will work much better with Azure native skills
-4. **Data sources**: Update connection strings to Azure resources if needed
-5. **Authentication**: Update to Azure API keys or managed identity
+4. **Local embeddings**: Replace `local://model-name` resource URIs with your Azure OpenAI endpoint
+5. **Data sources**: Update connection strings to Azure resources if needed
+6. **Authentication**: Update to Azure API keys or managed identity
 
 ---
 

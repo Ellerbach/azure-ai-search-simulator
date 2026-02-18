@@ -6,22 +6,25 @@ using System.Text.Json;
 namespace AzureAISearchSimulator.Search.Skills;
 
 /// <summary>
-/// AzureOpenAIEmbeddingSkill - Generates vector embeddings using Azure OpenAI.
-/// This skill calls the Azure OpenAI embeddings API to convert text into vectors.
+/// AzureOpenAIEmbeddingSkill - Generates vector embeddings using Azure OpenAI
+/// or locally via ONNX when the resourceUri uses the local:// scheme.
 /// </summary>
 public class AzureOpenAIEmbeddingSkillExecutor : ISkillExecutor
 {
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly ILocalEmbeddingService? _localEmbeddingService;
     private readonly ILogger<AzureOpenAIEmbeddingSkillExecutor> _logger;
 
     public string ODataType => "#Microsoft.Skills.Text.AzureOpenAIEmbeddingSkill";
 
     public AzureOpenAIEmbeddingSkillExecutor(
         IHttpClientFactory httpClientFactory,
-        ILogger<AzureOpenAIEmbeddingSkillExecutor> logger)
+        ILogger<AzureOpenAIEmbeddingSkillExecutor> logger,
+        ILocalEmbeddingService? localEmbeddingService = null)
     {
         _httpClientFactory = httpClientFactory;
         _logger = logger;
+        _localEmbeddingService = localEmbeddingService;
     }
 
     public async Task<SkillExecutionResult> ExecuteAsync(
@@ -33,6 +36,29 @@ public class AzureOpenAIEmbeddingSkillExecutor : ISkillExecutor
         if (string.IsNullOrEmpty(skill.ResourceUri))
         {
             return SkillExecutionResult.Failed("AzureOpenAIEmbeddingSkill requires 'resourceUri' property");
+        }
+
+        // ── Local mode: delegate to ONNX when resourceUri starts with local:// ──
+        if (skill.ResourceUri.StartsWith("local://", StringComparison.OrdinalIgnoreCase))
+        {
+            var modelName = skill.ResourceUri["local://".Length..];
+            if (string.IsNullOrWhiteSpace(modelName))
+            {
+                modelName = null; // will use default model
+            }
+
+            if (_localEmbeddingService == null)
+            {
+                return SkillExecutionResult.Failed(
+                    "Local embedding mode (local://) is not available. " +
+                    "Ensure LocalEmbeddingSettings is configured and the ILocalEmbeddingService is registered.");
+            }
+
+            _logger.LogInformation("Using local ONNX embedding model '{Model}' (resourceUri: {Uri})",
+                modelName ?? "(default)", skill.ResourceUri);
+
+            return await _localEmbeddingService.GenerateEmbeddingAsync(
+                modelName!, skill, document, cancellationToken);
         }
 
         if (string.IsNullOrEmpty(skill.DeploymentId))

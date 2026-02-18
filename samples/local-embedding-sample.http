@@ -1,0 +1,266 @@
+### ============================================================
+### Local Embedding Models - Sample Requests
+### ============================================================
+### Uses local:// URI scheme to run ONNX-based embedding models
+### instead of calling Azure OpenAI. Same skillset JSON format.
+###
+### Reuses the same data-samples/test-docs files as pull-mode-test.http.
+###
+### Prerequisites:
+###   1. Download a model:
+###      pwsh scripts/Download-EmbeddingModel.ps1 -ModelName all-MiniLM-L6-v2
+###   2. Start the simulator:
+###      dotnet run --project src/AzureAISearchSimulator.Api
+### ============================================================
+
+# Variables loaded from .env file (copy .env.example to .env in the workspace root)
+@baseUrl = {{$dotenv BASE_URL}}
+@apiKey = {{$dotenv ADMIN_KEY}}
+@apiVersion = {{$dotenv API_VERSION}}
+
+
+### =====================================================
+### Step 1: Create Index with Vector Field
+### =====================================================
+
+PUT {{baseUrl}}/indexes/local-embedding-index?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "name": "local-embedding-index",
+  "fields": [
+    { "name": "id", "type": "Edm.String", "key": true, "filterable": true },
+    { "name": "title", "type": "Edm.String", "searchable": true },
+    { "name": "content", "type": "Edm.String", "searchable": true },
+    {
+      "name": "contentVector",
+      "type": "Collection(Edm.Single)",
+      "searchable": true,
+      "dimensions": 384,
+      "vectorSearchProfile": "my-vector-profile"
+    }
+  ],
+  "vectorSearch": {
+    "profiles": [
+      {
+        "name": "my-vector-profile",
+        "algorithm": "my-hnsw"
+      }
+    ],
+    "algorithms": [
+      {
+        "name": "my-hnsw",
+        "kind": "hnsw",
+        "hnswParameters": {
+          "metric": "cosine",
+          "m": 4,
+          "efConstruction": 400,
+          "efSearch": 500
+        }
+      }
+    ]
+  }
+}
+
+
+### =====================================================
+### Step 2: Create Skillset with local:// Embedding
+### =====================================================
+### resourceUri uses "local://all-MiniLM-L6-v2" instead of an Azure OpenAI endpoint.
+### The deploymentId is ignored in local mode but kept for JSON compatibility.
+
+PUT {{baseUrl}}/skillsets/local-embedding-skillset?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "name": "local-embedding-skillset",
+  "description": "Generates embeddings locally using ONNX (all-MiniLM-L6-v2)",
+  "skills": [
+    {
+      "@odata.type": "#Microsoft.Skills.Text.AzureOpenAIEmbeddingSkill",
+      "name": "local-embedding",
+      "description": "Generate embeddings using local ONNX model (no Azure OpenAI needed)",
+      "resourceUri": "local://all-MiniLM-L6-v2",
+      "deploymentId": "not-used-in-local-mode",
+      "context": "/document",
+      "inputs": [
+        {
+          "name": "text",
+          "source": "/document/content"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "embedding",
+          "targetName": "contentVector"
+        }
+      ]
+    }
+  ]
+}
+
+
+### =====================================================
+### Step 3: Create Data Source (Local File System)
+### =====================================================
+### Reuses the same data-samples/test-docs files as pull-mode-test.http.
+
+PUT {{baseUrl}}/datasources/local-embedding-docs?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "name": "local-embedding-docs",
+  "type": "filesystem",
+  "credentials": {
+    "connectionString": "C:/Projets/AzureAISimulator/data-samples"
+  },
+  "container": {
+    "name": "test-docs"
+  },
+  "description": "Local test files for embedding - reuses data-samples/test-docs"
+}
+
+
+### =====================================================
+### Step 4: Create Indexer with Skillset
+### =====================================================
+
+PUT {{baseUrl}}/indexers/local-embedding-indexer?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "name": "local-embedding-indexer",
+  "dataSourceName": "local-embedding-docs",
+  "targetIndexName": "local-embedding-index",
+  "skillsetName": "local-embedding-skillset",
+  "description": "Indexer with local ONNX embedding skillset",
+  "fieldMappings": [
+    { "sourceFieldName": "metadata_storage_path", "targetFieldName": "id" },
+    { "sourceFieldName": "metadata_storage_name", "targetFieldName": "title" }
+  ],
+  "outputFieldMappings": [
+    { "sourceFieldName": "/document/contentVector", "targetFieldName": "contentVector" }
+  ]
+}
+
+
+### =====================================================
+### Step 5: Run Indexer
+### =====================================================
+
+POST {{baseUrl}}/indexers/local-embedding-indexer/run?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+
+### =====================================================
+### Step 6: Check Indexer Status
+### =====================================================
+
+GET {{baseUrl}}/indexers/local-embedding-indexer/status?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+
+### =====================================================
+### Step 7: Search Documents
+### =====================================================
+
+POST {{baseUrl}}/indexes/local-embedding-index/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "search": "*",
+  "count": true,
+  "select": "id, title, content",
+  "top": 5
+}
+
+
+### =====================================================
+### Step 8: Search for Specific Content
+### =====================================================
+
+POST {{baseUrl}}/indexes/local-embedding-index/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "search": "machine learning",
+  "count": true,
+  "select": "id, title, content"
+}
+
+
+### =====================================================
+### Verify: Get Skillset
+### =====================================================
+
+GET {{baseUrl}}/skillsets/local-embedding-skillset?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+
+### ============================================================
+### Alternative: Use default model (omit name after local://)
+### Falls back to LocalEmbeddingSettings.DefaultModel
+### ============================================================
+
+PUT {{baseUrl}}/skillsets/default-local-skillset?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "name": "default-local-skillset",
+  "description": "Uses the default local embedding model",
+  "skills": [
+    {
+      "@odata.type": "#Microsoft.Skills.Text.AzureOpenAIEmbeddingSkill",
+      "name": "default-local-embedding",
+      "resourceUri": "local://",
+      "deploymentId": "ignored",
+      "context": "/document",
+      "inputs": [
+        {
+          "name": "text",
+          "source": "/document/content"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "embedding",
+          "targetName": "contentVector"
+        }
+      ]
+    }
+  ]
+}
+
+
+### =====================================================
+### Cleanup
+### =====================================================
+
+### Delete Indexer
+DELETE {{baseUrl}}/indexers/local-embedding-indexer?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+###
+
+### Delete Skillset
+DELETE {{baseUrl}}/skillsets/local-embedding-skillset?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+###
+
+### Delete Data Source
+DELETE {{baseUrl}}/datasources/local-embedding-docs?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+###
+
+### Delete Index
+DELETE {{baseUrl}}/indexes/local-embedding-index?api-version={{apiVersion}}
+api-key: {{apiKey}}

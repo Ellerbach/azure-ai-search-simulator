@@ -46,6 +46,8 @@ try
         builder.Configuration.GetSection(VectorSearchSettings.SectionName));
     builder.Services.Configure<AzureOpenAISettings>(
         builder.Configuration.GetSection(AzureOpenAISettings.SectionName));
+    builder.Services.Configure<LocalEmbeddingSettings>(
+        builder.Configuration.GetSection(LocalEmbeddingSettings.SectionName));
     builder.Services.Configure<DiagnosticLoggingSettings>(
         builder.Configuration.GetSection(DiagnosticLoggingSettings.SectionName));
 
@@ -109,6 +111,9 @@ try
     builder.Services.AddSingleton<IDocumentCracker, WordDocCracker>();
     builder.Services.AddSingleton<IDocumentCracker, ExcelCracker>();
     builder.Services.AddSingleton<IDocumentCrackerFactory, DocumentCrackerFactory>();
+
+    // Register local embedding service (ONNX-based)
+    builder.Services.AddSingleton<ILocalEmbeddingService, LocalOnnxEmbeddingService>();
 
     // Register skill executors
     builder.Services.AddSingleton<ISkillExecutor, TextSplitSkillExecutor>();

@@ -21,6 +21,7 @@ services:
       - LuceneSettings__IndexPath=/app/lucene-indexes
       - Serilog__WriteTo__1__Args__path=/app/logs/simulator-.log
       - AzureOpenAISettings__ApiKey=${AZURE_OPENAI_API_KEY:-}
+      - LocalEmbeddingSettings__ModelsDirectory=/app/models
     volumes:
       # Persist simulator data (LiteDB) between container restarts
       - simulator-data:/app/data
@@ -32,6 +33,8 @@ services:
       - ./files:/app/files
       # Mount local test data (optional, read-only)
       - ./testdata:/app/testdata:ro
+      # Mount ONNX embedding models (download with scripts/Download-EmbeddingModel.ps1)
+      - ./src/AzureAISearchSimulator.Api/data/models:/app/models:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
