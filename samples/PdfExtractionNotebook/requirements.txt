@@ -1,0 +1,16 @@
+# Python dependencies for PDF Extraction Test Notebook
+
+# PDF text extraction
+pymupdf>=1.23.0
+
+# Alternative PDF extraction for comparison
+pdfplumber>=0.10.0
+
+# HTTP requests (for API calls to the simulator)
+requests>=2.31.0
+
+# Data display
+pandas>=2.0.0
+
+# Rich display in notebooks
+tabulate>=0.9.0
