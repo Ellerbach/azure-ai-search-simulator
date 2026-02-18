@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+### Changed
+
+- **Documentation audit**: Updated CONFIGURATION.md, PLAN.md, LIMITATIONS.md, TODO.md, API-REFERENCE.md, and README.md to reflect current codebase. Fixed incorrect section names, property names, and defaults. Added missing Diagnostic Logging section. Noted unenforced configuration limits.
+
 ### Added
 
 - **Synonym map support**: Full CRUD for synonym maps (`POST/GET/PUT/DELETE /synonymmaps`) with Solr format parsing, query-time synonym expansion on fields with `synonymMaps` configured, LiteDB persistence, authorization, caching, and live service statistics. Includes 20 unit tests and a side-by-side comparison sample (`synonym-map-sample.http`).

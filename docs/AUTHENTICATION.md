@@ -7,7 +7,7 @@ This guide covers all authentication options available in the Azure AI Search Si
 The simulator supports three authentication modes that can be used simultaneously:
 
 | Mode | Description | Azure Required |
-|------|-------------|----------------|
+| ---- | ----------- | -------------- |
 | **API Key** | Traditional API key authentication | No |
 | **Simulated** | Local JWT tokens for testing | No |
 | **Entra ID** | Real Azure AD token validation | Yes |
@@ -74,11 +74,13 @@ The traditional Azure AI Search authentication method using API keys.
 #### Usage
 
 **Header:**
+
 ```http
 api-key: admin-key-12345
 ```
 
 **Query parameter:**
+
 ```http
 GET /indexes?api-version=2024-07-01&api-key=admin-key-12345
 ```
@@ -86,7 +88,7 @@ GET /indexes?api-version=2024-07-01&api-key=admin-key-12345
 #### Key Types
 
 | Key Type | Operations Allowed |
-|----------|-------------------|
+| -------- | ----------------- |
 | Admin Key | All operations (create, update, delete, query) |
 | Query Key | Query operations only (search, suggest, autocomplete) |
 
@@ -129,6 +131,7 @@ api-key: admin-key-12345
 ```
 
 Available shortcuts:
+
 - `owner` - Owner role
 - `contributor` - Contributor role
 - `reader` - Reader role
@@ -205,7 +208,7 @@ Validate real Azure AD tokens for production-like testing.
 2. Create roles matching Azure AI Search:
 
 | Display Name | Value | Description |
-|--------------|-------|-------------|
+| ------------ | ----- | ----------- |
 | Search Service Contributor | Search.Service.Contributor | Manage indexes, indexers, skillsets |
 | Search Index Data Contributor | Search.Index.Data.Contributor | Upload and manage documents |
 | Search Index Data Reader | Search.Index.Data.Reader | Query indexes |
@@ -213,16 +216,19 @@ Validate real Azure AD tokens for production-like testing.
 #### Acquiring Tokens
 
 **Azure CLI:**
+
 ```bash
 az account get-access-token --scope https://search.azure.com/.default
 ```
 
 **PowerShell:**
+
 ```powershell
 Get-AzAccessToken -ResourceUrl https://search.azure.com
 ```
 
 **C# with Azure SDK:**
+
 ```csharp
 var credential = new DefaultAzureCredential();
 var searchClient = new SearchClient(
@@ -243,7 +249,7 @@ This section provides detailed configuration guidance for Entra ID authenticatio
 When acquiring tokens from Azure CLI, Azure PowerShell, or other Microsoft tools, use these well-known client IDs:
 
 | Tool/Application | Client ID | Description |
-|-----------------|-----------|-------------|
+| --------------- | --------- | ----------- |
 | **Azure CLI** | `04b07795-8ddb-461a-bbee-02f9e1bf7b46` | `az account get-access-token` commands |
 | **Azure PowerShell** | `1950a258-227b-4e31-a9cf-717495945fc2` | `Get-AzAccessToken` cmdlet |
 | **Visual Studio** | `872cd9fa-d31f-45e0-9eab-6e460a02d1f1` | Visual Studio authentication |
@@ -256,7 +262,7 @@ When acquiring tokens from Azure CLI, Azure PowerShell, or other Microsoft tools
 Azure AD issues tokens in two formats (v1.0 and v2.0). Configure both issuers for maximum compatibility:
 
 | Token Version | Issuer Format | Example |
-|--------------|---------------|---------|
+| ------------ | ------------- | ------- |
 | **v1.0** | `https://sts.windows.net/{tenantId}/` | `https://sts.windows.net/5af26bcf-47c7-45a7-9cdc-f40a5a82fc23/` |
 | **v2.0** | `https://login.microsoftonline.com/{tenantId}/v2.0` | `https://login.microsoftonline.com/5af26bcf-47c7-45a7-9cdc-f40a5a82fc23/v2.0` |
 
@@ -294,7 +300,7 @@ Complete configuration example with explanations:
 #### Configuration Fields
 
 | Field | Required | Description |
-|-------|----------|-------------|
+| ----- | -------- | ----------- |
 | `TenantId` | **Yes** | Your Azure AD tenant ID (GUID). Find it in Azure Portal → Microsoft Entra ID → Overview. |
 | `ClientId` | **Yes** | The application client ID. Use Azure CLI's client ID (`04b07795-8ddb-461a-bbee-02f9e1bf7b46`) for CLI tokens. |
 | `Audience` | **Yes** | Must be `https://search.azure.com` for Azure AI Search tokens. |
@@ -510,7 +516,7 @@ The simulator enforces the same RBAC permissions as real Azure AI Search.
 ### Permission Matrix
 
 | Operation | Data Reader | Data Contributor | Service Contributor | Owner/Contributor |
-|-----------|:-----------:|:----------------:|:-------------------:|:-----------------:|
+| --------- | :---------: | :--------------: | :-----------------: | :---------------: |
 | Search/Suggest/Autocomplete | ✅ | ✅ | ❌ | ❌ |
 | Get document by key | ✅ | ✅ | ❌ | ❌ |
 | Upload/Merge/Delete documents | ❌ | ✅ | ❌ | ❌ |
@@ -524,7 +530,7 @@ The simulator enforces the same RBAC permissions as real Azure AI Search.
 ### Role GUIDs
 
 | Role | GUID |
-|------|------|
+| ---- | ---- |
 | Owner | `8e3af657-a8ff-443c-a75c-2fe8c4bcb635` |
 | Contributor | `b24988ac-6180-42a0-ab88-20f7382dd24c` |
 | Reader | `acdd72a7-3385-48ef-bd42-f606fba81ae7` |
@@ -537,6 +543,7 @@ The simulator enforces the same RBAC permissions as real Azure AI Search.
 ## Outbound Authentication
 
 The simulator can authenticate to external Azure services when using:
+
 - Azure Blob Storage data sources
 - ADLS Gen2 data sources
 - Custom Web API skills
@@ -567,7 +574,7 @@ The simulator can authenticate to external Azure services when using:
 ### Credential Types
 
 | Type | Description | Use Case |
-|------|-------------|----------|
+| ---- | ----------- | -------- |
 | `DefaultAzureCredential` | Azure SDK default chain | Development, Azure-hosted apps |
 | `ServicePrincipal` | App with client secret/certificate | CI/CD, automated processes |
 | `ManagedIdentity` | Azure Managed Identity | Azure-hosted apps |
@@ -673,11 +680,13 @@ api-key: admin-key-12345
 ### 401 Unauthorized
 
 **Causes:**
+
 - Missing or invalid API key
 - Expired or malformed JWT token
 - Token audience/issuer mismatch
 
 **Solutions:**
+
 1. Check the `api-key` header spelling
 2. Verify token hasn't expired
 3. Check authentication mode is enabled
@@ -685,10 +694,12 @@ api-key: admin-key-12345
 ### 403 Forbidden
 
 **Causes:**
+
 - Insufficient role permissions
 - Operation not allowed for role
 
 **Solutions:**
+
 1. Check required role for operation
 2. Generate token with appropriate role
 3. Use admin key for full access
@@ -696,11 +707,13 @@ api-key: admin-key-12345
 ### Token Validation Failed
 
 **Causes:**
+
 - Wrong signing key (simulated mode)
 - Invalid issuer configuration (Entra ID)
 - Clock skew issues
 
 **Solutions:**
+
 1. Verify signing key matches
 2. Check issuer in configuration
 3. Allow 5-minute clock skew tolerance

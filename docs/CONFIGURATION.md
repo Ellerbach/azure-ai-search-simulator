@@ -17,74 +17,88 @@ The simulator uses the standard ASP.NET Core configuration system. Settings can 
 
 ```json
 {
-  "Simulator": {
+  "SimulatorSettings": {
+    "ServiceName": "local-search-simulator",
+    "DataDirectory": "./data",
     "AdminApiKey": "admin-key-12345",
     "QueryApiKey": "query-key-67890",
-    "DataPath": "./data",
-    "EnableDetailedErrors": true
+    "MaxIndexes": 50,
+    "MaxDocumentsPerIndex": 100000,
+    "MaxFieldsPerIndex": 1000,
+    "DefaultPageSize": 50,
+    "MaxPageSize": 1000
   }
 }
 ```
 
 | Setting | Description | Default |
 | ------- | ----------- | ------- |
+| `ServiceName` | Name of the simulated search service | `local-search-simulator` |
+| `DataDirectory` | Path for LiteDB database files | `./data` |
 | `AdminApiKey` | API key for admin operations (create, update, delete) | `admin-key-12345` |
 | `QueryApiKey` | API key for query operations (search, suggest) | `query-key-67890` |
-| `DataPath` | Path for LiteDB database files | `./data` |
-| `EnableDetailedErrors` | Show detailed error messages in development | `true` |
+| `MaxIndexes` | Maximum number of indexes allowed | `50` |
+| `MaxDocumentsPerIndex` | Maximum documents per index | `100000` |
+| `MaxFieldsPerIndex` | Maximum fields per index | `1000` |
+| `DefaultPageSize` | Default page size for list operations | `50` |
+| `MaxPageSize` | Maximum page size for list operations | `1000` |
+
+> **Note:** `MaxIndexes`, `MaxDocumentsPerIndex`, `MaxFieldsPerIndex`, and `MaxPageSize` are defined in configuration but **not yet enforced** by the API. They are reserved for a future update.
 
 **Environment variables:**
 
 ```bash
-Simulator__AdminApiKey=your-admin-key
-Simulator__QueryApiKey=your-query-key
-Simulator__DataPath=/app/data
+SimulatorSettings__AdminApiKey=your-admin-key
+SimulatorSettings__QueryApiKey=your-query-key
+SimulatorSettings__DataDirectory=/app/data
 ```
 
 ### Lucene Settings
 
 ```json
 {
-  "Lucene": {
-    "IndexPath": "./lucene-indexes",
-    "MaxMergeCount": 10,
-    "RAMBufferSizeMB": 16.0
+  "LuceneSettings": {
+    "IndexPath": "./data/lucene",
+    "CommitIntervalSeconds": 5,
+    "MaxBufferedDocs": 1000,
+    "RamBufferSizeMB": 256.0
   }
 }
 ```
 
 | Setting | Description | Default |
 | ------- | ----------- | ------- |
-| `IndexPath` | Directory for Lucene index files | `./lucene-indexes` |
-| `MaxMergeCount` | Maximum concurrent merge operations | `10` |
-| `RAMBufferSizeMB` | RAM buffer size for indexing (MB) | `16.0` |
+| `IndexPath` | Directory for Lucene index files | `./data/lucene` |
+| `CommitIntervalSeconds` | Interval between automatic index commits | `5` |
+| `MaxBufferedDocs` | Maximum buffered documents before flush | `1000` |
+| `RamBufferSizeMB` | RAM buffer size for indexing (MB) | `256.0` |
 
 **Environment variables:**
 
 ```bash
-Lucene__IndexPath=/app/lucene-indexes
-Lucene__RAMBufferSizeMB=32.0
+LuceneSettings__IndexPath=/app/lucene-indexes
+LuceneSettings__RamBufferSizeMB=512.0
 ```
 
 ### Indexer Settings
 
 ```json
 {
-  "Indexer": {
+  "IndexerSettings": {
+    "MaxConcurrentIndexers": 3,
     "DefaultBatchSize": 1000,
-    "MaxFailedItems": -1,
-    "MaxFailedItemsPerBatch": -1,
-    "DefaultScheduleInterval": "PT1H"
+    "EnableScheduler": true,
+    "DefaultTimeoutMinutes": 60
   }
 }
 ```
 
 | Setting | Description | Default |
 | ------- | ----------- | ------- |
+| `MaxConcurrentIndexers` | Maximum indexers running concurrently | `3` |
 | `DefaultBatchSize` | Default batch size for indexer operations | `1000` |
-| `MaxFailedItems` | Maximum failed items before stopping (-1 = unlimited) | `-1` |
-| `MaxFailedItemsPerBatch` | Maximum failed items per batch (-1 = unlimited) | `-1` |
-| `DefaultScheduleInterval` | Default indexer schedule (ISO 8601 duration) | `PT1H` |
+| `EnableScheduler` | Enable background indexer scheduler | `true` |
+| `DefaultTimeoutMinutes` | Default timeout for indexer runs (minutes) | `60` |
 
 ### Vector Search Settings
 
@@ -160,26 +174,30 @@ Configure how text and vector search results are combined.
 
 ```json
 {
-  "AzureOpenAI": {
+  "AzureOpenAISettings": {
+    "Endpoint": "https://your-resource.openai.azure.com/",
     "ApiKey": "",
-    "DefaultModel": "text-embedding-ada-002",
-    "DefaultDimensions": 1536,
-    "Timeout": "00:01:00"
+    "DeploymentName": "text-embedding-ada-002",
+    "ModelDimensions": 1536,
+    "TimeoutSeconds": 30
   }
 }
 ```
 
 | Setting | Description | Default |
 | ------- | ----------- | ------- |
+| `Endpoint` | Azure OpenAI resource endpoint URL | *(required)* |
 | `ApiKey` | Azure OpenAI API key for embedding skill | *(empty)* |
-| `DefaultModel` | Default embedding model name | `text-embedding-ada-002` |
-| `DefaultDimensions` | Default embedding dimensions | `1536` |
-| `Timeout` | HTTP timeout for API calls | `00:01:00` |
+| `DeploymentName` | Embedding model deployment name | `text-embedding-ada-002` |
+| `ModelDimensions` | Embedding model output dimensions | `1536` |
+| `TimeoutSeconds` | HTTP timeout for API calls (seconds) | `30` |
 
 **Environment variables:**
 
 ```bash
-AzureOpenAI__ApiKey=your-azure-openai-key
+AzureOpenAISettings__Endpoint=https://your-resource.openai.azure.com/
+AzureOpenAISettings__ApiKey=your-azure-openai-key
+AzureOpenAISettings__DeploymentName=text-embedding-3-small
 ```
 
 ### Authentication Settings
@@ -426,6 +444,45 @@ OutboundAuthentication__ServicePrincipal__ClientSecret=your-secret
 }
 ```
 
+### Diagnostic Logging Settings
+
+Controls verbose diagnostic logging during indexing and skill execution. Useful for debugging the processing pipeline.
+
+```json
+{
+  "DiagnosticLogging": {
+    "Enabled": false,
+    "LogDocumentDetails": true,
+    "LogSkillExecution": true,
+    "LogSkillInputPayloads": false,
+    "LogSkillOutputPayloads": false,
+    "LogEnrichedDocumentState": false,
+    "LogFieldMappings": true,
+    "MaxStringLogLength": 500,
+    "IncludeTimings": true
+  }
+}
+```
+
+| Setting | Description | Default |
+| ------- | ----------- | ------- |
+| `Enabled` | Enable the diagnostic logging subsystem (when false, all other settings are ignored) | `false` |
+| `LogDocumentDetails` | Log document key, content type, metadata, and processing status | `true` |
+| `LogSkillExecution` | Log skill invocations and execution results | `true` |
+| `LogSkillInputPayloads` | Log input payloads passed to skills (⚠️ verbose) | `false` |
+| `LogSkillOutputPayloads` | Log output payloads produced by skills (⚠️ verbose) | `false` |
+| `LogEnrichedDocumentState` | Log complete enriched document state after each skill (⚠️ very verbose) | `false` |
+| `LogFieldMappings` | Log field mappings applied during indexing | `true` |
+| `MaxStringLogLength` | Maximum string length before truncation (0 = no truncation) | `500` |
+| `IncludeTimings` | Include timing information for each operation | `true` |
+
+**Environment variables:**
+
+```bash
+DiagnosticLogging__Enabled=true
+DiagnosticLogging__LogSkillInputPayloads=true
+```
+
 ## Docker Configuration
 
 When running in Docker, use environment variables to override settings:
@@ -579,8 +636,8 @@ var client = new SearchIndexClient(
 1. **Change default keys** in production:
 
    ```bash
-   Simulator__AdminApiKey=$(openssl rand -hex 32)
-   Simulator__QueryApiKey=$(openssl rand -hex 32)
+   SimulatorSettings__AdminApiKey=$(openssl rand -hex 32)
+   SimulatorSettings__QueryApiKey=$(openssl rand -hex 32)
    ```
 
 2. **Use separate keys** for admin and query operations
@@ -604,11 +661,11 @@ var client = new SearchIndexClient(
 
 ```json
 {
-  "Lucene": {
-    "RAMBufferSizeMB": 64.0,
-    "MaxMergeCount": 20
+  "LuceneSettings": {
+    "RamBufferSizeMB": 512.0,
+    "MaxBufferedDocs": 5000
   },
-  "Indexer": {
+  "IndexerSettings": {
     "DefaultBatchSize": 5000
   }
 }
@@ -618,8 +675,8 @@ var client = new SearchIndexClient(
 
 ```json
 {
-  "VectorSearch": {
-    "MaxK": 100
+  "VectorSearchSettings": {
+    "MaxVectorsPerIndex": 200000
   }
 }
 ```
@@ -665,34 +722,65 @@ The simulator logs configuration values at startup (sensitive values are masked)
 
 ```json
 {
-  "Simulator": {
+  "SimulatorSettings": {
+    "ServiceName": "local-search-simulator",
+    "DataDirectory": "./data",
     "AdminApiKey": "admin-key-12345",
     "QueryApiKey": "query-key-67890",
-    "DataPath": "./data",
-    "EnableDetailedErrors": true
+    "MaxIndexes": 50,
+    "MaxDocumentsPerIndex": 100000,
+    "MaxFieldsPerIndex": 1000,
+    "DefaultPageSize": 50,
+    "MaxPageSize": 1000
   },
-  "Lucene": {
-    "IndexPath": "./lucene-indexes",
-    "MaxMergeCount": 10,
-    "RAMBufferSizeMB": 16.0
+  "LuceneSettings": {
+    "IndexPath": "./data/lucene",
+    "CommitIntervalSeconds": 5,
+    "MaxBufferedDocs": 1000,
+    "RamBufferSizeMB": 256.0
   },
-  "Indexer": {
+  "IndexerSettings": {
+    "MaxConcurrentIndexers": 3,
     "DefaultBatchSize": 1000,
-    "MaxFailedItems": -1,
-    "MaxFailedItemsPerBatch": -1,
-    "DefaultScheduleInterval": "PT1H"
+    "EnableScheduler": true,
+    "DefaultTimeoutMinutes": 60
   },
-  "VectorSearch": {
-    "DefaultK": 50,
-    "MaxK": 1000,
+  "VectorSearchSettings": {
     "DefaultDimensions": 1536,
-    "SimilarityMetric": "cosine"
+    "MaxVectorsPerIndex": 50000,
+    "SimilarityMetric": "cosine",
+    "UseHnsw": true,
+    "HnswSettings": {
+      "M": 16,
+      "EfConstruction": 200,
+      "EfSearch": 100,
+      "OversampleMultiplier": 5,
+      "RandomSeed": 42
+    },
+    "HybridSearchSettings": {
+      "DefaultFusionMethod": "RRF",
+      "DefaultVectorWeight": 0.7,
+      "DefaultTextWeight": 0.3,
+      "RrfK": 60
+    }
   },
-  "AzureOpenAI": {
+  "AzureOpenAISettings": {
+    "Endpoint": "https://your-resource.openai.azure.com/",
     "ApiKey": "",
-    "DefaultModel": "text-embedding-ada-002",
-    "DefaultDimensions": 1536,
-    "Timeout": "00:01:00"
+    "DeploymentName": "text-embedding-ada-002",
+    "ModelDimensions": 1536,
+    "TimeoutSeconds": 30
+  },
+  "DiagnosticLogging": {
+    "Enabled": false,
+    "LogDocumentDetails": true,
+    "LogSkillExecution": true,
+    "LogSkillInputPayloads": false,
+    "LogSkillOutputPayloads": false,
+    "LogEnrichedDocumentState": false,
+    "LogFieldMappings": true,
+    "MaxStringLogLength": 500,
+    "IncludeTimings": true
   },
   "Serilog": {
     "MinimumLevel": {
