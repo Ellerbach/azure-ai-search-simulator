@@ -4,7 +4,7 @@
 ### Uses local:// URI scheme to run ONNX-based embedding models
 ### instead of calling Azure OpenAI. Same skillset JSON format.
 ###
-### Reuses the same data/test-docs files as pull-mode-test.http.
+### Reuses the same data-samples/test-docs files as pull-mode-test.http.
 ###
 ### Prerequisites:
 ###   1. Download a model:
@@ -105,7 +105,7 @@ api-key: {{apiKey}}
 ### =====================================================
 ### Step 3: Create Data Source (Local File System)
 ### =====================================================
-### Reuses the same data/test-docs files as pull-mode-test.http.
+### Reuses the same data-samples/test-docs files as pull-mode-test.http.
 
 PUT {{baseUrl}}/datasources/local-embedding-docs?api-version={{apiVersion}}
 Content-Type: application/json
@@ -115,12 +115,12 @@ api-key: {{apiKey}}
   "name": "local-embedding-docs",
   "type": "filesystem",
   "credentials": {
-    "connectionString": "C:/Projets/AzureAISimulator/data"
+    "connectionString": "C:/Projets/AzureAISimulator/data-samples"
   },
   "container": {
     "name": "test-docs"
   },
-  "description": "Local test files for embedding - reuses data/test-docs"
+  "description": "Local test files for embedding - reuses data-samples/test-docs"
 }
 
 
