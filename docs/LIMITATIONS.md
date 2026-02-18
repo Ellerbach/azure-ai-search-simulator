@@ -391,9 +391,9 @@ When moving from the simulator to Azure AI Search:
 1. **Index definitions**: Should work with no changes
 2. **Queries**: Should be fully compatible
 3. **Skillsets**: Should work with no changes, but Document Extraction will work much better with Azure native skills
-5. **Local embeddings**: Replace `local://model-name` resource URIs with your Azure OpenAI endpoint
-6. **Data sources**: Update connection strings to Azure resources if needed
-5. **Authentication**: Update to Azure API keys or managed identity
+4. **Local embeddings**: Replace `local://model-name` resource URIs with your Azure OpenAI endpoint
+5. **Data sources**: Update connection strings to Azure resources if needed
+6. **Authentication**: Update to Azure API keys or managed identity
 
 ---
 

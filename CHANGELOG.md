@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+### Changed
+
+- **Documentation audit**: Updated CONFIGURATION.md, PLAN.md, LIMITATIONS.md, TODO.md, API-REFERENCE.md, and README.md to reflect current codebase. Fixed incorrect section names, property names, and defaults. Added missing Diagnostic Logging section. Noted unenforced configuration limits.
+
 ### Added
 
 - **Local embedding models (Phase 9)**: Generate vector embeddings locally via ONNX Runtime without an Azure OpenAI endpoint. Use the `local://model-name` URI scheme in `AzureOpenAIEmbeddingSkill` resource URIs. Ships with support for all-MiniLM-L6-v2, bge-small-en-v1.5, and all-mpnet-base-v2. Includes `LocalEmbeddingSettings` configuration, `ILocalEmbeddingService` interface, `LocalOnnxEmbeddingService`, `Download-EmbeddingModel.ps1` script, and `local-embedding-sample.http`.
