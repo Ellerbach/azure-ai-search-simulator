@@ -67,7 +67,7 @@ if ([string]::IsNullOrEmpty($OutputDir)) {
     # Default: repo root / src / AzureAISearchSimulator.Api / data / models
     $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
     $repoRoot = Split-Path -Parent $scriptDir
-    $OutputDir = Join-Path $repoRoot "src" "AzureAISearchSimulator.Api" "data" "models"
+    $OutputDir = Join-Path (Join-Path (Join-Path (Join-Path $repoRoot "src") "AzureAISearchSimulator.Api") "data") "models"
 }
 
 $modelInfo = $models[$ModelName]

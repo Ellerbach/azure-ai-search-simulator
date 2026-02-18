@@ -4,6 +4,8 @@
 ### Uses local:// URI scheme to run ONNX-based embedding models
 ### instead of calling Azure OpenAI. Same skillset JSON format.
 ###
+### Reuses the same data/test-docs files as pull-mode-test.http.
+###
 ### Prerequisites:
 ###   1. Download a model:
 ###      pwsh scripts/Download-EmbeddingModel.ps1 -ModelName all-MiniLM-L6-v2
@@ -11,13 +13,17 @@
 ###      dotnet run --project src/AzureAISearchSimulator.Api
 ### ============================================================
 
-@baseUrl = http://localhost:5182
-@apiKey = your-api-key-here
+# Variables loaded from .env file (copy .env.example to .env in the workspace root)
+@baseUrl = {{$dotenv BASE_URL}}
+@apiKey = {{$dotenv ADMIN_KEY}}
+@apiVersion = {{$dotenv API_VERSION}}
 
 
-### --- Create an index with a vector field ---
+### =====================================================
+### Step 1: Create Index with Vector Field
+### =====================================================
 
-PUT {{baseUrl}}/indexes/local-embedding-index?api-version=2024-07-01
+PUT {{baseUrl}}/indexes/local-embedding-index?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{apiKey}}
 
@@ -58,11 +64,13 @@ api-key: {{apiKey}}
 }
 
 
-### --- Create a skillset using local:// embedding ---
-### Note: resourceUri uses "local://all-MiniLM-L6-v2" instead of an Azure OpenAI endpoint.
+### =====================================================
+### Step 2: Create Skillset with local:// Embedding
+### =====================================================
+### resourceUri uses "local://all-MiniLM-L6-v2" instead of an Azure OpenAI endpoint.
 ### The deploymentId is ignored in local mode but kept for JSON compatibility.
 
-PUT {{baseUrl}}/skillsets/local-embedding-skillset?api-version=2024-07-01
+PUT {{baseUrl}}/skillsets/local-embedding-skillset?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{apiKey}}
 
@@ -94,38 +102,44 @@ api-key: {{apiKey}}
 }
 
 
-### --- Create a data source (local filesystem) ---
+### =====================================================
+### Step 3: Create Data Source (Local File System)
+### =====================================================
+### Reuses the same data/test-docs files as pull-mode-test.http.
 
-PUT {{baseUrl}}/datasources/local-docs?api-version=2024-07-01
+PUT {{baseUrl}}/datasources/local-embedding-docs?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{apiKey}}
 
 {
-  "name": "local-docs",
+  "name": "local-embedding-docs",
   "type": "filesystem",
   "credentials": {
-    "connectionString": "."
+    "connectionString": "C:/Projets/AzureAISimulator/data"
   },
   "container": {
-    "name": "sample-documents"
+    "name": "test-docs"
   },
-  "description": "Local file system data source pointing to sample-documents folder"
+  "description": "Local test files for embedding - reuses data/test-docs"
 }
 
 
-### --- Create an indexer that uses the local embedding skillset ---
+### =====================================================
+### Step 4: Create Indexer with Skillset
+### =====================================================
 
-PUT {{baseUrl}}/indexers/local-embedding-indexer?api-version=2024-07-01
+PUT {{baseUrl}}/indexers/local-embedding-indexer?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{apiKey}}
 
 {
   "name": "local-embedding-indexer",
-  "dataSourceName": "local-docs",
+  "dataSourceName": "local-embedding-docs",
   "targetIndexName": "local-embedding-index",
   "skillsetName": "local-embedding-skillset",
+  "description": "Indexer with local ONNX embedding skillset",
   "fieldMappings": [
-    { "sourceFieldName": "metadata_storage_name", "targetFieldName": "id" },
+    { "sourceFieldName": "metadata_storage_path", "targetFieldName": "id" },
     { "sourceFieldName": "metadata_storage_name", "targetFieldName": "title" }
   ],
   "outputFieldMappings": [
@@ -134,47 +148,67 @@ api-key: {{apiKey}}
 }
 
 
-### --- Run the indexer ---
+### =====================================================
+### Step 5: Run Indexer
+### =====================================================
 
-POST {{baseUrl}}/indexers/local-embedding-indexer/run?api-version=2024-07-01
+POST {{baseUrl}}/indexers/local-embedding-indexer/run?api-version={{apiVersion}}
 api-key: {{apiKey}}
 
 
-### --- Check indexer status ---
+### =====================================================
+### Step 6: Check Indexer Status
+### =====================================================
 
-GET {{baseUrl}}/indexers/local-embedding-indexer/status?api-version=2024-07-01
+GET {{baseUrl}}/indexers/local-embedding-indexer/status?api-version={{apiVersion}}
 api-key: {{apiKey}}
 
 
-### --- Search with vector query ---
-### Use the same local model to generate query embeddings on the fly
+### =====================================================
+### Step 7: Search Documents
+### =====================================================
 
-POST {{baseUrl}}/indexes/local-embedding-index/docs/search?api-version=2024-07-01
+POST {{baseUrl}}/indexes/local-embedding-index/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{apiKey}}
 
 {
   "search": "*",
   "count": true,
-  "select": "id, title",
+  "select": "id, title, content",
   "top": 5
 }
 
 
-### --- Verify the skillset was created ---
+### =====================================================
+### Step 8: Search for Specific Content
+### =====================================================
 
-GET {{baseUrl}}/skillsets/local-embedding-skillset?api-version=2024-07-01
+POST {{baseUrl}}/indexes/local-embedding-index/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "search": "machine learning",
+  "count": true,
+  "select": "id, title, content"
+}
+
+
+### =====================================================
+### Verify: Get Skillset
+### =====================================================
+
+GET {{baseUrl}}/skillsets/local-embedding-skillset?api-version={{apiVersion}}
 api-key: {{apiKey}}
 
 
 ### ============================================================
-### Using the default model (omit model name after local://)
+### Alternative: Use default model (omit name after local://)
 ### Falls back to LocalEmbeddingSettings.DefaultModel
 ### ============================================================
 
-### --- Skillset with default local model ---
-
-PUT {{baseUrl}}/skillsets/default-local-skillset?api-version=2024-07-01
+PUT {{baseUrl}}/skillsets/default-local-skillset?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{apiKey}}
 
@@ -203,3 +237,30 @@ api-key: {{apiKey}}
     }
   ]
 }
+
+
+### =====================================================
+### Cleanup
+### =====================================================
+
+### Delete Indexer
+DELETE {{baseUrl}}/indexers/local-embedding-indexer?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+###
+
+### Delete Skillset
+DELETE {{baseUrl}}/skillsets/local-embedding-skillset?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+###
+
+### Delete Data Source
+DELETE {{baseUrl}}/datasources/local-embedding-docs?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+###
+
+### Delete Index
+DELETE {{baseUrl}}/indexes/local-embedding-index?api-version={{apiVersion}}
+api-key: {{apiKey}}

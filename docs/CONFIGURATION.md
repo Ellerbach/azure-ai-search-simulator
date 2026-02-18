@@ -200,6 +200,51 @@ AzureOpenAISettings__ApiKey=your-azure-openai-key
 AzureOpenAISettings__DeploymentName=text-embedding-3-small
 ```
 
+### Local Embedding Settings
+
+Configure local ONNX-based embedding models as an alternative to Azure OpenAI. Use the `local://model-name` URI scheme in skillset definitions to run embeddings locally.
+
+```json
+{
+  "LocalEmbeddingSettings": {
+    "ModelsDirectory": "./data/models",
+    "DefaultModel": "all-MiniLM-L6-v2",
+    "MaximumTokens": 512,
+    "NormalizeEmbeddings": true,
+    "PoolingMode": "Mean",
+    "AutoDownloadModels": false,
+    "CaseSensitive": false
+  }
+}
+```
+
+| Setting | Description | Default |
+| ------- | ----------- | ------- |
+| `ModelsDirectory` | Directory containing ONNX model subdirectories (each with `model.onnx` + `vocab.txt`) | `./data/models` |
+| `DefaultModel` | Model used when `local://` URI has no model name | `all-MiniLM-L6-v2` |
+| `MaximumTokens` | Maximum token count passed to the BERT tokenizer (truncates longer input) | `512` |
+| `NormalizeEmbeddings` | L2-normalize output vectors (recommended for cosine similarity) | `true` |
+| `PoolingMode` | Token aggregation strategy: `Mean` or `Max` | `Mean` |
+| `AutoDownloadModels` | Auto-download models from HuggingFace when not found locally | `false` |
+| `CaseSensitive` | Whether the tokenizer treats input as case-sensitive | `false` |
+
+**Supported models:** `all-MiniLM-L6-v2` (384d), `bge-small-en-v1.5` (384d), `all-mpnet-base-v2` (768d).
+
+**Download models:**
+
+```powershell
+.\scripts\Download-EmbeddingModel.ps1                          # default: all-MiniLM-L6-v2
+.\scripts\Download-EmbeddingModel.ps1 -ModelName bge-small-en-v1.5
+```
+
+**Environment variables:**
+
+```bash
+LocalEmbeddingSettings__ModelsDirectory=./data/models
+LocalEmbeddingSettings__DefaultModel=all-MiniLM-L6-v2
+LocalEmbeddingSettings__AutoDownloadModels=true
+```
+
 ### Authentication Settings
 
 The simulator supports multiple authentication modes that can be enabled simultaneously.

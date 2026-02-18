@@ -125,7 +125,7 @@ The simulator is designed for **development, learning, and testing purposes only
 | Shaper | ✅ Full | - |
 | Document Extraction | ⚠️ Partial | PDF, Office, JSON, text only |
 | Custom Web API | ✅ Full | Calls external HTTP endpoints |
-| Azure OpenAI Embedding | ✅ Full | Requires Azure OpenAI endpoint config |
+| Azure OpenAI Embedding | ✅ Full | Azure OpenAI endpoint or `local://` ONNX mode |
 
 ### Complete Skills Reference
 
@@ -150,7 +150,7 @@ The following table lists **all skills available in Azure AI Search** and their 
 
 | @odata.type | Skill Name | Azure | Simulator | Notes |
 | --- | --- | --- | --- | --- |
-| `#Microsoft.Skills.Text.AzureOpenAIEmbeddingSkill` | Azure OpenAI Embedding | ✅ | ✅ | Requires Azure OpenAI endpoint |
+| `#Microsoft.Skills.Text.AzureOpenAIEmbeddingSkill` | Azure OpenAI Embedding | ✅ | ✅ | Azure OpenAI or `local://` ONNX mode |
 | `#Microsoft.Skills.Custom.AzureContentUnderstandingSkill` | Azure Content Understanding | ✅ | ❌ | Requires Azure AI Document Intelligence |
 | `#Microsoft.Skills.Text.GenAIPromptSkill` | GenAI Prompt | ✅ | ❌ | Requires Azure OpenAI |
 

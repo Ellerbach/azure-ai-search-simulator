@@ -40,6 +40,7 @@ The Azure AI Search Simulator provides a local implementation of the Azure AI Se
 - **Document Cracking**: Extract text/metadata from PDF, Word, Excel, HTML, JSON, CSV, TXT
 - **Skillsets**: Skill pipeline with text transformation and embedding skills
 - **Azure OpenAI Embedding Skill**: Generate vector embeddings via Azure OpenAI API
+- **Local Embedding Models**: Generate embeddings locally via ONNX Runtime (no Azure OpenAI required)
 - **Custom Web API Skill**: Call external REST APIs for custom processing
 - **Error Handling**: OData-compliant error responses
 - **Docker Support**: Containerized deployment with docker-compose
@@ -50,7 +51,6 @@ The Azure AI Search Simulator provides a local implementation of the Azure AI Se
 ### 🔜 Planned (Future Phases)
 
 - Scoring profiles
-- Local embedding models
 - Azure SQL / Cosmos DB connectors
 - Admin UI dashboard
 
@@ -479,6 +479,8 @@ All `.http` sample files use environment variables via `$dotenv`. To get started
 | [synonym-map-sample.http](samples/synonym-map-sample.http) | REST Client file demonstrating synonym maps (CRUD + search expansion), with `[SIM]` / `[AZURE]` pairs |
 | [Compare-Results.ps1](scripts/Compare-Results.ps1) | PowerShell script that automates comparison and shows a color-coded diff of responses |
 | [pull-mode-test.http](samples/pull-mode-test.http) | REST Client file for testing indexer pull mode workflow |
+| [local-embedding-sample.http](samples/local-embedding-sample.http) | REST Client file demonstrating local ONNX embedding skill (no Azure OpenAI required) |
+| [Download-EmbeddingModel.ps1](scripts/Download-EmbeddingModel.ps1) | PowerShell script to download ONNX embedding models from HuggingFace |
 
 ### Comparing Simulator vs Real Azure AI Search
 
