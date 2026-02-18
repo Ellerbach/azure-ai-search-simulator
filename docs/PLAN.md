@@ -1045,7 +1045,7 @@ The simulator will target API version **2024-07-01** as the baseline, with compa
 | ------- | --------------- | --------- | ----- |
 | Vector Search (HNSW) | ✅ | ✅ | HNSWlib.NET for fast ANN search |
 | Filtered Vector Search | ✅ | ✅ | Post-filter pattern with oversampling |
-| Azure OpenAI Embedding | ✅ | ✅ | Requires Azure OpenAI endpoint |
+| Azure OpenAI Embedding | ✅ | ✅ | Azure OpenAI endpoint or `local://` ONNX mode |
 | Local Embedding (ONNX) | N/A | ✅ | Simulator-only: in-process BERT models via `local://` resourceUri |
 | Hybrid Search | ✅ | ✅ | Text + vector with score fusion |
 | Facets | ✅ | ✅ | Count and value facets |

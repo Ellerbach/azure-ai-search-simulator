@@ -235,7 +235,7 @@
 - [ ] Admin web UI
 - [ ] Metrics dashboard
 - [ ] Index import/export
-- [ ] Local embedding models (ML.NET/ONNX)
+- [x] Local embedding models (ONNX Runtime via `local://` URI — Phase 9)
 
 ---
 
@@ -323,6 +323,77 @@
 - [x] Write integration tests for DocumentService + HNSW (10 tests)
 - [x] Write filtered vector search accuracy tests (HnswVectorSearchServiceTests + HnswIntegrationTests)
 - [ ] Add performance benchmarks (10K, 50K, 100K vectors)
+
+---
+
+## Phase 9: Local Embedding Models (Week 13-14) ✅ COMPLETED
+
+### NuGet Packages
+
+- [x] Add `Microsoft.ML.OnnxRuntime` 1.22.0
+- [x] Add `Microsoft.ML.Tokenizers` 1.0.2 (replaced `FastBertTokenizer` which had no stable release)
+
+### Configuration
+
+- [x] Create `LocalEmbeddingSettings` configuration class
+  - [x] `ModelsDirectory` (default: `./data/models`)
+  - [x] `DefaultModel` (default: `all-MiniLM-L6-v2`)
+  - [x] `MaximumTokens` (default: `512`)
+  - [x] `NormalizeEmbeddings` (default: `true`)
+  - [x] `PoolingMode` (default: `Mean`)
+  - [x] `AutoDownloadModels` (default: `false`)
+  - [x] `CaseSensitive` (default: `false`)
+- [x] Add configuration to `appsettings.json`
+- [x] Register services in DI (`Program.cs`)
+
+### Local Embedding Service
+
+- [x] Create `ILocalEmbeddingService` interface
+- [x] Implement `LocalOnnxEmbeddingService`
+  - [x] Load ONNX model + vocab from `data/models/{modelName}/`
+  - [x] Lazy-load and cache `InferenceSession` per model (thread-safe via `ConcurrentDictionary`)
+  - [x] Tokenize input text with `Microsoft.ML.Tokenizers.BertTokenizer`
+  - [x] Run ONNX inference (input_ids, attention_mask, token_type_ids)
+  - [x] Apply mean pooling over token embeddings
+  - [x] L2-normalize the output vector via `TensorPrimitives`
+
+### Skill Executor Integration
+
+- [x] Modify `AzureOpenAIEmbeddingSkillExecutor`
+  - [x] Inject optional `ILocalEmbeddingService?`
+  - [x] Detect `local://` scheme in `resourceUri`
+  - [x] Delegate to `ILocalEmbeddingService` when local mode is detected
+  - [x] Keep existing Azure OpenAI HTTP path unchanged
+
+### Model Management
+
+- [x] Auto-detect available models in `data/models/` directory
+- [x] Provide download instructions in logs when model not found
+- [x] Ship PowerShell script to download models from HuggingFace (`scripts/Download-EmbeddingModel.ps1`)
+- [x] Optionally auto-download from HuggingFace on first use (behind `AutoDownloadModels` flag)
+
+### Docker Support
+
+- [x] Add `/app/models` mount point in Dockerfile
+- [x] Add `LocalEmbeddingSettings__ModelsDirectory` env var
+- [x] Add models volume mount in docker-compose.yml
+
+### Testing
+
+- [x] Write unit tests (39 new tests, 682 total passing)
+  - [x] `local://` URI detection and delegation (case-insensitive)
+  - [x] Cloud URI still routes to Azure OpenAI
+  - [x] Model not found returns helpful error
+  - [x] Settings defaults and validation
+  - [x] Dispose safety
+
+### Documentation & Samples
+
+- [x] Create `samples/local-embedding-sample.http`
+- [x] Update CONFIGURATION.md with `LocalEmbeddingSettings` section
+- [x] Update LIMITATIONS.md skill tables
+- [x] Update README.md features list and samples table
+- [x] Update PLAN.md Phase 9 status and tasks
 
 ---
 
