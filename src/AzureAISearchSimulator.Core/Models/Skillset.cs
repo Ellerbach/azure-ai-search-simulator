@@ -236,6 +236,26 @@ public class Skill
     /// </summary>
     [JsonPropertyName("authIdentity")]
     public ResourceIdentity? AuthIdentity { get; set; }
+
+    /// <summary>
+    /// For DocumentExtractionSkill: The parsing mode (default, text, json).
+    /// Controls how content is extracted from the document.
+    /// </summary>
+    [JsonPropertyName("parsingMode")]
+    public string? SkillParsingMode { get; set; }
+
+    /// <summary>
+    /// For DocumentExtractionSkill: What data to extract (contentAndMetadata, allMetadata).
+    /// </summary>
+    [JsonPropertyName("dataToExtract")]
+    public string? DataToExtract { get; set; }
+
+    /// <summary>
+    /// For DocumentExtractionSkill: Configuration dictionary containing settings like
+    /// imageAction, normalizedImageMaxWidth, normalizedImageMaxHeight.
+    /// </summary>
+    [JsonPropertyName("configuration")]
+    public Dictionary<string, object>? SkillConfiguration { get; set; }
 }
 
 /// <summary>

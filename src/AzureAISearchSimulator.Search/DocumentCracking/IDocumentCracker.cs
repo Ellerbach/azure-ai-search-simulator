@@ -1,6 +1,85 @@
 namespace AzureAISearchSimulator.Search.DocumentCracking;
 
 /// <summary>
+/// Represents an image extracted from a document during cracking.
+/// </summary>
+public class CrackedImage
+{
+    /// <summary>
+    /// Raw image bytes (in original format: PNG, JPEG, etc.).
+    /// </summary>
+    public byte[] Data { get; set; } = Array.Empty<byte>();
+
+    /// <summary>
+    /// MIME content type of the image (e.g., "image/png", "image/jpeg").
+    /// </summary>
+    public string ContentType { get; set; } = "image/unknown";
+
+    /// <summary>
+    /// Width of the image in pixels.
+    /// </summary>
+    public int Width { get; set; }
+
+    /// <summary>
+    /// Height of the image in pixels.
+    /// </summary>
+    public int Height { get; set; }
+
+    /// <summary>
+    /// Page number the image was extracted from (1-based for PDF, 0 for non-paged documents).
+    /// </summary>
+    public int PageNumber { get; set; }
+
+    /// <summary>
+    /// Character offset within the extracted text content where this image was located.
+    /// For PDFs, this is the offset at the end of the page's text.
+    /// </summary>
+    public int ContentOffset { get; set; }
+
+    /// <summary>
+    /// Bounding box of the image on the page (if available).
+    /// Values are in the coordinate system of the source document.
+    /// </summary>
+    public ImageBounds? Bounds { get; set; }
+}
+
+/// <summary>
+/// Bounding box coordinates for an extracted image.
+/// </summary>
+public class ImageBounds
+{
+    /// <summary>
+    /// Left edge X coordinate.
+    /// </summary>
+    public double X { get; set; }
+
+    /// <summary>
+    /// Bottom edge Y coordinate.
+    /// </summary>
+    public double Y { get; set; }
+
+    /// <summary>
+    /// Width of the bounding box.
+    /// </summary>
+    public double Width { get; set; }
+
+    /// <summary>
+    /// Height of the bounding box.
+    /// </summary>
+    public double Height { get; set; }
+
+    /// <summary>
+    /// Width of the page containing the image.
+    /// </summary>
+    public double PageWidth { get; set; }
+
+    /// <summary>
+    /// Height of the page containing the image.
+    /// </summary>
+    public double PageHeight { get; set; }
+}
+
+/// <summary>
 /// Result of document cracking operation.
 /// </summary>
 public class CrackedDocument
@@ -69,6 +148,11 @@ public class CrackedDocument
     /// Error message if extraction failed.
     /// </summary>
     public string? ErrorMessage { get; set; }
+
+    /// <summary>
+    /// Images extracted from the document.
+    /// </summary>
+    public List<CrackedImage> Images { get; set; } = new();
 }
 
 /// <summary>
