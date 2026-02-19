@@ -1,0 +1,12 @@
+{
+  "@odata.context": "https://localhost/indexes('hotels')/$metadata#docs(*)",
+  "value": [
+    {
+      "@search.score": 1.788637638092041,
+      "hotelId": "1",
+      "hotelName": "Grand Azure Hotel",
+      "category": "Luxury",
+      "rating": 4.9
+    }
+  ]
+}
