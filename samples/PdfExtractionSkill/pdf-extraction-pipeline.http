@@ -1,0 +1,400 @@
+###############################################################################
+# PDF Extraction Pipeline — Full Integration Example
+#
+# Complete pipeline that indexes PDF files from samples/data/pdfs using:
+#   1. FileDataSkill (C#)  — reads file from disk → base64 file_data
+#   2. PdfExtractionSkill (Python/PDFBox) — extracts text, metadata, chunks
+#
+# Prerequisites:
+#   1. Start the Azure AI Search Simulator:
+#      cd src/AzureAISearchSimulator.Api && dotnet run --urls "http://localhost:5250"
+#
+#   2. Start the FileData skill (with BasePath pointing to the pdfs folder):
+#      cd samples/FileDataSkillSample
+#      dotnet run -- --FileData:BasePath="C:/Projets/AzureAISimulator/samples/data/pdfs"
+#
+#   3. Start the PDF Extraction skill:
+#      cd samples/PdfExtractionSkill
+#      pip install -r requirements.txt
+#      python app.py
+#
+#   4. Ensure a JDK is installed (https://adoptium.net/)
+#
+#   5. Ensure some PDFs exist in samples/data/pdfs/
+#      (run the PdfExtractionNotebook cell 2 to download sample PDFs)
+#
+###############################################################################
+
+# Variables loaded from .env file (copy .env.example to .env in the workspace root)
+@baseUrl = {{$dotenv BASE_URL}}
+@apiVersion = {{$dotenv API_VERSION}}
+@apiKey = {{$dotenv ADMIN_KEY}}
+
+# The connectionString for the filesystem data source.
+# This is the root directory; the container "name" below is a sub-folder inside it.
+@dataSourceRoot = C:/Projets/AzureAISimulator/samples/data
+@containerName = pdfs
+
+# Custom skill endpoints
+@fileDataSkillUrl = http://localhost:5270
+@pdfExtractionSkillUrl = http://localhost:5280
+
+
+###############################################################################
+# Step 0: Health checks — verify all services are running
+###############################################################################
+
+### Simulator health
+GET {{baseUrl}}/indexes?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+### FileData Skill health
+GET {{fileDataSkillUrl}}/api/skills/health
+
+### PDF Extraction Skill health
+GET {{pdfExtractionSkillUrl}}/api/skills/health
+
+
+###############################################################################
+# Step 1: Create Index
+###############################################################################
+
+### Create the pdf-documents index
+PUT {{baseUrl}}/indexes/pdf-documents?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "name": "pdf-documents",
+  "fields": [
+    { "name": "id", "type": "Edm.String", "key": true, "filterable": true },
+    { "name": "content", "type": "Edm.String", "searchable": true, "analyzer": "en.lucene" },
+    { "name": "metadata_storage_path", "type": "Edm.String", "filterable": true },
+    { "name": "metadata_storage_name", "type": "Edm.String", "filterable": true, "sortable": true },
+
+    // PDF metadata from PDFBox extraction
+    { "name": "page_count", "type": "Edm.Int32", "filterable": true, "sortable": true },
+    { "name": "word_count", "type": "Edm.Int32", "filterable": true, "sortable": true },
+    { "name": "character_count", "type": "Edm.Int32", "filterable": true, "sortable": true },
+    { "name": "title", "type": "Edm.String", "searchable": true, "filterable": true },
+    { "name": "author", "type": "Edm.String", "filterable": true, "facetable": true },
+
+    // Chunks from the extraction skill
+    { "name": "chunks", "type": "Collection(Edm.String)", "searchable": true },
+    { "name": "chunk_count", "type": "Edm.Int32", "filterable": true, "sortable": true }
+  ]
+}
+
+
+###############################################################################
+# Step 2: Create Skillset — FileData → PDF Extraction pipeline
+###############################################################################
+
+### Create the pdf-extraction-pipeline skillset
+PUT {{baseUrl}}/skillsets/pdf-extraction-pipeline?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "name": "pdf-extraction-pipeline",
+  "description": "Reads PDF files from disk, extracts text and metadata with PDFBox, and chunks the content",
+  "skills": [
+    {
+      "@odata.type": "#Microsoft.Skills.Custom.WebApiSkill",
+      "name": "file-data-skill",
+      "description": "Reads the file from disk and returns base64-encoded file_data",
+      "uri": "http://localhost:5270/api/skills/file-data",
+      "httpMethod": "POST",
+      "timeout": "PT60S",
+      "batchSize": 1,
+      "context": "/document",
+      "inputs": [
+        {
+          "name": "documentId",
+          "source": "/document/metadata_storage_name"
+        },
+        {
+          "name": "contentPath",
+          "source": "/document/metadata_storage_path"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "file_data",
+          "targetName": "file_data"
+        }
+      ]
+    },
+    {
+      "@odata.type": "#Microsoft.Skills.Custom.WebApiSkill",
+      "name": "pdf-extraction-skill",
+      "description": "Extracts text, metadata, and chunks from the PDF using PDFBox",
+      "uri": "http://localhost:5280/api/skills/pdf-extraction",
+      "httpMethod": "POST",
+      "timeout": "PT120S",
+      "batchSize": 1,
+      "context": "/document",
+      "inputs": [
+        {
+          "name": "file_data",
+          "source": "/document/file_data"
+        },
+        {
+          "name": "documentId",
+          "source": "/document/metadata_storage_name"
+        }
+      ],
+      "outputs": [
+        { "name": "content", "targetName": "extracted_content" },
+        { "name": "page_count", "targetName": "extracted_page_count" },
+        { "name": "word_count", "targetName": "extracted_word_count" },
+        { "name": "character_count", "targetName": "extracted_character_count" },
+        { "name": "metadata_title", "targetName": "extracted_title" },
+        { "name": "metadata_author", "targetName": "extracted_author" },
+        { "name": "chunks", "targetName": "extracted_chunks" },
+        { "name": "chunk_count", "targetName": "extracted_chunk_count" }
+      ]
+    }
+  ]
+}
+
+
+###############################################################################
+# Step 3: Create Data Source (local file system → samples/data/pdfs)
+###############################################################################
+
+### Create filesystem data source pointing to the PDFs folder
+PUT {{baseUrl}}/datasources/pdf-files?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "name": "pdf-files",
+  "type": "filesystem",
+  "credentials": {
+    "connectionString": "path={{dataSourceRoot}}"
+  },
+  "container": {
+    "name": "{{containerName}}"
+  },
+  "description": "Local PDF files in samples/data/pdfs"
+}
+
+
+###############################################################################
+# Step 4: Create Indexer — ties index, data source, and skillset together
+###############################################################################
+
+### Create the PDF indexer
+PUT {{baseUrl}}/indexers/pdf-indexer?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "name": "pdf-indexer",
+  "description": "Indexes PDF files using FileData + PDFBox extraction skills",
+  "dataSourceName": "pdf-files",
+  "targetIndexName": "pdf-documents",
+  "skillsetName": "pdf-extraction-pipeline",
+  "parameters": {
+    "batchSize": 1,
+    "maxFailedItems": 5,
+    "configuration": {
+      "parsingMode": "default"
+    }
+  },
+  "fieldMappings": [
+    {
+      "sourceFieldName": "metadata_storage_path",
+      "targetFieldName": "id"
+    },
+    {
+      "sourceFieldName": "metadata_storage_path",
+      "targetFieldName": "metadata_storage_path"
+    },
+    {
+      "sourceFieldName": "metadata_storage_name",
+      "targetFieldName": "metadata_storage_name"
+    }
+  ],
+  "outputFieldMappings": [
+    {
+      "sourceFieldName": "/document/extracted_content",
+      "targetFieldName": "content"
+    },
+    {
+      "sourceFieldName": "/document/extracted_page_count",
+      "targetFieldName": "page_count"
+    },
+    {
+      "sourceFieldName": "/document/extracted_word_count",
+      "targetFieldName": "word_count"
+    },
+    {
+      "sourceFieldName": "/document/extracted_character_count",
+      "targetFieldName": "character_count"
+    },
+    {
+      "sourceFieldName": "/document/extracted_title",
+      "targetFieldName": "title"
+    },
+    {
+      "sourceFieldName": "/document/extracted_author",
+      "targetFieldName": "author"
+    },
+    {
+      "sourceFieldName": "/document/extracted_chunks",
+      "targetFieldName": "chunks"
+    },
+    {
+      "sourceFieldName": "/document/extracted_chunk_count",
+      "targetFieldName": "chunk_count"
+    }
+  ]
+}
+
+
+###############################################################################
+# Step 5: Run the Indexer
+###############################################################################
+
+### Run the indexer
+POST {{baseUrl}}/indexers/pdf-indexer/run?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+### Check indexer status
+GET {{baseUrl}}/indexers/pdf-indexer/status?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+
+###############################################################################
+# Step 6: Query the indexed PDF documents
+###############################################################################
+
+### Count documents
+GET {{baseUrl}}/indexes/pdf-documents/docs/$count?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+### Search all — overview
+POST {{baseUrl}}/indexes/pdf-documents/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "search": "*",
+  "count": true,
+  "select": "id,metadata_storage_name,title,author,page_count,word_count,chunk_count",
+  "top": 20
+}
+
+### Full-text search across extracted PDF content
+POST {{baseUrl}}/indexes/pdf-documents/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "search": "employee benefits",
+  "count": true,
+  "select": "id,metadata_storage_name,title,page_count,word_count",
+  "highlight": "content",
+  "highlightPreTag": "<b>",
+  "highlightPostTag": "</b>",
+  "top": 10
+}
+
+### Search across chunks
+POST {{baseUrl}}/indexes/pdf-documents/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "search": "health plan",
+  "searchFields": "chunks",
+  "count": true,
+  "select": "id,metadata_storage_name,title,chunk_count",
+  "top": 10
+}
+
+### Filter by page count
+POST {{baseUrl}}/indexes/pdf-documents/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "search": "*",
+  "filter": "page_count gt 5",
+  "orderby": "page_count desc",
+  "select": "id,metadata_storage_name,title,page_count,word_count",
+  "count": true
+}
+
+### Filter by author
+POST {{baseUrl}}/indexes/pdf-documents/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "search": "*",
+  "filter": "author ne null",
+  "select": "id,metadata_storage_name,title,author",
+  "count": true
+}
+
+### Get a single document by ID (use a known id from the search results above)
+# The id is the base64-encoded relative path, e.g. "employee_handbook.pdf"
+# ZW1wbG95ZWVfaGFuZGJvb2sucGRm = base64("employee_handbook.pdf")
+GET {{baseUrl}}/indexes/pdf-documents/docs/ZW1wbG95ZWVfaGFuZGJvb2sucGRm?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+### Get full content + chunks for a document
+POST {{baseUrl}}/indexes/pdf-documents/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "search": "*",
+  "filter": "metadata_storage_name eq 'employee_handbook.pdf'",
+  "select": "id,metadata_storage_name,title,author,page_count,word_count,character_count,chunk_count,chunks"
+}
+
+
+###############################################################################
+# Step 7: List created resources
+###############################################################################
+
+### List all indexes
+GET {{baseUrl}}/indexes?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+### List all indexers
+GET {{baseUrl}}/indexers?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+### List all data sources
+GET {{baseUrl}}/datasources?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+### List all skillsets
+GET {{baseUrl}}/skillsets?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+
+###############################################################################
+# Cleanup (uncomment to delete)
+###############################################################################
+
+### Delete indexer
+# DELETE {{baseUrl}}/indexers/pdf-indexer?api-version={{apiVersion}}
+# api-key: {{apiKey}}
+
+### Delete skillset
+# DELETE {{baseUrl}}/skillsets/pdf-extraction-pipeline?api-version={{apiVersion}}
+# api-key: {{apiKey}}
+
+### Delete data source
+# DELETE {{baseUrl}}/datasources/pdf-files?api-version={{apiVersion}}
+# api-key: {{apiKey}}
+
+### Delete index
+# DELETE {{baseUrl}}/indexes/pdf-documents?api-version={{apiVersion}}
+# api-key: {{apiKey}}
