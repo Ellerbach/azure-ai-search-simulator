@@ -1,0 +1,101 @@
+###############################################################################
+# File Data Skill — Test Requests
+#
+# Prerequisites:
+#   cd samples/FileDataSkillSample && dotnet run
+###############################################################################
+
+@skillUrl = http://localhost:5270
+
+###############################################################################
+# Health check
+###############################################################################
+
+### Health
+GET {{skillUrl}}/api/skills/health
+
+###############################################################################
+# Test with a local file (adjust the path to an existing file)
+###############################################################################
+
+### File Data — single record
+POST {{skillUrl}}/api/skills/file-data
+Content-Type: application/json
+
+{
+  "values": [
+    {
+      "recordId": "1",
+      "data": {
+        "documentId": "doc1",
+        "contentPath": "C:/Projets/AzureAISimulator/data-samples/test-docs/doc1.txt"
+      }
+    }
+  ]
+}
+
+###############################################################################
+# Test with multiple records
+###############################################################################
+
+### File Data — batch
+POST {{skillUrl}}/api/skills/file-data
+Content-Type: application/json
+
+{
+  "values": [
+    {
+      "recordId": "1",
+      "data": {
+        "documentId": "doc1",
+        "contentPath": "C:/Projets/AzureAISimulator/data-samples/test-docs/doc1.txt"
+      }
+    },
+    {
+      "recordId": "2",
+      "data": {
+        "documentId": "doc2",
+        "contentPath": "C:/Projets/AzureAISimulator/data-samples/test-docs/doc2.txt"
+      }
+    }
+  ]
+}
+
+###############################################################################
+# Test error case — missing file
+###############################################################################
+
+### File Data — file not found
+POST {{skillUrl}}/api/skills/file-data
+Content-Type: application/json
+
+{
+  "values": [
+    {
+      "recordId": "err-1",
+      "data": {
+        "documentId": "nonexistent",
+        "contentPath": "C:/does-not-exist/fake.pdf"
+      }
+    }
+  ]
+}
+
+###############################################################################
+# Test error case — missing contentPath
+###############################################################################
+
+### File Data — missing contentPath
+POST {{skillUrl}}/api/skills/file-data
+Content-Type: application/json
+
+{
+  "values": [
+    {
+      "recordId": "err-2",
+      "data": {
+        "documentId": "no-path"
+      }
+    }
+  ]
+}

@@ -1,0 +1,143 @@
+###############################################################################
+# PDF Extraction Skill — Test Requests
+#
+# Prerequisites:
+#   1. Start the FileData skill:
+#      cd samples/FileDataSkillSample && dotnet run
+#
+#   2. Start this skill:
+#      cd samples/PdfExtractionSkill
+#      pip install -r requirements.txt
+#      python app.py
+#
+#   3. Ensure a JDK is installed (https://adoptium.net/)
+###############################################################################
+
+@fileDataUrl = http://localhost:5270
+@extractionUrl = http://localhost:5280
+
+###############################################################################
+# Health checks
+###############################################################################
+
+### FileData Skill health
+GET {{fileDataUrl}}/api/skills/health
+
+### PDF Extraction Skill health
+GET {{extractionUrl}}/api/skills/health
+
+###############################################################################
+# Step 1 — Get file_data from the FileData skill
+# (Copy the file_data object from the response into Step 2)
+###############################################################################
+
+### Get base64 file_data for a PDF
+POST {{fileDataUrl}}/api/skills/file-data
+Content-Type: application/json
+
+{
+  "values": [
+    {
+      "recordId": "1",
+      "data": {
+        "documentId": "employee_handbook",
+        "contentPath": "C:/Projets/AzureAISimulator/samples/data/pdfs/employee_handbook.pdf"
+      }
+    }
+  ]
+}
+
+###############################################################################
+# Step 2 — Extract PDF text (paste file_data from step 1)
+# In a real pipeline, the indexer chains these automatically.
+###############################################################################
+
+### Extract from inline base64 (small test — a minimal PDF)
+POST {{extractionUrl}}/api/skills/pdf-extraction
+Content-Type: application/json
+
+{
+  "values": [
+    {
+      "recordId": "1",
+      "data": {
+        "documentId": "test-minimal",
+        "file_data": {
+          "$type": "file",
+          "data": "JVBERi0xLjEKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCA2MTIgNzkyXQovQ29udGVudHMgNCAwIFIgL1Jlc291cmNlcyA8PCAvRm9udCA8PCAvRjEgNSAwIFIgPj4gPj4gPj4KZW5kb2JqCjQgMCBvYmoKPDwgL0xlbmd0aCA0NCA+PgpzdHJlYW0KQlQgL0YxIDI0IFRmIDEwMCA3MDAgVGQgKEhlbGxvIFdvcmxkISkgVGogRVQKZW5kc3RyZWFtCmVuZG9iago1IDAgb2JqCjw8IC9UeXBlIC9Gb250IC9TdWJ0eXBlIC9UeXBlMSAvQmFzZUZvbnQgL0hlbHZldGljYSA+PgplbmRvYmoKeHJlZgowIDYKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDA5IDAwMDAwIG4gCjAwMDAwMDAwNjMgMDAwMDAgbiAKMDAwMDAwMDEyMCAwMDAwMCBuIAowMDAwMDAwMzAyIDAwMDAwIG4gCjAwMDAwMDAzOTggMDAwMDAgbiAKdHJhaWxlcgo8PCAvU2l6ZSA2IC9Sb290IDEgMCBSID4+CnN0YXJ0eHJlZgo0OTEKJSVFT0YK"
+        }
+      }
+    }
+  ]
+}
+
+###############################################################################
+# Test error cases
+###############################################################################
+
+### Missing file_data
+POST {{extractionUrl}}/api/skills/pdf-extraction
+Content-Type: application/json
+
+{
+  "values": [
+    {
+      "recordId": "err-1",
+      "data": {
+        "documentId": "no-file-data"
+      }
+    }
+  ]
+}
+
+### Empty base64
+POST {{extractionUrl}}/api/skills/pdf-extraction
+Content-Type: application/json
+
+{
+  "values": [
+    {
+      "recordId": "err-2",
+      "data": {
+        "documentId": "empty-data",
+        "file_data": {
+          "$type": "file",
+          "data": ""
+        }
+      }
+    }
+  ]
+}
+
+###############################################################################
+# Batch — multiple records
+###############################################################################
+
+### Batch extraction
+POST {{extractionUrl}}/api/skills/pdf-extraction
+Content-Type: application/json
+
+{
+  "values": [
+    {
+      "recordId": "batch-1",
+      "data": {
+        "documentId": "doc-a",
+        "file_data": {
+          "$type": "file",
+          "data": "JVBERi0xLjEKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCA2MTIgNzkyXQovQ29udGVudHMgNCAwIFIgL1Jlc291cmNlcyA8PCAvRm9udCA8PCAvRjEgNSAwIFIgPj4gPj4gPj4KZW5kb2JqCjQgMCBvYmoKPDwgL0xlbmd0aCA0NCA+PgpzdHJlYW0KQlQgL0YxIDI0IFRmIDEwMCA3MDAgVGQgKEhlbGxvIFdvcmxkISkgVGogRVQKZW5kc3RyZWFtCmVuZG9iago1IDAgb2JqCjw8IC9UeXBlIC9Gb250IC9TdWJ0eXBlIC9UeXBlMSAvQmFzZUZvbnQgL0hlbHZldGljYSA+PgplbmRvYmoKeHJlZgowIDYKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDA5IDAwMDAwIG4gCjAwMDAwMDAwNjMgMDAwMDAgbiAKMDAwMDAwMDEyMCAwMDAwMCBuIAowMDAwMDAwMzAyIDAwMDAwIG4gCjAwMDAwMDAzOTggMDAwMDAgbiAKdHJhaWxlcgo8PCAvU2l6ZSA2IC9Sb290IDEgMCBSID4+CnN0YXJ0eHJlZgo0OTEKJSVFT0YK"
+        }
+      }
+    },
+    {
+      "recordId": "batch-2",
+      "data": {
+        "documentId": "doc-b",
+        "file_data": {
+          "$type": "file",
+          "data": "JVBERi0xLjEKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCA2MTIgNzkyXQovQ29udGVudHMgNCAwIFIgL1Jlc291cmNlcyA8PCAvRm9udCA8PCAvRjEgNSAwIFIgPj4gPj4gPj4KZW5kb2JqCjQgMCBvYmoKPDwgL0xlbmd0aCA0NCA+PgpzdHJlYW0KQlQgL0YxIDI0IFRmIDEwMCA3MDAgVGQgKEhlbGxvIFdvcmxkISkgVGogRVQKZW5kc3RyZWFtCmVuZG9iago1IDAgb2JqCjw8IC9UeXBlIC9Gb250IC9TdWJ0eXBlIC9UeXBlMSAvQmFzZUZvbnQgL0hlbHZldGljYSA+PgplbmRvYmoKeHJlZgowIDYKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDA5IDAwMDAwIG4gCjAwMDAwMDAwNjMgMDAwMDAgbiAKMDAwMDAwMDEyMCAwMDAwMCBuIAowMDAwMDAwMzAyIDAwMDAwIG4gCjAwMDAwMDAzOTggMDAwMDAgbiAKdHJhaWxlcgo8PCAvU2l6ZSA2IC9Sb290IDEgMCBSID4+CnN0YXJ0eHJlZgo0OTEKJSVFT0YK"
+        }
+      }
+    }
+  ]
+}

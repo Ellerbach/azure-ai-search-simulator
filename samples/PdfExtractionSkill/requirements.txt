@@ -1,0 +1,11 @@
+# PDF Extraction Custom Skill (Python + PDFBox)
+#
+# A custom skill for Azure AI Search that receives base64-encoded file_data
+# (typically from the FileDataSkillSample), extracts text and metadata using
+# Apache PDFBox via JPype, and optionally chunks the text.
+#
+# Output is compatible with Azure AI Search index field mappings.
+
+flask>=3.1
+jpype1>=1.5
+gunicorn>=23.0
