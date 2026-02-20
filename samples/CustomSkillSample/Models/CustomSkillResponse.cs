@@ -27,28 +27,14 @@ public class CustomSkillOutputRecord
     public Dictionary<string, object?> Data { get; set; } = new();
 
     /// <summary>
-    /// Array of errors that occurred processing this record.
+    /// Array of error messages that occurred processing this record.
+    /// Must be plain strings — the simulator deserializes them as List&lt;string&gt;.
     /// </summary>
-    public List<CustomSkillMessage> Errors { get; set; } = new();
+    public List<string> Errors { get; set; } = new();
 
     /// <summary>
-    /// Array of warnings for this record.
+    /// Array of warning messages for this record.
+    /// Must be plain strings — the simulator deserializes them as List&lt;string&gt;.
     /// </summary>
-    public List<CustomSkillMessage> Warnings { get; set; } = new();
-}
-
-/// <summary>
-/// An error or warning message from skill processing.
-/// </summary>
-public class CustomSkillMessage
-{
-    /// <summary>
-    /// The error or warning message.
-    /// </summary>
-    public string Message { get; set; } = string.Empty;
-
-    /// <summary>
-    /// Optional HTTP status code (for errors).
-    /// </summary>
-    public int? StatusCode { get; set; }
+    public List<string> Warnings { get; set; } = new();
 }

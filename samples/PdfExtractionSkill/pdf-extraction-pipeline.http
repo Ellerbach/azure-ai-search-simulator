@@ -68,19 +68,19 @@ api-key: {{apiKey}}
   "name": "pdf-documents",
   "fields": [
     { "name": "id", "type": "Edm.String", "key": true, "filterable": true },
-    { "name": "content", "type": "Edm.String", "searchable": true, "analyzer": "en.lucene" },
-    { "name": "metadata_storage_path", "type": "Edm.String", "filterable": true },
+    { "name": "content", "type": "Edm.String", "searchable": true, "filterable": false, "sortable": false, "facetable": false, "analyzer": "en.lucene" },
+    { "name": "metadata_storage_path", "type": "Edm.String", "filterable": true, "sortable": false },
     { "name": "metadata_storage_name", "type": "Edm.String", "filterable": true, "sortable": true },
 
     // PDF metadata from PDFBox extraction
     { "name": "page_count", "type": "Edm.Int32", "filterable": true, "sortable": true },
     { "name": "word_count", "type": "Edm.Int32", "filterable": true, "sortable": true },
     { "name": "character_count", "type": "Edm.Int32", "filterable": true, "sortable": true },
-    { "name": "title", "type": "Edm.String", "searchable": true, "filterable": true },
-    { "name": "author", "type": "Edm.String", "filterable": true, "facetable": true },
+    { "name": "title", "type": "Edm.String", "searchable": true, "filterable": true, "sortable": false },
+    { "name": "author", "type": "Edm.String", "filterable": true, "facetable": true, "sortable": false },
 
     // Chunks from the extraction skill
-    { "name": "chunks", "type": "Collection(Edm.String)", "searchable": true },
+    { "name": "chunks", "type": "Collection(Edm.String)", "searchable": true, "filterable": false, "facetable": false },
     { "name": "chunk_count", "type": "Edm.Int32", "filterable": true, "sortable": true }
   ]
 }
@@ -384,17 +384,17 @@ api-key: {{apiKey}}
 ###############################################################################
 
 ### Delete indexer
-# DELETE {{baseUrl}}/indexers/pdf-indexer?api-version={{apiVersion}}
-# api-key: {{apiKey}}
+DELETE {{baseUrl}}/indexers/pdf-indexer?api-version={{apiVersion}}
+api-key: {{apiKey}}
 
 ### Delete skillset
-# DELETE {{baseUrl}}/skillsets/pdf-extraction-pipeline?api-version={{apiVersion}}
-# api-key: {{apiKey}}
+DELETE {{baseUrl}}/skillsets/pdf-extraction-pipeline?api-version={{apiVersion}}
+api-key: {{apiKey}}
 
 ### Delete data source
-# DELETE {{baseUrl}}/datasources/pdf-files?api-version={{apiVersion}}
-# api-key: {{apiKey}}
+DELETE {{baseUrl}}/datasources/pdf-files?api-version={{apiVersion}}
+api-key: {{apiKey}}
 
 ### Delete index
-# DELETE {{baseUrl}}/indexes/pdf-documents?api-version={{apiVersion}}
-# api-key: {{apiKey}}
+DELETE {{baseUrl}}/indexes/pdf-documents?api-version={{apiVersion}}
+api-key: {{apiKey}}

@@ -67,11 +67,7 @@ public class FileDataController : ControllerBase
 
                 if (string.IsNullOrWhiteSpace(contentPath))
                 {
-                    outputRecord.Errors.Add(new CustomSkillMessage
-                    {
-                        Message = "Missing required input 'contentPath'.",
-                        StatusCode = 400
-                    });
+                    outputRecord.Errors.Add("Missing required input 'contentPath'.");
                     response.Values.Add(outputRecord);
                     continue;
                 }
@@ -84,11 +80,7 @@ public class FileDataController : ControllerBase
                 if (!System.IO.File.Exists(filePath))
                 {
                     _logger.LogWarning("File not found: {FilePath} (documentId={DocumentId})", filePath, documentId);
-                    outputRecord.Errors.Add(new CustomSkillMessage
-                    {
-                        Message = $"File not found: {filePath}",
-                        StatusCode = 404
-                    });
+                    outputRecord.Errors.Add($"File not found: {filePath}");
                     response.Values.Add(outputRecord);
                     continue;
                 }
@@ -111,11 +103,7 @@ public class FileDataController : ControllerBase
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error processing record {RecordId}", record.RecordId);
-                outputRecord.Errors.Add(new CustomSkillMessage
-                {
-                    Message = $"Error reading file: {ex.Message}",
-                    StatusCode = 500
-                });
+                outputRecord.Errors.Add($"Error reading file: {ex.Message}");
             }
 
             response.Values.Add(outputRecord);

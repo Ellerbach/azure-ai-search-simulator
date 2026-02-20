@@ -393,7 +393,7 @@ def pdf_extraction():
             file_data = data.get("file_data")
             if not file_data or not isinstance(file_data, dict):
                 output["errors"].append(
-                    {"message": "Missing required input 'file_data' (expected {\"$type\": \"file\", \"data\": \"<base64>\"})", "statusCode": 400}
+                    "Missing required input 'file_data' (expected {\"$type\": \"file\", \"data\": \"<base64>\"})"
                 )
                 results.append(output)
                 continue
@@ -401,7 +401,7 @@ def pdf_extraction():
             b64_data = file_data.get("data", "")
             if not b64_data:
                 output["errors"].append(
-                    {"message": "file_data.data is empty — no base64 content provided.", "statusCode": 400}
+                    "file_data.data is empty — no base64 content provided."
                 )
                 results.append(output)
                 continue
@@ -410,9 +410,7 @@ def pdf_extraction():
             try:
                 pdf_bytes = base64.b64decode(b64_data)
             except Exception as exc:
-                output["errors"].append(
-                    {"message": f"Invalid base64 in file_data.data: {exc}", "statusCode": 400}
-                )
+                output["errors"].append(f"Invalid base64 in file_data.data: {exc}")
                 results.append(output)
                 continue
 
@@ -463,7 +461,7 @@ def pdf_extraction():
 
         except Exception as exc:
             logger.exception("Error processing recordId=%s", record_id)
-            output["errors"].append({"message": f"PDF extraction failed: {exc}", "statusCode": 500})
+            output["errors"].append(f"PDF extraction failed: {exc}")
 
         results.append(output)
 

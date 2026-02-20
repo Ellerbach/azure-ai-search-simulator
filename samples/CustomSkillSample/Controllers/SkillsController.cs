@@ -49,11 +49,7 @@ public class SkillsController : ControllerBase
             }
             catch (Exception ex)
             {
-                outputRecord.Errors.Add(new CustomSkillMessage
-                {
-                    Message = $"Error processing text stats: {ex.Message}",
-                    StatusCode = 500
-                });
+                outputRecord.Errors.Add($"Error processing text stats: {ex.Message}");
             }
 
             response.Values.Add(outputRecord);
@@ -110,11 +106,7 @@ public class SkillsController : ControllerBase
             }
             catch (Exception ex)
             {
-                outputRecord.Errors.Add(new CustomSkillMessage
-                {
-                    Message = $"Error extracting keywords: {ex.Message}",
-                    StatusCode = 500
-                });
+                outputRecord.Errors.Add($"Error extracting keywords: {ex.Message}");
             }
 
             response.Values.Add(outputRecord);
@@ -180,11 +172,7 @@ public class SkillsController : ControllerBase
             }
             catch (Exception ex)
             {
-                outputRecord.Errors.Add(new CustomSkillMessage
-                {
-                    Message = $"Error analyzing sentiment: {ex.Message}",
-                    StatusCode = 500
-                });
+                outputRecord.Errors.Add($"Error analyzing sentiment: {ex.Message}");
             }
 
             response.Values.Add(outputRecord);
@@ -254,11 +242,7 @@ public class SkillsController : ControllerBase
             }
             catch (Exception ex)
             {
-                outputRecord.Errors.Add(new CustomSkillMessage
-                {
-                    Message = $"Error detecting PII: {ex.Message}",
-                    StatusCode = 500
-                });
+                outputRecord.Errors.Add($"Error detecting PII: {ex.Message}");
             }
 
             response.Values.Add(outputRecord);
@@ -300,11 +284,7 @@ public class SkillsController : ControllerBase
             }
             catch (Exception ex)
             {
-                outputRecord.Errors.Add(new CustomSkillMessage
-                {
-                    Message = $"Error summarizing text: {ex.Message}",
-                    StatusCode = 500
-                });
+                outputRecord.Errors.Add($"Error summarizing text: {ex.Message}");
             }
 
             response.Values.Add(outputRecord);
