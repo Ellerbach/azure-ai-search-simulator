@@ -1,4 +1,6 @@
 using PhotoSauce.MagicScaler;
+using PhotoSauce.NativeCodecs.Libjpeg;
+using PhotoSauce.NativeCodecs.Libpng;
 
 namespace AzureAISearchSimulator.Search.DocumentCracking;
 
@@ -9,6 +11,25 @@ namespace AzureAISearchSimulator.Search.DocumentCracking;
 /// </summary>
 public static class ImageNormalizer
 {
+    private static int _codecsConfigured;
+
+    /// <summary>
+    /// Ensures cross-platform native codecs (libpng, libjpeg) are registered.
+    /// On Windows MagicScaler can use WIC, but on Linux these are required.
+    /// Safe to call multiple times — configures only once.
+    /// </summary>
+    private static void EnsureCodecsConfigured()
+    {
+        if (Interlocked.CompareExchange(ref _codecsConfigured, 1, 0) == 0)
+        {
+            CodecManager.Configure(codecs =>
+            {
+                codecs.UseLibpng();
+                codecs.UseLibjpeg();
+            });
+        }
+    }
+
     /// <summary>
     /// Normalizes a CrackedImage: converts to JPEG, resizes to max dimensions, reads EXIF rotation.
     /// Returns a dictionary matching the Azure normalized_images schema.
@@ -25,6 +46,9 @@ public static class ImageNormalizer
         // Clamp max dimensions to Azure's allowed range
         maxWidth = Math.Clamp(maxWidth, 50, 10000);
         maxHeight = Math.Clamp(maxHeight, 50, 10000);
+
+        // Ensure native codecs are registered (required on Linux)
+        EnsureCodecsConfigured();
 
         // Read original image metadata (dimensions + EXIF orientation)
         var info = ImageFileInfo.Load(image.Data);

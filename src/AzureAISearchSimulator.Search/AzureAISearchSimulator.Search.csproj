@@ -31,6 +31,8 @@
     <PackageReference Include="HtmlAgilityPack" Version="1.11.72" />
     <!-- Image Normalization -->
     <PackageReference Include="PhotoSauce.MagicScaler" Version="0.15.0" />
+    <PackageReference Include="PhotoSauce.NativeCodecs.Libjpeg" Version="3.0.4-preview1" />
+    <PackageReference Include="PhotoSauce.NativeCodecs.Libpng" Version="1.6.44-preview1" />
   </ItemGroup>
 
   <ItemGroup>
