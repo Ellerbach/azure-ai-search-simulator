@@ -88,6 +88,42 @@ public class WordDocCracker : IDocumentCracker
                 result.PageCount = sectionProps;
             }
 
+            // Extract embedded images
+            var mainPart = doc.MainDocumentPart;
+            if (mainPart != null)
+            {
+                int imageIndex = 0;
+                foreach (var imagePart in mainPart.ImageParts)
+                {
+                    try
+                    {
+                        using var imageStream = imagePart.GetStream();
+                        using var ms = new MemoryStream();
+                        imageStream.CopyTo(ms);
+                        var imageBytes = ms.ToArray();
+
+                        var crackedImage = new CrackedImage
+                        {
+                            Data = imageBytes,
+                            ContentType = imagePart.ContentType,
+                            PageNumber = 0 // Word is not page-based
+                        };
+
+                        // Try to read pixel dimensions from image header
+                        ReadImageDimensions(imageBytes, crackedImage);
+
+                        result.Images.Add(crackedImage);
+                        imageIndex++;
+
+                        if (result.Images.Count >= 1000) break; // Azure limit
+                    }
+                    catch (Exception ex)
+                    {
+                        result.Warnings.Add($"Failed to extract image {imageIndex}: {ex.Message}");
+                    }
+                }
+            }
+
             result.Success = true;
         }
         catch (Exception ex)
@@ -137,5 +173,51 @@ public class WordDocCracker : IDocumentCracker
             return 0;
 
         return text.Split(new[] { ' ', '\t', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries).Length;
+    }
+
+    /// <summary>
+    /// Reads pixel dimensions from PNG or JPEG image headers.
+    /// </summary>
+    internal static void ReadImageDimensions(byte[] data, CrackedImage image)
+    {
+        if (data.Length < 24) return;
+
+        // PNG: bytes 16-23 contain width (4 bytes) and height (4 bytes) in IHDR chunk
+        if (data[0] == 0x89 && data[1] == 0x50) // PNG signature
+        {
+            image.Width = (data[16] << 24) | (data[17] << 16) | (data[18] << 8) | data[19];
+            image.Height = (data[20] << 24) | (data[21] << 16) | (data[22] << 8) | data[23];
+            return;
+        }
+
+        // JPEG: scan for SOF0/SOF2 marker (0xFF 0xC0 or 0xFF 0xC2)
+        if (data[0] == 0xFF && data[1] == 0xD8) // JPEG signature
+        {
+            for (int i = 2; i < data.Length - 9; i++)
+            {
+                if (data[i] == 0xFF && (data[i + 1] == 0xC0 || data[i + 1] == 0xC2))
+                {
+                    image.Height = (data[i + 5] << 8) | data[i + 6];
+                    image.Width = (data[i + 7] << 8) | data[i + 8];
+                    return;
+                }
+            }
+        }
+
+        // GIF: bytes 6-9 contain width (2 bytes LE) and height (2 bytes LE)
+        if (data[0] == 0x47 && data[1] == 0x49 && data[2] == 0x46) // "GIF"
+        {
+            image.Width = data[6] | (data[7] << 8);
+            image.Height = data[8] | (data[9] << 8);
+            return;
+        }
+
+        // BMP: bytes 18-25 contain width (4 bytes LE) and height (4 bytes LE)
+        if (data[0] == 0x42 && data[1] == 0x4D && data.Length >= 26) // "BM"
+        {
+            image.Width = data[18] | (data[19] << 8) | (data[20] << 16) | (data[21] << 24);
+            image.Height = Math.Abs(data[22] | (data[23] << 8) | (data[24] << 16) | (data[25] << 24));
+            return;
+        }
     }
 }

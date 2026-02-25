@@ -51,10 +51,12 @@ This document outlines the comprehensive plan for building an Azure AI Search Si
 - Automatic metadata extraction (title, author, page count, word count)
 - Skillsets with skill pipeline execution
 - Text skills (TextSplitSkill, TextMergeSkill, ShaperSkill, ConditionalSkill)
+- Document Extraction Skill (base64/URL file_data, content-type detection, parsingMode support)
 - Azure OpenAI Embedding Skill
 - Local ONNX Embedding Models (via `local://` URI in AzureOpenAIEmbeddingSkill)
 - Custom Web API Skill
 - Output field mappings for enriched content
+- Index projections (one-to-many fan-out to secondary indexes)
 - Facets (count and value facets)
 - Azure SDK compatibility (Azure.Search.Documents)
 - Docker support with multi-stage build
@@ -557,8 +559,9 @@ AzureAISearchSimulator/
 6. [x] Implement Shaper skill
 7. [x] Implement Custom Web API skill
 8. [x] **Implement Azure OpenAI Embedding skill**
-9. [x] Create output field mapping processor
-10. [x] Write skill tests
+9. [x] Implement Document Extraction skill (base64/URL file_data, content-type detection, document cracking)
+10. [x] Create output field mapping processor
+11. [x] Write skill tests
 
 #### Deliverables
 

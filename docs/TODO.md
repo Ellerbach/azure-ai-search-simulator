@@ -165,7 +165,7 @@
 - [x] Implement TextMergeSkill
 - [x] Implement ConditionalSkill
 - [x] Implement ShaperSkill
-- [ ] Implement DocumentExtractionSkill (deferred - document cracking handles this)
+- [x] Implement DocumentExtractionSkill (base64/URL file_data input, content-type detection, reuses document crackers)
 
 ### Custom Skills
 
@@ -188,6 +188,7 @@
 - [x] Update IndexerService to execute skillsets
 - [x] Integrate skill pipeline with document processing
 - [x] Support output field mappings
+- [x] Index projections (one-to-many indexing with `indexProjections`)
 
 ---
 

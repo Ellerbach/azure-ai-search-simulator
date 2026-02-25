@@ -39,6 +39,8 @@ The Azure AI Search Simulator provides a local implementation of the Azure AI Se
 - **Indexers**: Automated document ingestion with field mappings and status tracking (Pull Mode)
 - **Document Cracking**: Extract text/metadata from PDF, Word, Excel, HTML, JSON, CSV, TXT
 - **Skillsets**: Skill pipeline with text transformation and embedding skills
+- **Document Extraction Skill**: Extract content from base64/URL `file_data` with content-type detection and `parsingMode` support
+- **Index Projections**: One-to-many indexing — fan out chunks into a secondary index
 - **Azure OpenAI Embedding Skill**: Generate vector embeddings via Azure OpenAI API
 - **Local Embedding Models**: Generate embeddings locally via ONNX Runtime (no Azure OpenAI required)
 - **Custom Web API Skill**: Call external REST APIs for custom processing
@@ -85,10 +87,10 @@ A pre-built Docker image is published to GitHub Container Registry on every rele
 
 ```bash
 # Pull the latest image
-docker pull ghcr.io/your-org/azure-ai-search-simulator:latest
+docker pull ghcr.io/Ellerbach/azure-ai-search-simulator:latest
 
 # Or pull a specific version
-docker pull ghcr.io/your-org/azure-ai-search-simulator:1.0.0
+docker pull ghcr.io/Ellerbach/azure-ai-search-simulator:1.0.0
 
 # Run the container
 docker run -d --name azure-ai-search-simulator \
@@ -98,7 +100,7 @@ docker run -d --name azure-ai-search-simulator \
   -v ./logs:/app/logs \
   -v ./files:/app/files \
   -v ./src/AzureAISearchSimulator.Api/data/models:/app/models:ro \
-  ghcr.io/your-org/azure-ai-search-simulator:latest
+  ghcr.io/Ellerbach/azure-ai-search-simulator:latest
 
 # API available at https://localhost:7250 (HTTPS) or http://localhost:5250 (HTTP)
 ```
@@ -108,7 +110,7 @@ You can also use it in a `docker-compose.yml`:
 ```yaml
 services:
   search-simulator:
-    image: ghcr.io/your-org/azure-ai-search-simulator:latest
+    image: ghcr.io/Ellerbach/azure-ai-search-simulator:latest
     ports:
       - "7250:8443"
       - "5250:8080"
@@ -497,6 +499,7 @@ All `.http` sample files use environment variables via `$dotenv`. To get started
 | [Compare-Results.ps1](scripts/Compare-Results.ps1) | PowerShell script that automates comparison and shows a color-coded diff of responses |
 | [pull-mode-test.http](samples/pull-mode-test.http) | REST Client file for testing indexer pull mode workflow |
 | [local-embedding-sample.http](samples/local-embedding-sample.http) | REST Client file demonstrating local ONNX embedding skill (no Azure OpenAI required) |
+| [index-projection-sample.http](samples/index-projection-sample.http) | REST Client file demonstrating index projections (one-to-many chunking into a secondary index) |
 | [Download-EmbeddingModel.ps1](scripts/Download-EmbeddingModel.ps1) | PowerShell script to download ONNX embedding models from HuggingFace |
 
 ### Comparing Simulator vs Real Azure AI Search
@@ -562,6 +565,7 @@ AzureAISearchSimulator/
 | Skill Category | Azure AI Search | Simulator |
 | --- | --- | --- |
 | **Utility Skills** (Split, Merge, Shaper, Conditional) | ✅ | ✅ |
+| **Document Extraction Skill** | ✅ | ✅ |
 | **Custom Web API Skill** | ✅ | ✅ |
 | **Azure OpenAI Embedding Skill** | ✅ | ✅ |
 | **AI Vision Skills** (OCR, Image Analysis) | ✅ | ❌ |

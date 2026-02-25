@@ -52,11 +52,61 @@ public class PdfCracker : IDocumentCracker
                         textBuilder.AppendLine(pageText);
                         textBuilder.AppendLine(); // Page separator
                     }
+
+                    // Extract images from this page
+                    try
+                    {
+                        var images = page.GetImages();
+                        foreach (var image in images)
+                        {
+                            var crackedImage = new CrackedImage
+                            {
+                                Width = image.WidthInSamples,
+                                Height = image.HeightInSamples,
+                                PageNumber = i, // 1-based page number
+                                ContentOffset = textBuilder.Length // offset at end of page text
+                            };
+
+                            // Try to get PNG bytes first, fall back to raw bytes
+                            if (image.TryGetPng(out var pngBytes))
+                            {
+                                crackedImage.Data = pngBytes;
+                                crackedImage.ContentType = "image/png";
+                            }
+                            else
+                            {
+                                crackedImage.Data = image.RawMemory.ToArray();
+                                crackedImage.ContentType = "image/unknown";
+                            }
+
+                            // Capture bounding box if available
+                            var bounds = image.Bounds;
+                            crackedImage.Bounds = new ImageBounds
+                            {
+                                X = bounds.Left,
+                                Y = bounds.Bottom,
+                                Width = bounds.Width,
+                                Height = bounds.Height,
+                                PageWidth = page.Width,
+                                PageHeight = page.Height
+                            };
+
+                            result.Images.Add(crackedImage);
+
+                            if (result.Images.Count >= 1000) break; // Azure limit
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        result.Warnings.Add($"Failed to extract images from page {i}: {ex.Message}");
+                    }
                 }
                 catch (Exception ex)
                 {
                     result.Warnings.Add($"Failed to extract text from page {i}: {ex.Message}");
                 }
+
+                if (result.Images.Count >= 1000) break; // Azure limit across pages
             }
 
             result.Content = textBuilder.ToString().Trim();
