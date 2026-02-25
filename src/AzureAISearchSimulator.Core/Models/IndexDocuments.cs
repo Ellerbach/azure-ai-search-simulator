@@ -20,6 +20,14 @@ public class IndexDocumentsRequest
 public class IndexAction : Dictionary<string, object?>
 {
     /// <summary>
+    /// When set by index projections, indicates the target index for this action.
+    /// If null, the indexer's default TargetIndexName is used.
+    /// Not serialized to JSON.
+    /// </summary>
+    [JsonIgnore]
+    public string? TargetIndexName { get; set; }
+
+    /// <summary>
     /// Gets the action type from @search.action field.
     /// </summary>
     [JsonIgnore]
