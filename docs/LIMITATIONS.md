@@ -170,13 +170,13 @@ The following table lists **all skills available in Azure AI Search** and their 
 | `#Microsoft.Skills.Text.MergeSkill` | Text Merge | ✅ | ✅ | Full support |
 | `#Microsoft.Skills.Util.ShaperSkill` | Shaper | ✅ | ✅ | Restructure data |
 | `#Microsoft.Skills.Util.ConditionalSkill` | Conditional | ✅ | ✅ | Filter and merge data |
-| `#Microsoft.Skills.Util.DocumentExtractionSkill` | Document Extraction | ✅ | ⚠️ | PDF, Office, JSON, text only and very basic |
+| `#Microsoft.Skills.Util.DocumentExtractionSkill` | Document Extraction | ✅ | ✅ | Base64 and URL file_data input, PDF/Office/JSON/CSV/HTML/text cracking, parsingMode (default/text/json), dataToExtract. Image extraction from PDF/Word/Excel when `imageAction` is set (JPEG normalization, resize, EXIF rotation). |
 
 ### Summary
 
-- **Implemented**: 6 skills (Text Split, Text Merge, Shaper, Conditional, Web API, Azure OpenAI Embedding)
+- **Implemented**: 7 skills (Text Split, Text Merge, Shaper, Conditional, Document Extraction, Web API, Azure OpenAI Embedding)
 - **Local mode**: Azure OpenAI Embedding skill also supports `local://` ONNX mode — same skill, no Azure dependency
-- **Not Implemented**: 14 skills (require Azure AI Services or are not yet added)
+- **Not Implemented**: 13 skills (require Azure AI Services or are not yet added)
 
 **Workaround**: Use the Custom Web API skill to call your own implementations of missing skills. See the [CustomSkillSample](../samples/CustomSkillSample/) for examples of PII detection, sentiment analysis, keyword extraction, and more.
 

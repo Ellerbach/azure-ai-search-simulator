@@ -165,7 +165,7 @@
 - [x] Implement TextMergeSkill
 - [x] Implement ConditionalSkill
 - [x] Implement ShaperSkill
-- [ ] Implement DocumentExtractionSkill (deferred - document cracking handles this)
+- [x] Implement DocumentExtractionSkill (base64/URL file_data input, content-type detection, reuses document crackers)
 
 ### Custom Skills
 

@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+### Added
+
+- **Document Extraction Skill**: `#Microsoft.Skills.Util.DocumentExtractionSkill` — extract text and metadata from documents within a skillset pipeline. Supports base64-encoded and URL-based `file_data` input, automatic content-type detection (PDF, Word, Excel, HTML, JSON, CSV, plain text), and `parsingMode` configuration. Integrates with the existing document cracking infrastructure.
+
+### Added
+
+- **Index Projections**: One-to-many indexing support via `indexProjections` in skillset definitions. A parent document can be split (e.g., by `TextSplitSkill`) and each chunk projected as a separate document into a secondary index. Supports `selectors` with `targetIndexName`, `parentKeyFieldName`, `sourceContext`, and field `mappings`. Configurable `projectionMode` (`skipIndexingParentDocuments` / `includeIndexingParentDocuments`). Includes `index-projection-sample.http` demonstrating the full workflow.
+
 ### Changed
 
 - **Documentation audit**: Updated CONFIGURATION.md, PLAN.md, LIMITATIONS.md, TODO.md, API-REFERENCE.md, and README.md to reflect current codebase. Fixed incorrect section names, property names, and defaults. Added missing Diagnostic Logging section. Noted unenforced configuration limits.
