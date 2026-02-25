@@ -188,6 +188,7 @@
 - [x] Update IndexerService to execute skillsets
 - [x] Integrate skill pipeline with document processing
 - [x] Support output field mappings
+- [x] Index projections (one-to-many indexing with `indexProjections`)
 
 ---
 

@@ -249,37 +249,46 @@ public partial class IndexerService : IIndexerService
                     }
                 }
 
-                // Phase 3: Bulk upload all successful documents in a single call
+                // Phase 3: Bulk upload documents, grouped by target index
                 if (batchActions.Count > 0)
                 {
-                    try
-                    {
-                        var request = new IndexDocumentsRequest { Value = batchActions };
-                        await _documentService.IndexDocumentsAsync(indexer.TargetIndexName, request);
-                        processedCount += batchActions.Count;
+                    // Group actions by target index (projections may target different indexes)
+                    var actionsByIndex = batchActions
+                        .GroupBy(a => a.TargetIndexName ?? indexer.TargetIndexName)
+                        .ToDictionary(g => g.Key, g => g.ToList());
 
-                        _logger.LogDebug(
-                            "Bulk indexed {Count} documents in {Duration}ms",
-                            batchActions.Count, (DateTime.UtcNow - batchStart).TotalMilliseconds);
-                    }
-                    catch (Exception ex)
+                    foreach (var (targetIndex, actions) in actionsByIndex)
                     {
-                        // If the bulk upload fails, count all documents in the batch as failed
-                        _logger.LogError(ex, "Bulk upload failed for batch of {Count} documents", batchActions.Count);
-                        failedCount += batchActions.Count;
+                        try
+                        {
+                            var request = new IndexDocumentsRequest { Value = actions };
+                            await _documentService.IndexDocumentsAsync(targetIndex, request);
+                            processedCount += actions.Count;
+
+                            _logger.LogDebug(
+                                "Bulk indexed {Count} documents to '{TargetIndex}' in {Duration}ms",
+                                actions.Count, targetIndex, (DateTime.UtcNow - batchStart).TotalMilliseconds);
+                        }
+                        catch (Exception ex)
+                        {
+                            // If the bulk upload fails, count all documents in the group as failed
+                            _logger.LogError(ex, "Bulk upload failed for batch of {Count} documents to '{TargetIndex}'",
+                                actions.Count, targetIndex);
+                            failedCount += actions.Count;
                         
-                        executionResult.Errors.Add(new IndexerExecutionError
-                        {
-                            Key = "(batch)",
-                            ErrorMessage = $"Bulk upload failed: {ex.Message}",
-                            StatusCode = 500,
-                            Name = $"BulkUpload.{indexer.TargetIndexName}"
-                        });
+                            executionResult.Errors.Add(new IndexerExecutionError
+                            {
+                                Key = "(batch)",
+                                ErrorMessage = $"Bulk upload failed for index '{targetIndex}': {ex.Message}",
+                                StatusCode = 500,
+                                Name = $"BulkUpload.{targetIndex}"
+                            });
 
-                        if (maxFailedItems >= 0 && failedCount > maxFailedItems)
-                        {
-                            throw new InvalidOperationException(
-                                $"Maximum failed items ({maxFailedItems}) exceeded.");
+                            if (maxFailedItems >= 0 && failedCount > maxFailedItems)
+                            {
+                                throw new InvalidOperationException(
+                                    $"Maximum failed items ({maxFailedItems}) exceeded.");
+                            }
                         }
                     }
                 }
@@ -705,8 +714,18 @@ public partial class IndexerService : IIndexerService
         var enrichedDoc = new EnrichedDocument(initialContent);
 
         // Execute skillset if configured
-        await ExecuteSkillsetAsync(indexer, enrichedDoc, sourceDoc.Key);
+        var skillset = await ExecuteSkillsetAsync(indexer, enrichedDoc, sourceDoc.Key);
 
+        // Check if the skillset defines index projections
+        var hasProjections = skillset?.IndexProjections?.Selectors != null 
+            && skillset.IndexProjections.Selectors.Count > 0;
+
+        if (hasProjections)
+        {
+            return await BuildProjectedDocumentsAsync(skillset!.IndexProjections!, enrichedDoc, sourceDoc.Key, indexer, processStart);
+        }
+
+        // No projections — standard single-document path
         // Build the final document from enriched data
         var enrichedData = enrichedDoc.ToDictionary();
         var document = new IndexAction
@@ -747,18 +766,19 @@ public partial class IndexerService : IIndexerService
 
     /// <summary>
     /// Executes the skillset on an enriched document if the indexer has one configured.
+    /// Returns the resolved Skillset (for access to IndexProjections), or null if none.
     /// </summary>
-    private async Task ExecuteSkillsetAsync(Indexer indexer, EnrichedDocument enrichedDoc, string docKey)
+    private async Task<Skillset?> ExecuteSkillsetAsync(Indexer indexer, EnrichedDocument enrichedDoc, string docKey)
     {
         if (string.IsNullOrEmpty(indexer.SkillsetName))
-            return;
+            return null;
 
         var skillset = await _skillsetService.GetAsync(indexer.SkillsetName);
         if (skillset == null)
         {
             _logger.LogWarning("Skillset '{SkillsetName}' not found, skipping skill execution", 
                 indexer.SkillsetName);
-            return;
+            return null;
         }
 
         _logger.LogDebug("Executing skillset '{SkillsetName}' for document {Key}", 
@@ -778,6 +798,195 @@ public partial class IndexerService : IIndexerService
             _logger.LogDebug("Skillset warnings: {Warnings}", 
                 string.Join("; ", pipelineResult.Warnings));
         }
+
+        return skillset;
+    }
+
+    /// <summary>
+    /// Builds projected (child) documents from index projections defined in the skillset.
+    /// Fans out from the sourceContext path to create one IndexAction per child element,
+    /// optionally including the parent document based on projectionMode.
+    /// </summary>
+    private async Task<List<IndexAction>> BuildProjectedDocumentsAsync(
+        IndexProjections projections,
+        EnrichedDocument enrichedDoc,
+        string parentKey,
+        Indexer indexer,
+        DateTime processStart)
+    {
+        var results = new List<IndexAction>();
+        var projectionMode = projections.Parameters?.ProjectionMode?.ToLowerInvariant()
+            ?? "includeindexingparentdocuments";
+
+        foreach (var selector in projections.Selectors!)
+        {
+            if (string.IsNullOrEmpty(selector.SourceContext) || selector.Mappings == null)
+            {
+                _logger.LogWarning(
+                    "Index projection selector for index '{TargetIndex}' is missing sourceContext or mappings, skipping",
+                    selector.TargetIndexName);
+                continue;
+            }
+
+            // Resolve the target index's key field name
+            var targetKeyFieldName = "key"; // fallback
+            if (!string.IsNullOrEmpty(selector.TargetIndexName))
+            {
+                var targetIndex = await _indexService.GetIndexAsync(selector.TargetIndexName);
+                if (targetIndex != null)
+                {
+                    var keyField = targetIndex.Fields.FirstOrDefault(f => f.Key == true);
+                    if (keyField != null)
+                    {
+                        targetKeyFieldName = keyField.Name;
+                    }
+                }
+            }
+
+            // Expand the sourceContext wildcard to get concrete child paths
+            // e.g., "/document/extracted_chunks/*" → ["/document/extracted_chunks/0", "/document/extracted_chunks/1", ...]
+            var childPaths = enrichedDoc.GetMatchingPaths(selector.SourceContext).ToList();
+
+            _logger.LogDebug(
+                "Index projection: sourceContext='{SourceContext}' expanded to {Count} child paths for index '{TargetIndex}'",
+                selector.SourceContext, childPaths.Count, selector.TargetIndexName);
+
+            // Determine the context prefix for building projected keys
+            // e.g., "/document/extracted_chunks/*" → "extracted_chunks"
+            var contextSegments = selector.SourceContext
+                .Split('/', StringSplitOptions.RemoveEmptyEntries)
+                .Where(s => s != "document" && s != "*")
+                .ToArray();
+            var contextSegment = string.Join("_", contextSegments);
+
+            for (int i = 0; i < childPaths.Count; i++)
+            {
+                var childPath = childPaths[i];
+                var projectedKey = $"{parentKey}_{contextSegment}_{i}";
+
+                var childDoc = new IndexAction
+                {
+                    ["@search.action"] = "mergeOrUpload",
+                    TargetIndexName = selector.TargetIndexName
+                };
+
+                // Set the document key using the target index's key field name
+                childDoc[targetKeyFieldName] = projectedKey;
+
+                // Set the parent key field
+                if (!string.IsNullOrEmpty(selector.ParentKeyFieldName))
+                {
+                    childDoc[selector.ParentKeyFieldName] = parentKey;
+                }
+
+                // Apply each mapping
+                foreach (var mapping in selector.Mappings)
+                {
+                    if (string.IsNullOrEmpty(mapping.Source)) continue;
+
+                    var resolvedPath = ResolveProjectionMappingPath(
+                        mapping.Source, selector.SourceContext, childPath);
+
+                    var value = enrichedDoc.GetValue(resolvedPath);
+                    if (value != null)
+                    {
+                        childDoc[mapping.Name] = value;
+                    }
+                }
+
+                results.Add(childDoc);
+
+                if (_diagnosticSettings.Enabled && _diagnosticSettings.LogDocumentDetails)
+                {
+                    _logger.LogInformation(
+                        "[DIAGNOSTIC] Projected child document: Key='{ProjectedKey}', TargetIndex='{TargetIndex}', ParentKey='{ParentKey}', Fields={FieldCount}",
+                        projectedKey, selector.TargetIndexName, parentKey, childDoc.Count - 1);
+                }
+            }
+        }
+
+        // Include parent document based on projectionMode
+        if (projectionMode != "skipindexingparentdocuments")
+        {
+            var enrichedData = enrichedDoc.ToDictionary();
+            var parentDoc = new IndexAction
+            {
+                ["@search.action"] = "mergeOrUpload"
+            };
+
+            var keyField = GetKeyFieldMapping(indexer);
+            parentDoc[keyField.TargetFieldName ?? keyField.SourceFieldName] = parentKey;
+
+            foreach (var (key, value) in enrichedData)
+            {
+                if (key != "key" && !key.StartsWith("@"))
+                {
+                    parentDoc[key] = value;
+                }
+            }
+
+            ApplyFieldMappings(indexer, enrichedData, parentDoc, parentKey);
+            ApplyOutputFieldMappings(indexer, enrichedDoc, parentDoc);
+
+            results.Add(parentDoc);
+
+            _logger.LogDebug(
+                "Index projection: including parent document '{ParentKey}' (projectionMode='{Mode}')",
+                parentKey, projectionMode);
+        }
+        else
+        {
+            _logger.LogDebug(
+                "Index projection: skipping parent document '{ParentKey}' (projectionMode='skipIndexingParentDocuments')",
+                parentKey);
+        }
+
+        if (_diagnosticSettings.Enabled && _diagnosticSettings.LogDocumentDetails && _diagnosticSettings.IncludeTimings)
+        {
+            var duration = DateTime.UtcNow - processStart;
+            _logger.LogInformation(
+                "[DIAGNOSTIC] Document '{ParentKey}' projected in {Duration}ms - {ChildCount} child documents created",
+                parentKey, duration.TotalMilliseconds, results.Count);
+        }
+
+        return results;
+    }
+
+    /// <summary>
+    /// Resolves a projection mapping source path by replacing the wildcard portion
+    /// with the concrete child index.
+    /// For example:
+    ///   mappingSource="/document/extracted_chunks/*/content_vector"
+    ///   sourceContext="/document/extracted_chunks/*"
+    ///   childPath="/document/extracted_chunks/2"
+    ///   → "/document/extracted_chunks/2/content_vector"
+    /// 
+    /// If the mapping source doesn't start with the sourceContext prefix (parent-level field),
+    /// it is returned as-is.
+    /// </summary>
+    private static string ResolveProjectionMappingPath(
+        string mappingSource, string sourceContext, string childPath)
+    {
+        // Strip trailing /* from sourceContext to get the base prefix
+        // e.g., "/document/extracted_chunks/*" → "/document/extracted_chunks/"
+        var contextBase = sourceContext.EndsWith("/*")
+            ? sourceContext[..^1]  // "/document/extracted_chunks/"
+            : sourceContext.TrimEnd('*');
+
+        // If the mapping source starts with the context base + "*",
+        // replace the wildcard path with the concrete child path
+        if (mappingSource.StartsWith(contextBase))
+        {
+            var suffix = mappingSource[contextBase.Length..]; // e.g., "*/content_vector" or "*"
+            if (suffix.StartsWith("*"))
+            {
+                suffix = suffix[1..]; // e.g., "/content_vector" or ""
+                return childPath + suffix;
+            }
+        }
+
+        // Parent-level field — return as-is (e.g., "/document/title")
+        return mappingSource;
     }
 
     /// <summary>

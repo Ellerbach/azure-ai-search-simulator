@@ -55,6 +55,7 @@ This document outlines the comprehensive plan for building an Azure AI Search Si
 - Local ONNX Embedding Models (via `local://` URI in AzureOpenAIEmbeddingSkill)
 - Custom Web API Skill
 - Output field mappings for enriched content
+- Index projections (one-to-many fan-out to secondary indexes)
 - Facets (count and value facets)
 - Azure SDK compatibility (Azure.Search.Documents)
 - Docker support with multi-stage build
