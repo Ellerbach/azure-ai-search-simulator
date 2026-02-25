@@ -1,0 +1,428 @@
+### ============================================================
+### Index Projections - Sample Requests
+### ============================================================
+### Demonstrates the indexProjections feature for one-to-many
+### indexing. A single parent document is split into chunks by
+### the TextSplitSkill, and each chunk is projected as a
+### separate document into a secondary "chunks" index.
+###
+### Two projection modes are shown:
+###   • skipIndexingParentDocuments  – only chunks are indexed
+###   • includeIndexingParentDocuments – parent + chunks indexed
+###
+### SETUP ORDER:
+###   1. Create the chunks index (target for projected docs)
+###   2. Create the parent index
+###   3. Create a data source pointing at sample documents
+###   4. Create a skillset with TextSplitSkill + indexProjections
+###   5. Create an indexer that ties everything together
+###   6. Run the indexer
+###   7. Query both indexes
+###
+### Prerequisites:
+###   Start the simulator:
+###     dotnet run --project src/AzureAISearchSimulator.Api
+### ============================================================
+
+# Variables loaded from .env file (copy .env.example to .env in the workspace root)
+@baseUrl = {{$dotenv BASE_URL}}
+@apiKey = {{$dotenv ADMIN_KEY}}
+@apiVersion = {{$dotenv API_VERSION}}
+
+# Resource names
+@chunksIndex = projection-chunks
+@parentIndex = projection-parent
+@dataSourceName = projection-docs
+@skillsetName = projection-skillset
+@indexerName = projection-indexer
+
+
+### =====================================================
+### Step 1: Create the Chunks Index
+### =====================================================
+### This is the target index for projected documents.
+### Each chunk will become a separate document here.
+
+PUT {{baseUrl}}/indexes/{{chunksIndex}}?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "name": "projection-chunks",
+  "fields": [
+    {
+      "name": "chunk_id",
+      "type": "Edm.String",
+      "key": true,
+      "filterable": true
+    },
+    {
+      "name": "parent_id",
+      "type": "Edm.String",
+      "filterable": true,
+      "searchable": false
+    },
+    {
+      "name": "chunk_content",
+      "type": "Edm.String",
+      "searchable": true
+    },
+    {
+      "name": "title",
+      "type": "Edm.String",
+      "searchable": true,
+      "filterable": true
+    }
+  ]
+}
+
+### =====================================================
+### Step 2: Create the Parent Index
+### =====================================================
+### The parent document is indexed here (when projectionMode
+### is "includeIndexingParentDocuments" or not specified).
+
+PUT {{baseUrl}}/indexes/{{parentIndex}}?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "name": "projection-parent",
+  "fields": [
+    {
+      "name": "id",
+      "type": "Edm.String",
+      "key": true,
+      "filterable": true
+    },
+    {
+      "name": "content",
+      "type": "Edm.String",
+      "searchable": true
+    },
+    {
+      "name": "metadata_storage_name",
+      "type": "Edm.String",
+      "filterable": true
+    }
+  ]
+}
+
+
+### =====================================================
+### Step 3: Create Data Source (Local File System)
+### =====================================================
+### Points at sample-documents/ which contains longer text
+### files suitable for chunking.
+
+PUT {{baseUrl}}/datasources/{{dataSourceName}}?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "name": "projection-docs",
+  "type": "filesystem",
+  "credentials": {
+    "connectionString": "C:/Projets/AzureAISimulator"
+  },
+  "container": {
+    "name": "sample-documents"
+  },
+  "description": "Sample documents for index projection demo"
+}
+
+
+### =====================================================
+### Step 4: Create Skillset with Index Projections
+### =====================================================
+### The TextSplitSkill splits /document/content into pages.
+### The indexProjections section tells the indexer to fan out
+### each page as a separate document into the chunks index.
+###
+### projectionMode: "skipIndexingParentDocuments"
+###   → Only chunks go into the chunks index.
+###     The parent document is NOT indexed anywhere.
+###
+### To also keep the parent, change projectionMode to
+### "includeIndexingParentDocuments" (or remove it entirely).
+
+PUT {{baseUrl}}/skillsets/{{skillsetName}}?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "name": "projection-skillset",
+  "description": "Splits documents into chunks and projects each chunk as a separate index document",
+  "skills": [
+    {
+      "@odata.type": "#Microsoft.Skills.Text.SplitSkill",
+      "name": "split-into-chunks",
+      "description": "Split document text into fixed-size pages",
+      "context": "/document",
+      "textSplitMode": "pages",
+      "maximumPageLength": 500,
+      "inputs": [
+        { "name": "text", "source": "/document/content" }
+      ],
+      "outputs": [
+        { "name": "textItems", "targetName": "chunks" }
+      ]
+    }
+  ],
+  "indexProjections": {
+    "selectors": [
+      {
+        "targetIndexName": "projection-chunks",
+        "parentKeyFieldName": "parent_id",
+        "sourceContext": "/document/chunks/*",
+        "mappings": [
+          { "name": "chunk_content", "source": "/document/chunks/*" },
+          { "name": "title", "source": "/document/metadata_storage_name" }
+        ]
+      }
+    ],
+    "parameters": {
+      "projectionMode": "skipIndexingParentDocuments"
+    }
+  }
+}
+
+
+### =====================================================
+### Step 5: Create Indexer
+### =====================================================
+### The indexer pulls documents from the data source, runs
+### the skillset, and the projections route each chunk to
+### the chunks index.
+
+PUT {{baseUrl}}/indexers/{{indexerName}}?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "name": "projection-indexer",
+  "dataSourceName": "projection-docs",
+  "targetIndexName": "projection-parent",
+  "skillsetName": "projection-skillset",
+  "description": "Indexer that projects chunks into a secondary index",
+  "fieldMappings": [
+    { "sourceFieldName": "metadata_storage_path", "targetFieldName": "id" }
+  ]
+}
+
+
+### =====================================================
+### Step 6: Run the Indexer
+### =====================================================
+
+POST {{baseUrl}}/indexers/{{indexerName}}/run?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+
+### =====================================================
+### Step 7: Check Indexer Status
+### =====================================================
+
+GET {{baseUrl}}/indexers/{{indexerName}}/status?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+
+### =====================================================
+### Step 8: Query the Chunks Index
+### =====================================================
+### Each source document should have produced multiple chunk
+### documents. Verify that chunk_id, parent_id, chunk_content,
+### and title are populated.
+
+POST {{baseUrl}}/indexes/{{chunksIndex}}/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "search": "*",
+  "count": true,
+  "select": "chunk_id, parent_id, chunk_content, title",
+  "top": 20
+}
+
+###
+
+### Search chunks for specific content
+POST {{baseUrl}}/indexes/{{chunksIndex}}/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "search": "search",
+  "count": true,
+  "select": "chunk_id, parent_id, chunk_content, title"
+}
+
+###
+
+### Count chunks
+GET {{baseUrl}}/indexes/{{chunksIndex}}/docs/$count?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+
+### =====================================================
+### Step 9: Query the Parent Index
+### =====================================================
+### With "skipIndexingParentDocuments" the parent index
+### should be empty. Switch the projectionMode to
+### "includeIndexingParentDocuments" and re-run to see
+### parent documents appear here too.
+
+POST {{baseUrl}}/indexes/{{parentIndex}}/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "search": "*",
+  "count": true
+}
+
+###
+
+### Count parent docs
+GET {{baseUrl}}/indexes/{{parentIndex}}/docs/$count?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+
+### =====================================================
+### Step 10: Filter Chunks by Parent
+### =====================================================
+### Retrieve all chunks belonging to a specific parent
+### document by filtering on parent_id.
+
+POST {{baseUrl}}/indexes/{{chunksIndex}}/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "search": "*",
+  "filter": "parent_id eq 'azure-search-overview.txt'",
+  "select": "chunk_id, parent_id, chunk_content",
+  "orderby": "chunk_id"
+}
+
+
+### =====================================================
+### VARIANT: Include Parent Documents
+### =====================================================
+### Update the skillset to include parent documents in the
+### indexing pipeline alongside the projected chunks.
+
+PUT {{baseUrl}}/skillsets/{{skillsetName}}?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "name": "projection-skillset",
+  "description": "Same as above but also indexes the parent document",
+  "skills": [
+    {
+      "@odata.type": "#Microsoft.Skills.Text.SplitSkill",
+      "name": "split-into-chunks",
+      "description": "Split document text into fixed-size pages",
+      "context": "/document",
+      "textSplitMode": "pages",
+      "maximumPageLength": 500,
+      "inputs": [
+        { "name": "text", "source": "/document/content" }
+      ],
+      "outputs": [
+        { "name": "textItems", "targetName": "chunks" }
+      ]
+    }
+  ],
+  "indexProjections": {
+    "selectors": [
+      {
+        "targetIndexName": "projection-chunks",
+        "parentKeyFieldName": "parent_id",
+        "sourceContext": "/document/chunks/*",
+        "mappings": [
+          { "name": "chunk_content", "source": "/document/chunks/*" },
+          { "name": "title", "source": "/document/metadata_storage_name" }
+        ]
+      }
+    ],
+    "parameters": {
+      "projectionMode": "includeIndexingParentDocuments"
+    }
+  }
+}
+
+###
+
+### Re-run the indexer after updating the skillset
+POST {{baseUrl}}/indexers/{{indexerName}}/run?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+###
+
+### Verify parent docs now appear
+POST {{baseUrl}}/indexes/{{parentIndex}}/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "search": "*",
+  "count": true,
+  "select": "id, content, metadata_storage_name"
+}
+
+
+### =====================================================
+### Verify: Get Resources
+### =====================================================
+
+### Get Skillset
+GET {{baseUrl}}/skillsets/{{skillsetName}}?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+###
+
+### Get Indexer
+GET {{baseUrl}}/indexers/{{indexerName}}?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+###
+
+### Get Chunks Index
+GET {{baseUrl}}/indexes/{{chunksIndex}}?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+
+### =====================================================
+### Cleanup
+### =====================================================
+
+### Delete Indexer
+DELETE {{baseUrl}}/indexers/{{indexerName}}?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+###
+
+### Delete Skillset
+DELETE {{baseUrl}}/skillsets/{{skillsetName}}?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+###
+
+### Delete Data Source
+DELETE {{baseUrl}}/datasources/{{dataSourceName}}?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+###
+
+### Delete Chunks Index
+DELETE {{baseUrl}}/indexes/{{chunksIndex}}?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+###
+
+### Delete Parent Index
+DELETE {{baseUrl}}/indexes/{{parentIndex}}?api-version={{apiVersion}}
+api-key: {{apiKey}}

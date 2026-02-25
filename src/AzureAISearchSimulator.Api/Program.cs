@@ -122,6 +122,7 @@ try
     builder.Services.AddSingleton<ISkillExecutor, ConditionalSkillExecutor>();
     builder.Services.AddSingleton<ISkillExecutor, CustomWebApiSkillExecutor>();
     builder.Services.AddSingleton<ISkillExecutor, AzureOpenAIEmbeddingSkillExecutor>();
+    builder.Services.AddSingleton<ISkillExecutor, DocumentExtractionSkillExecutor>();
     builder.Services.AddSingleton<ISkillPipeline, SkillPipeline>();
 
     // Register HTTP client factory for custom skills

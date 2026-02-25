@@ -1,0 +1,287 @@
+### Image Extraction Sample — Azure AI Search Simulator
+### ====================================================
+### Tests the DocumentExtractionSkill with imageAction: generateNormalizedImages
+### using Word (.docx) and Excel (.xlsx) files that contain embedded images.
+###
+### Prerequisites:
+###   1. Simulator running (dotnet run in src/AzureAISearchSimulator.Api)
+###   2. REST Client extension installed in VS Code
+###   3. .env file with BASE_URL, ADMIN_KEY, API_VERSION
+###
+### Sample files used (in samples/data/image-extraction/):
+###   - report-with-charts.docx  (Word doc: 4 paragraphs + 2 PNG images)
+###   - inventory-with-photos.xlsx (Excel: 5 data rows + 1 PNG image)
+
+# Variables
+@baseUrl = {{$dotenv BASE_URL}}
+@apiKey = {{$dotenv ADMIN_KEY}}
+@apiVersion = {{$dotenv API_VERSION}}
+
+### =====================================================
+### Step 1: Create Index with image-related fields
+### =====================================================
+
+PUT {{baseUrl}}/indexes/image-extraction-test?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "name": "image-extraction-test",
+  "fields": [
+    { "name": "id", "type": "Edm.String", "key": true },
+    { "name": "content", "type": "Edm.String", "searchable": true },
+    { "name": "metadata_storage_path", "type": "Edm.String", "filterable": true },
+    { "name": "metadata_storage_name", "type": "Edm.String", "filterable": true },
+    { "name": "image_count", "type": "Edm.Int32", "filterable": true, "sortable": true }
+  ]
+}
+
+### =====================================================
+### Step 2: Create Data Source pointing to the sample files
+### =====================================================
+### IMPORTANT: Adjust the connectionString path to match your local machine.
+
+PUT {{baseUrl}}/datasources/image-test-files?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "name": "image-test-files",
+  "type": "filesystem",
+  "credentials": {
+    "connectionString": "C:/Projets/AzureAISimulator/samples/data"
+  },
+  "container": {
+    "name": "image-extraction"
+  },
+  "description": "Sample documents with embedded images (Word + Excel)"
+}
+
+### =====================================================
+### Step 3: Create Skillset with DocumentExtractionSkill
+###         configured to extract images
+### =====================================================
+
+PUT {{baseUrl}}/skillsets/image-extraction-skillset?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "name": "image-extraction-skillset",
+  "description": "Extracts text and images from documents using DocumentExtractionSkill",
+  "skills": [
+    {
+      "@odata.type": "#Microsoft.Skills.Util.DocumentExtractionSkill",
+      "name": "doc-extraction-with-images",
+      "description": "Extract content and normalized images from documents",
+      "context": "/document",
+      "configuration": {
+        "imageAction": "generateNormalizedImages",
+        "normalizedImageMaxWidth": 2000,
+        "normalizedImageMaxHeight": 2000
+      },
+      "inputs": [
+        { "name": "file_data", "source": "/document/file_data" }
+      ],
+      "outputs": [
+        { "name": "content", "targetName": "extracted_content" },
+        { "name": "normalized_images", "targetName": "normalized_images" }
+      ]
+    }
+  ]
+}
+
+### =====================================================
+### Step 4: Create Indexer that uses the skillset
+### =====================================================
+
+PUT {{baseUrl}}/indexers/image-extraction-indexer?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "name": "image-extraction-indexer",
+  "dataSourceName": "image-test-files",
+  "targetIndexName": "image-extraction-test",
+  "skillsetName": "image-extraction-skillset",
+  "description": "Indexer that extracts text and images from Word/Excel files",
+  "fieldMappings": [
+    {
+      "sourceFieldName": "metadata_storage_path",
+      "targetFieldName": "id",
+      "mappingFunction": { "name": "base64Encode" }
+    },
+    {
+      "sourceFieldName": "metadata_storage_name",
+      "targetFieldName": "metadata_storage_name"
+    }
+  ],
+  "outputFieldMappings": [
+    {
+      "sourceFieldName": "/document/extracted_content",
+      "targetFieldName": "content"
+    }
+  ]
+}
+
+### =====================================================
+### Step 5: Run the Indexer
+### =====================================================
+
+POST {{baseUrl}}/indexers/image-extraction-indexer/run?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+### =====================================================
+### Step 6: Check Indexer Status
+### =====================================================
+
+GET {{baseUrl}}/indexers/image-extraction-indexer/status?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+### =====================================================
+### Step 7: Verify — Count indexed documents
+### =====================================================
+
+GET {{baseUrl}}/indexes/image-extraction-test/docs/$count?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+### =====================================================
+### Step 8: Search all documents and view extracted content
+### =====================================================
+
+POST {{baseUrl}}/indexes/image-extraction-test/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "search": "*",
+  "count": true,
+  "select": "id,content,metadata_storage_name"
+}
+
+### =====================================================
+### Step 9: Search for specific text from the Word doc
+### =====================================================
+
+POST {{baseUrl}}/indexes/image-extraction-test/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "search": "quarterly sales revenue",
+  "count": true,
+  "select": "id,content,metadata_storage_name"
+}
+
+### =====================================================
+### Step 10: Search for text from the Excel file
+### =====================================================
+
+POST {{baseUrl}}/indexes/image-extraction-test/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "search": "Wireless Mouse USB-C Hub",
+  "count": true,
+  "select": "id,content,metadata_storage_name"
+}
+
+
+### =====================================================
+### ALTERNATIVE: Direct Push-Mode Test (no indexer needed)
+### =====================================================
+### The requests below test DocumentExtractionSkill directly
+### by sending base64-encoded file data via push-mode indexing.
+
+### ─── Push Test A: Word document with images ────────
+### First, get the base64 of the docx file. In PowerShell:
+###   $b64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes("samples/data/image-extraction/report-with-charts.docx"))
+###
+### Then paste $b64 into the "data" field below.
+### (The REST Client does not support file inclusion, so this is manual.)
+
+### ─── Push Test B: Create a minimal skillset for push-mode testing ────
+
+PUT {{baseUrl}}/skillsets/push-image-test?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "name": "push-image-test",
+  "description": "Minimal skillset for push-mode image extraction testing",
+  "skills": [
+    {
+      "@odata.type": "#Microsoft.Skills.Util.DocumentExtractionSkill",
+      "name": "extract-with-images",
+      "context": "/document",
+      "configuration": {
+        "imageAction": "generateNormalizedImages"
+      },
+      "inputs": [
+        { "name": "file_data", "source": "/document/file_data" }
+      ],
+      "outputs": [
+        { "name": "content", "targetName": "extractedText" },
+        { "name": "normalized_images", "targetName": "normalized_images" }
+      ]
+    }
+  ]
+}
+
+### ─── Push Test C: Skillset WITHOUT image extraction (for comparison) ──
+
+PUT {{baseUrl}}/skillsets/push-text-only?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{apiKey}}
+
+{
+  "name": "push-text-only",
+  "description": "Text-only extraction (no images) for comparison",
+  "skills": [
+    {
+      "@odata.type": "#Microsoft.Skills.Util.DocumentExtractionSkill",
+      "name": "extract-text-only",
+      "context": "/document",
+      "configuration": {
+        "imageAction": "none"
+      },
+      "inputs": [
+        { "name": "file_data", "source": "/document/file_data" }
+      ],
+      "outputs": [
+        { "name": "content", "targetName": "extractedText" },
+        { "name": "normalized_images", "targetName": "normalized_images" }
+      ]
+    }
+  ]
+}
+
+
+### =====================================================
+### Cleanup
+### =====================================================
+
+### Delete Indexer
+DELETE {{baseUrl}}/indexers/image-extraction-indexer?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+### Delete Skillset
+DELETE {{baseUrl}}/skillsets/image-extraction-skillset?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+### Delete Data Source
+DELETE {{baseUrl}}/datasources/image-test-files?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+### Delete Index
+DELETE {{baseUrl}}/indexes/image-extraction-test?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+### Delete Push Test Skillsets
+DELETE {{baseUrl}}/skillsets/push-image-test?api-version={{apiVersion}}
+api-key: {{apiKey}}
+
+###
+DELETE {{baseUrl}}/skillsets/push-text-only?api-version={{apiVersion}}
+api-key: {{apiKey}}

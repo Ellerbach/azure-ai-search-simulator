@@ -116,6 +116,43 @@ public class ExcelCracker : IDocumentCracker
             result.Metadata["sheetNames"] = string.Join(", ", sheetNames);
             result.Metadata["totalRows"] = totalRows;
 
+            // Extract embedded images from all worksheets
+            foreach (var worksheetPart in workbookPart.WorksheetParts)
+            {
+                var drawingsPart = worksheetPart.DrawingsPart;
+                if (drawingsPart == null) continue;
+
+                foreach (var imagePart in drawingsPart.ImageParts)
+                {
+                    try
+                    {
+                        using var imageStream = imagePart.GetStream();
+                        using var ms = new MemoryStream();
+                        imageStream.CopyTo(ms);
+                        var imageBytes = ms.ToArray();
+
+                        var crackedImage = new CrackedImage
+                        {
+                            Data = imageBytes,
+                            ContentType = imagePart.ContentType,
+                            PageNumber = 0 // Excel is not page-based
+                        };
+
+                        // Try to read pixel dimensions from image header
+                        WordDocCracker.ReadImageDimensions(imageBytes, crackedImage);
+                        result.Images.Add(crackedImage);
+
+                        if (result.Images.Count >= 1000) break; // Azure limit
+                    }
+                    catch (Exception ex)
+                    {
+                        result.Warnings.Add($"Failed to extract image: {ex.Message}");
+                    }
+                }
+
+                if (result.Images.Count >= 1000) break; // Azure limit across sheets
+            }
+
             result.Success = true;
         }
         catch (Exception ex)

@@ -13,7 +13,7 @@ This document provides a detailed reference for all REST API endpoints supported
 | Data Sources | ✅ Implemented | File system connector |
 | Indexers | ✅ Implemented | Full CRUD, run, reset, status, scheduled execution |
 | Document Cracking | ✅ Implemented | PDF, Word, Excel, HTML, JSON, CSV, TXT |
-| Skillsets | ✅ Implemented | Text skills, embedding skill, custom Web API skill |
+| Skillsets | ✅ Implemented | Text skills, embedding skill, custom Web API skill, index projections |
 | Synonym Maps | ✅ Implemented | Full CRUD, Solr format, query-time expansion |
 | Service Statistics | ✅ Implemented | Counters and limits (quotas use S1 defaults) |
 
@@ -1150,6 +1150,68 @@ To use a skillset with an indexer, specify the `skillsetName` and `outputFieldMa
   ]
 }
 ```
+
+### [Index Projections (One-to-Many Indexing)](https://learn.microsoft.com/en-us/azure/search/search-how-to-define-index-projections)
+
+Skillsets support an `indexProjections` property that enables one-to-many indexing — fanning out enriched child elements (e.g., chunks) into separate search documents in a secondary index.
+
+This is useful when a skill such as `TextSplitSkill` produces an array of chunks and each chunk should become its own searchable document.
+
+```json
+{
+  "name": "chunking-skillset",
+  "skills": [
+    {
+      "@odata.type": "#Microsoft.Skills.Text.SplitSkill",
+      "name": "split-into-chunks",
+      "context": "/document",
+      "textSplitMode": "pages",
+      "maximumPageLength": 500,
+      "inputs": [
+        { "name": "text", "source": "/document/content" }
+      ],
+      "outputs": [
+        { "name": "textItems", "targetName": "chunks" }
+      ]
+    }
+  ],
+  "indexProjections": {
+    "selectors": [
+      {
+        "targetIndexName": "chunks-index",
+        "parentKeyFieldName": "parent_id",
+        "sourceContext": "/document/chunks/*",
+        "mappings": [
+          { "name": "chunk_content", "source": "/document/chunks/*" },
+          { "name": "title", "source": "/document/metadata_storage_name" }
+        ]
+      }
+    ],
+    "parameters": {
+      "projectionMode": "skipIndexingParentDocuments"
+    }
+  }
+}
+```
+
+**Key properties:**
+
+| Property | Description |
+| -------- | ----------- |
+| `selectors[].targetIndexName` | The secondary index to receive projected documents |
+| `selectors[].parentKeyFieldName` | Field in the child document that stores the parent document key |
+| `selectors[].sourceContext` | Enrichment path with wildcard (e.g., `/document/chunks/*`) that determines fan-out |
+| `selectors[].mappings[]` | Field mappings using `name` (target field) and `source` (enrichment path) |
+| `parameters.projectionMode` | `"skipIndexingParentDocuments"` or `"includeIndexingParentDocuments"` (default) |
+
+**Projection modes:**
+
+- `skipIndexingParentDocuments` — Only projected child documents are indexed. The parent document is not sent to any index.
+- `includeIndexingParentDocuments` (default) — Both the parent document (to the indexer's `targetIndexName`) and the child documents (to each selector's `targetIndexName`) are indexed.
+
+**Projected key format:** Each child document receives a key in the format `{parentKey}_{contextSegment}_{index}` (e.g., `doc1_chunks_0`, `doc1_chunks_2`).
+
+See [index-projection-sample.http](../samples/index-projection-sample.http) for a complete walkthrough.
 
 ### Azure OpenAI Configuration
 
