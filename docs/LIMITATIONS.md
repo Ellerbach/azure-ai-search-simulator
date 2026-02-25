@@ -261,12 +261,14 @@ The simulator supports local ONNX-based embedding generation via the `local://` 
 | On-demand runs | ✅ | - |
 | Field mappings | ✅ | base64Encode, base64Decode, urlEncode, urlDecode, extractTokenAtPosition |
 | Output field mappings | ✅ | - |
+| Index projections | ✅ | One-to-many indexing, fan-out chunks to secondary index |
 | Change detection | ✅ | High Water Mark policy (metadata_storage_last_modified or custom column) |
 | Parsing modes | ⚠️ | `default`, `json`, `jsonArray` supported; `jsonLines` and `delimitedText` not implemented |
 | Soft delete | ❌ | Model accepted but not processed during indexing |
 | Parallel execution | ⚠️ | Semaphore-bounded parallelism within batches |
 | Incremental enrichment | ❌ | Not supported |
 | Enrichment cache | ❌ | Not supported |
+| Knowledge store projections | ❌ | Not supported (index projections are supported) |
 
 ## Normalizer Limitations
 

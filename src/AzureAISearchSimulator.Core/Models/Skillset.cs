@@ -498,7 +498,39 @@ public class IndexProjectionSelector
     public string? SourceContext { get; set; }
 
     [JsonPropertyName("mappings")]
-    public List<FieldMapping>? Mappings { get; set; }
+    public List<IndexProjectionMapping>? Mappings { get; set; }
+}
+
+/// <summary>
+/// Mapping entry for index projections.
+/// Uses the InputFieldMappingEntry shape from the Azure Search API:
+/// name (target field), source (enrichment path), sourceContext, inputs.
+/// </summary>
+public class IndexProjectionMapping
+{
+    /// <summary>
+    /// The name of the field in the target search index.
+    /// </summary>
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The enrichment annotation path to pull data from (e.g., "/document/pages/*/chunk_vector").
+    /// </summary>
+    [JsonPropertyName("source")]
+    public string? Source { get; set; }
+
+    /// <summary>
+    /// Optional source context for recursive/complex projections.
+    /// </summary>
+    [JsonPropertyName("sourceContext")]
+    public string? SourceContext { get; set; }
+
+    /// <summary>
+    /// Optional nested inputs for complex type shaping.
+    /// </summary>
+    [JsonPropertyName("inputs")]
+    public List<IndexProjectionMapping>? Inputs { get; set; }
 }
 
 /// <summary>
