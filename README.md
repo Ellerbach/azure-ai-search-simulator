@@ -39,6 +39,7 @@ The Azure AI Search Simulator provides a local implementation of the Azure AI Se
 - **Indexers**: Automated document ingestion with field mappings and status tracking (Pull Mode)
 - **Document Cracking**: Extract text/metadata from PDF, Word, Excel, HTML, JSON, CSV, TXT
 - **Skillsets**: Skill pipeline with text transformation and embedding skills
+- **Document Extraction Skill**: Extract content from base64/URL `file_data` with content-type detection and `parsingMode` support
 - **Index Projections**: One-to-many indexing — fan out chunks into a secondary index
 - **Azure OpenAI Embedding Skill**: Generate vector embeddings via Azure OpenAI API
 - **Local Embedding Models**: Generate embeddings locally via ONNX Runtime (no Azure OpenAI required)
@@ -564,6 +565,7 @@ AzureAISearchSimulator/
 | Skill Category | Azure AI Search | Simulator |
 | --- | --- | --- |
 | **Utility Skills** (Split, Merge, Shaper, Conditional) | ✅ | ✅ |
+| **Document Extraction Skill** | ✅ | ✅ |
 | **Custom Web API Skill** | ✅ | ✅ |
 | **Azure OpenAI Embedding Skill** | ✅ | ✅ |
 | **AI Vision Skills** (OCR, Image Analysis) | ✅ | ❌ |
