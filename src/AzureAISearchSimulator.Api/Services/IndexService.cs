@@ -131,6 +131,21 @@ public partial class IndexService : IIndexService
             }
         }
 
+        // Normalize scoring function "parameters" alias into type-specific properties
+        if (index.ScoringProfiles != null)
+        {
+            foreach (var profile in index.ScoringProfiles)
+            {
+                if (profile.Functions != null)
+                {
+                    foreach (var function in profile.Functions)
+                    {
+                        function.NormalizeParameters();
+                    }
+                }
+            }
+        }
+
         // Apply index-level defaults for empty collections
         // Azure always returns these as empty arrays rather than omitting them
         index.ScoringProfiles ??= new List<ScoringProfile>();
@@ -253,6 +268,9 @@ public partial class IndexService : IIndexService
             }
         }
 
+        // Validate scoring profiles
+        ValidateScoringProfiles(index, errors);
+
         // Validate suggesters
         if (index.Suggesters != null)
         {
@@ -281,6 +299,252 @@ public partial class IndexService : IIndexService
         return errors.Count == 0 
             ? IndexValidationResult.Success() 
             : IndexValidationResult.Failure(errors);
+    }
+
+    /// <summary>
+    /// Validates scoring profiles, text weights, and scoring function field references.
+    /// </summary>
+    private static void ValidateScoringProfiles(SearchIndex index, List<string> errors)
+    {
+        if (index.ScoringProfiles == null || index.ScoringProfiles.Count == 0)
+        {
+            // Validate defaultScoringProfile references even when no profiles defined
+            if (!string.IsNullOrWhiteSpace(index.DefaultScoringProfile))
+            {
+                errors.Add($"defaultScoringProfile '{index.DefaultScoringProfile}' references a scoring profile that does not exist");
+            }
+            return;
+        }
+
+        // Collect all field names (flattened) for validation lookups
+        var allFields = new Dictionary<string, SearchField>(StringComparer.OrdinalIgnoreCase);
+        if (index.Fields != null)
+        {
+            CollectFields(index.Fields, allFields, prefix: "");
+        }
+
+        // Validate max profile count (Azure allows up to 100)
+        if (index.ScoringProfiles.Count > 100)
+        {
+            errors.Add($"Index has {index.ScoringProfiles.Count} scoring profiles, but maximum is 100");
+        }
+
+        // Validate profile names are unique
+        var profileNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var profile in index.ScoringProfiles)
+        {
+            if (string.IsNullOrWhiteSpace(profile.Name))
+            {
+                errors.Add("Scoring profile name is required");
+                continue;
+            }
+
+            if (!profileNames.Add(profile.Name))
+            {
+                errors.Add($"Duplicate scoring profile name: '{profile.Name}'");
+            }
+
+            // Validate functionAggregation
+            if (!string.IsNullOrWhiteSpace(profile.FunctionAggregation))
+            {
+                var validAggregations = new[] { "sum", "average", "minimum", "maximum", "firstMatching" };
+                if (!validAggregations.Contains(profile.FunctionAggregation, StringComparer.OrdinalIgnoreCase))
+                {
+                    errors.Add($"Scoring profile '{profile.Name}' has invalid functionAggregation '{profile.FunctionAggregation}'. Valid values: {string.Join(", ", validAggregations)}");
+                }
+            }
+
+            // Validate text weights
+            if (profile.Text?.Weights != null)
+            {
+                foreach (var (fieldName, weight) in profile.Text.Weights)
+                {
+                    if (!allFields.TryGetValue(fieldName, out var field))
+                    {
+                        errors.Add($"Scoring profile '{profile.Name}' text weight references unknown field '{fieldName}'");
+                    }
+                    else if (field.Searchable != true)
+                    {
+                        errors.Add($"Scoring profile '{profile.Name}' text weight field '{fieldName}' must be searchable");
+                    }
+
+                    if (weight <= 0)
+                    {
+                        errors.Add($"Scoring profile '{profile.Name}' text weight for field '{fieldName}' must be positive");
+                    }
+                }
+            }
+
+            // Validate scoring functions
+            if (profile.Functions != null)
+            {
+                foreach (var function in profile.Functions)
+                {
+                    ValidateScoringFunction(profile.Name, function, allFields, errors);
+                }
+            }
+        }
+
+        // Validate defaultScoringProfile references an existing profile
+        if (!string.IsNullOrWhiteSpace(index.DefaultScoringProfile))
+        {
+            if (!profileNames.Contains(index.DefaultScoringProfile))
+            {
+                errors.Add($"defaultScoringProfile '{index.DefaultScoringProfile}' references a scoring profile that does not exist");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Recursively collects all fields from the index into a flat dictionary.
+    /// </summary>
+    private static void CollectFields(List<SearchField> fields, Dictionary<string, SearchField> result, string prefix)
+    {
+        foreach (var field in fields)
+        {
+            var fullName = string.IsNullOrEmpty(prefix) ? field.Name : $"{prefix}/{field.Name}";
+            result[fullName] = field;
+            // Also add without prefix for top-level lookups
+            if (!string.IsNullOrEmpty(prefix))
+            {
+                result.TryAdd(field.Name, field);
+            }
+            if (field.Fields != null)
+            {
+                CollectFields(field.Fields, result, fullName);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Validates a single scoring function's field reference and type-specific parameters.
+    /// </summary>
+    private static void ValidateScoringFunction(string profileName, ScoringFunction function, Dictionary<string, SearchField> allFields, List<string> errors)
+    {
+        var validTypes = new[] { "freshness", "magnitude", "distance", "tag" };
+        if (string.IsNullOrWhiteSpace(function.Type))
+        {
+            errors.Add($"Scoring profile '{profileName}' has a function with no type specified");
+            return;
+        }
+
+        if (!validTypes.Contains(function.Type, StringComparer.OrdinalIgnoreCase))
+        {
+            errors.Add($"Scoring profile '{profileName}' has invalid function type '{function.Type}'. Valid types: {string.Join(", ", validTypes)}");
+            return;
+        }
+
+        // Validate interpolation
+        if (!string.IsNullOrWhiteSpace(function.Interpolation))
+        {
+            var validInterpolations = new[] { "linear", "constant", "quadratic", "logarithmic" };
+            if (!validInterpolations.Contains(function.Interpolation, StringComparer.OrdinalIgnoreCase))
+            {
+                errors.Add($"Scoring profile '{profileName}' function on field '{function.FieldName}' has invalid interpolation '{function.Interpolation}'");
+            }
+
+            // Tag functions only support linear and constant interpolation
+            if (string.Equals(function.Type, "tag", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(function.Interpolation, "linear", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(function.Interpolation, "constant", StringComparison.OrdinalIgnoreCase))
+            {
+                errors.Add($"Scoring profile '{profileName}' tag function on field '{function.FieldName}' only supports 'linear' or 'constant' interpolation, not '{function.Interpolation}'");
+            }
+        }
+
+        // Validate boost: must not be zero or 1.0 (Azure requires boost != 0 and != 1.0)
+        if (function.Boost == 0)
+        {
+            errors.Add($"Scoring profile '{profileName}' function on field '{function.FieldName}' must have a non-zero boost value");
+        }
+        else if (Math.Abs(function.Boost - 1.0) < double.Epsilon)
+        {
+            errors.Add($"Scoring profile '{profileName}' function on field '{function.FieldName}' boost must not be 1.0");
+        }
+
+        // Validate field reference and compatible types
+        if (string.IsNullOrWhiteSpace(function.FieldName))
+        {
+            errors.Add($"Scoring profile '{profileName}' has a '{function.Type}' function with no fieldName");
+            return;
+        }
+
+        if (!allFields.TryGetValue(function.FieldName, out var field))
+        {
+            errors.Add($"Scoring profile '{profileName}' function references unknown field '{function.FieldName}'");
+            return;
+        }
+
+        // Scoring function fields must be filterable (Azure requirement)
+        if (field.Filterable != true)
+        {
+            errors.Add($"Scoring profile '{profileName}' function field '{function.FieldName}' must be filterable");
+        }
+
+        switch (function.Type.ToLowerInvariant())
+        {
+            case "freshness":
+                if (field.Type != SearchFieldDataType.DateTimeOffset && field.Type != SearchFieldDataType.CollectionDateTimeOffset)
+                {
+                    errors.Add($"Scoring profile '{profileName}' freshness function field '{function.FieldName}' must be of type Edm.DateTimeOffset, but is '{field.Type}'");
+                }
+                if (function.Freshness == null)
+                {
+                    errors.Add($"Scoring profile '{profileName}' freshness function on field '{function.FieldName}' is missing the 'freshness' parameters");
+                }
+                else if (string.IsNullOrWhiteSpace(function.Freshness.BoostingDuration))
+                {
+                    errors.Add($"Scoring profile '{profileName}' freshness function on field '{function.FieldName}' is missing 'boostingDuration'");
+                }
+                break;
+
+            case "magnitude":
+                var numericTypes = new[] 
+                { 
+                    SearchFieldDataType.Double, SearchFieldDataType.Int32, SearchFieldDataType.Int64,
+                    SearchFieldDataType.CollectionDouble, SearchFieldDataType.CollectionInt32, SearchFieldDataType.CollectionInt64
+                };
+                if (!numericTypes.Contains(field.Type))
+                {
+                    errors.Add($"Scoring profile '{profileName}' magnitude function field '{function.FieldName}' must be a numeric type (Edm.Double, Edm.Int32, or Edm.Int64), but is '{field.Type}'");
+                }
+                if (function.Magnitude == null)
+                {
+                    errors.Add($"Scoring profile '{profileName}' magnitude function on field '{function.FieldName}' is missing the 'magnitude' parameters");
+                }
+                break;
+
+            case "distance":
+                if (field.Type != SearchFieldDataType.GeographyPoint && field.Type != SearchFieldDataType.CollectionGeographyPoint)
+                {
+                    errors.Add($"Scoring profile '{profileName}' distance function field '{function.FieldName}' must be of type Edm.GeographyPoint, but is '{field.Type}'");
+                }
+                if (function.Distance == null)
+                {
+                    errors.Add($"Scoring profile '{profileName}' distance function on field '{function.FieldName}' is missing the 'distance' parameters");
+                }
+                else if (string.IsNullOrWhiteSpace(function.Distance.ReferencePointParameter))
+                {
+                    errors.Add($"Scoring profile '{profileName}' distance function on field '{function.FieldName}' is missing 'referencePointParameter'");
+                }
+                break;
+
+            case "tag":
+                var tagTypes = new[] { SearchFieldDataType.String, SearchFieldDataType.CollectionString };
+                if (!tagTypes.Contains(field.Type))
+                {
+                    errors.Add($"Scoring profile '{profileName}' tag function field '{function.FieldName}' must be of type Edm.String or Collection(Edm.String), but is '{field.Type}'");
+                }
+                if (function.Tag == null)
+                {
+                    errors.Add($"Scoring profile '{profileName}' tag function on field '{function.FieldName}' is missing the 'tag' parameters");
+                }
+                else if (string.IsNullOrWhiteSpace(function.Tag.TagsParameter))
+                {
+                    errors.Add($"Scoring profile '{profileName}' tag function on field '{function.FieldName}' is missing 'tagsParameter'");
+                }
+                break;
+        }
     }
 
     private static List<string> ValidateField(SearchField field, HashSet<string> fieldNames, string prefix = "")

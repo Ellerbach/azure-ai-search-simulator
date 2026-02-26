@@ -49,10 +49,10 @@ The Azure AI Search Simulator provides a local implementation of the Azure AI Se
 - **Azure SDK Compatibility**: Works with official Azure.Search.Documents SDK
 - **Search Debug**: Query diagnostics with subscore breakdown for hybrid/vector searches (`debug` parameter)
 - **Synonym Maps**: CRUD management, Solr format, query-time synonym expansion
+- **Scoring Profiles**: Text weights, freshness, magnitude, distance, and tag functions with interpolation and aggregation modes
 
 ### 🔜 Planned (Future Phases)
 
-- Scoring profiles
 - Azure SQL / Cosmos DB connectors
 - Admin UI dashboard
 
@@ -500,6 +500,7 @@ All `.http` sample files use environment variables via `$dotenv`. To get started
 | [pull-mode-test.http](samples/pull-mode-test.http) | REST Client file for testing indexer pull mode workflow |
 | [local-embedding-sample.http](samples/local-embedding-sample.http) | REST Client file demonstrating local ONNX embedding skill (no Azure OpenAI required) |
 | [index-projection-sample.http](samples/index-projection-sample.http) | REST Client file demonstrating index projections (one-to-many chunking into a secondary index) |
+| [scoring-profile-sample.http](samples/scoring-profile-sample.http) | REST Client file demonstrating scoring profiles (text weights, magnitude, freshness, tag, combined) |
 | [Download-EmbeddingModel.ps1](scripts/Download-EmbeddingModel.ps1) | PowerShell script to download ONNX embedding models from HuggingFace |
 
 ### Comparing Simulator vs Real Azure AI Search
@@ -558,6 +559,7 @@ AzureAISearchSimulator/
 | AI skills (OCR, etc.) | ✅ | ❌ |
 | Managed Identity | ✅ | ✅ (simulated) |
 | Entra ID Authentication | ✅ | ✅ |
+| Scoring Profiles | ✅ | ✅ |
 | Scale (millions of docs) | ✅ | Limited |
 
 ### Skills Support

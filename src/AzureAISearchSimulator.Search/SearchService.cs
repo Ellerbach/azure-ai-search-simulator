@@ -22,19 +22,22 @@ public class SearchService : ISearchService
     private readonly IVectorSearchService _vectorSearchService;
     private readonly IIndexService _indexService;
     private readonly ISynonymMapResolver _synonymMapResolver;
+    private readonly IScoringProfileService _scoringProfileService;
 
     public SearchService(
         ILogger<SearchService> logger,
         LuceneIndexManager indexManager,
         IVectorSearchService vectorSearchService,
         IIndexService indexService,
-        ISynonymMapResolver synonymMapResolver)
+        ISynonymMapResolver synonymMapResolver,
+        IScoringProfileService scoringProfileService)
     {
         _logger = logger;
         _indexManager = indexManager;
         _vectorSearchService = vectorSearchService;
         _indexService = indexService;
         _synonymMapResolver = synonymMapResolver;
+        _scoringProfileService = scoringProfileService;
     }
 
     public async Task<SearchResponse> SearchAsync(string indexName, SearchRequest request)
@@ -74,6 +77,19 @@ public class SearchService : ISearchService
         var searcher = _indexManager.GetSearcher(indexName);
         var keyField = LuceneDocumentMapper.GetKeyFieldName(index);
 
+        // Resolve scoring profile
+        var scoringProfile = _scoringProfileService.ResolveProfile(index, request);
+        
+        // Validate: if an explicit scoring profile was requested but not found, return an error
+        if (!string.IsNullOrWhiteSpace(request.ScoringProfile) && scoringProfile == null)
+        {
+            throw new ArgumentException(
+                $"The scoring profile '{request.ScoringProfile}' specified in the request does not exist in index '{indexName}'.");
+        }
+        
+        var textWeights = _scoringProfileService.GetTextWeights(scoringProfile);
+        var scoringParameters = _scoringProfileService.ParseScoringParameters(request.ScoringParameters);
+
         // Build the Lucene query
         Query? textQuery = null;
         Query? filterQuery = null;
@@ -81,7 +97,7 @@ public class SearchService : ISearchService
         
         if (!string.IsNullOrWhiteSpace(request.Search) && request.Search != "*")
         {
-            textQuery = BuildTextQuery(indexName, index, request);
+            textQuery = BuildTextQuery(indexName, index, request, textWeights);
             if (debugMode && debugInfo != null)
             {
                 debugInfo.ParsedQuery = textQuery?.ToString();
@@ -204,7 +220,10 @@ public class SearchService : ISearchService
             topDocs, 
             vectorScores, 
             request,
-            debugVector);
+            debugVector,
+            scoringProfile,
+            scoringParameters,
+            index);
 
         // Apply skip and top
         var finalResults = combinedResults.Results
@@ -330,7 +349,10 @@ public class SearchService : ISearchService
         TopDocs? textResults,
         Dictionary<string, double>? vectorScores,
         SearchRequest request,
-        bool debugVector)
+        bool debugVector,
+        ScoringProfile? scoringProfile = null,
+        Dictionary<string, string>? scoringParameters = null,
+        SearchIndex? index = null)
     {
         var combined = new Dictionary<string, (int DocId, double TextScore, double VectorScore)>();
         var textRanks = new Dictionary<string, int>();
@@ -416,6 +438,17 @@ public class SearchService : ISearchService
                     finalScore = textScore;
                 }
 
+                // Apply scoring profile function boosts
+                double documentBoost = 1.0;
+                if (scoringProfile?.Functions != null && scoringProfile.Functions.Count > 0 && docId >= 0)
+                {
+                    var luceneDoc = searcher.Doc(docId);
+                    var docFields = LuceneDocumentMapper.FromLuceneDocument(luceneDoc, null);
+                    documentBoost = _scoringProfileService.CalculateDocumentBoost(
+                        scoringProfile, docFields, scoringParameters ?? new Dictionary<string, string>());
+                    finalScore *= documentBoost;
+                }
+
                 // Build per-document debug info matching official structure
                 if (debugVector && documentDebugInfos != null)
                 {
@@ -453,8 +486,8 @@ public class SearchService : ISearchService
                         };
                     }
 
-                    // Document boost (not used yet, placeholder for scoring profiles)
-                    subscores.DocumentBoost = 1.0;
+                    // Document boost from scoring profile functions
+                    subscores.DocumentBoost = documentBoost;
 
                     documentDebugInfos[kvp.Key] = new DocumentDebugInfo
                     {
@@ -497,7 +530,7 @@ public class SearchService : ISearchService
         return modes;
     }
 
-    private Query BuildTextQuery(string indexName, SearchIndex schema, SearchRequest request)
+    private Query BuildTextQuery(string indexName, SearchIndex schema, SearchRequest request, Dictionary<string, double>? textWeights = null)
     {
         var searchableFields = schema.Fields
             .Where(f => f.Searchable == true)
@@ -510,10 +543,30 @@ public class SearchService : ISearchService
         }
 
         var analyzer = _indexManager.GetAnalyzer(indexName);
-        var parser = new MultiFieldQueryParser(
-            LuceneDocumentMapper.AppLuceneVersion,
-            searchableFields,
-            analyzer);
+
+        // Apply text weights as field boosts for the multi-field parser
+        Dictionary<string, float>? fieldBoosts = null;
+        if (textWeights != null && textWeights.Count > 0)
+        {
+            fieldBoosts = new Dictionary<string, float>();
+            foreach (var field in searchableFields)
+            {
+                if (textWeights.TryGetValue(field, out var weight))
+                {
+                    fieldBoosts[field] = (float)weight;
+                }
+                else
+                {
+                    fieldBoosts[field] = 1.0f; // Default weight
+                }
+            }
+            _logger.LogDebug("Applying text weights: {Weights}",
+                string.Join(", ", fieldBoosts.Select(kv => $"{kv.Key}={kv.Value}")));
+        }
+
+        var parser = fieldBoosts != null
+            ? new MultiFieldQueryParser(LuceneDocumentMapper.AppLuceneVersion, searchableFields, analyzer, fieldBoosts)
+            : new MultiFieldQueryParser(LuceneDocumentMapper.AppLuceneVersion, searchableFields, analyzer);
 
         // Configure query parser based on queryType
         if (request.QueryType?.ToLowerInvariant() == "full")

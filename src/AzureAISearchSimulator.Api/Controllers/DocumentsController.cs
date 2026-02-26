@@ -107,6 +107,10 @@ public class DocumentsController : ControllerBase
         {
             return NotFound(new { error = new { message = $"Index '{indexName}' not found" } });
         }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = new { code = "InvalidRequestParameter", message = ex.Message } });
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error searching index {IndexName}", indexName);
@@ -134,12 +138,28 @@ public class DocumentsController : ControllerBase
         [FromQuery] string? highlight = null,
         [FromQuery] string? searchMode = null,
         [FromQuery] string? queryType = null,
+        [FromQuery] string? scoringProfile = null,
+        [FromQuery] string? scoringParameter = null,
+        [FromQuery] string? scoringStatistics = null,
         [FromQuery] string? debug = null,
         [FromQuery(Name = "api-version")] string? apiVersion = null)
     {
         // Check authorization - search requires IndexDataReader
         var authResult = this.CheckAuthorization(_authorizationService, SearchOperation.Search);
         if (authResult != null) return authResult;
+
+        // Parse scoringParameter query params (can appear multiple times, but FromQuery gives last value;
+        // for full multi-value support the raw query string is parsed)
+        List<string>? scoringParameters = null;
+        if (!string.IsNullOrWhiteSpace(scoringParameter))
+        {
+            scoringParameters = new List<string> { scoringParameter };
+        }
+        // Check for multiple scoringParameter values from query string
+        if (HttpContext.Request.Query.TryGetValue("scoringParameter", out var spValues) && spValues.Count > 1)
+        {
+            scoringParameters = spValues.Where(v => v != null).Select(v => v!).ToList();
+        }
 
         var request = new SearchRequest
         {
@@ -153,6 +173,9 @@ public class DocumentsController : ControllerBase
             Highlight = highlight,
             SearchMode = searchMode ?? "any",
             QueryType = queryType ?? "simple",
+            ScoringProfile = scoringProfile,
+            ScoringParameters = scoringParameters,
+            ScoringStatistics = scoringStatistics,
             Debug = debug
         };
 
@@ -164,6 +187,10 @@ public class DocumentsController : ControllerBase
         catch (KeyNotFoundException)
         {
             return NotFound(new { error = new { message = $"Index '{indexName}' not found" } });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = new { code = "InvalidRequestParameter", message = ex.Message } });
         }
         catch (Exception ex)
         {

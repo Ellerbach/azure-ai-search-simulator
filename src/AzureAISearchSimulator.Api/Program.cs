@@ -97,6 +97,9 @@ try
     builder.Services.AddSingleton<IVectorSearchService, HnswVectorSearchService>();
     builder.Services.AddSingleton<IHybridSearchService, HybridSearchService>();
 
+    // Register scoring profile service
+    builder.Services.AddSingleton<IScoringProfileService, ScoringProfileService>();
+
     // Register data source connectors
     builder.Services.AddSingleton<IDataSourceConnector, FileSystemConnector>();
     builder.Services.AddAzureDataSourceConnectors(); // Add Azure Blob Storage and ADLS Gen2 connectors

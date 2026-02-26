@@ -181,7 +181,28 @@ api-key: <admin-key>
       }
     ]
   },
-  "scoringProfiles": [],
+  "scoringProfiles": [
+    {
+      "name": "boostRating",
+      "text": {
+        "weights": { "hotelName": 3, "description": 1 }
+      },
+      "functions": [
+        {
+          "type": "magnitude",
+          "fieldName": "rating",
+          "boost": 5,
+          "interpolation": "linear",
+          "magnitude": {
+            "boostingRangeStart": 0,
+            "boostingRangeEnd": 5
+          }
+        }
+      ],
+      "functionAggregation": "sum"
+    }
+  ],
+  "defaultScoringProfile": "boostRating",
   "suggesters": [
     {
       "name": "sg",
@@ -403,6 +424,9 @@ api-key: <query-key>
 | `count` | boolean | Include total count |
 | `facets` | array | Facet specifications |
 | `highlight` | string | Fields to highlight |
+| `scoringProfile` | string | Name of a scoring profile to evaluate (overrides `defaultScoringProfile`) |
+| `scoringParameters` | array | Values for scoring functions, e.g. `["tagParam-luxury,boutique"]` |
+| `scoringStatistics` | string | `"local"` (default) or `"global"`. Accepted for compatibility; simulator always uses local statistics |
 | `vectorQueries` | array | Vector query objects (see below) |
 | `debug` | string | Debug mode for search diagnostics (see below) |
 
@@ -641,6 +665,82 @@ Text scores are normalized using min-max normalization. Vector scores are alread
 | RRF | General use | Robust, no tuning needed |
 | Weighted | Score transparency | Requires weight tuning |
 
+#### Scoring Profiles
+
+Scoring profiles boost document relevance based on field values. Define profiles in the index, then activate them via `defaultScoringProfile` or the `scoringProfile` search parameter.
+
+**Index definition example:**
+
+```json
+{
+  "scoringProfiles": [
+    {
+      "name": "boostByRating",
+      "text": {
+        "weights": {
+          "hotelName": 3,
+          "description": 1
+        }
+      },
+      "functions": [
+        {
+          "type": "magnitude",
+          "fieldName": "rating",
+          "boost": 5,
+          "interpolation": "linear",
+          "magnitude": {
+            "boostingRangeStart": 0,
+            "boostingRangeEnd": 5,
+            "constantBoostBeyondRange": true
+          }
+        }
+      ],
+      "functionAggregation": "sum"
+    }
+  ],
+  "defaultScoringProfile": "boostByRating"
+}
+```
+
+**Supported scoring function types:**
+
+| Function | Field Type | Description |
+| -------- | ---------- | ----------- |
+| `freshness` | `Edm.DateTimeOffset` | Boost based on recency; decays over `boostingDuration` (ISO 8601) |
+| `magnitude` | `Edm.Double`, `Edm.Int32`, `Edm.Int64` | Boost within a numeric range |
+| `distance` | `Edm.GeographyPoint` | Boost by proximity to a reference point (Haversine) |
+| `tag` | `Collection(Edm.String)`, `Edm.String` | Boost when field values match scoring parameter tags |
+
+**Interpolation modes:** `linear` (default), `constant`, `quadratic`, `logarithmic`
+
+> **Note:** Tag functions only support `linear` and `constant` interpolation.
+
+**Aggregation modes:** `sum` (default), `average`, `minimum`, `maximum`, `firstMatching`
+
+**Search request with scoring profile:**
+
+```json
+{
+  "search": "luxury hotel",
+  "scoringProfile": "boostByRating",
+  "scoringParameters": [
+    "tagParam-luxury,boutique"
+  ]
+}
+```
+
+The `scoringParameters` array provides values for `tag` and `distance` functions. Format for tag: `paramName-value1,value2`. Format for distance: `paramName--longitude,latitude` (note the double dash separator).
+
+When `debug` is enabled, the `@search.documentDebugInfo` includes a `documentBoost` value reflecting the combined scoring profile boost applied to each document.
+
+**Validation:**
+
+- Profiles with invalid field references, unsupported field types for functions, or non-filterable fields are rejected at index creation time.
+- Function `boost` must be non-zero and not equal to `1.0`. Negative values are allowed (to demote documents).
+- Tag functions only accept `linear` or `constant` interpolation.
+- Maximum 100 scoring profiles per index.
+- Requesting a non-existent `scoringProfile` in a search returns `400 Bad Request`.
+
 **Response:**
 ```json
 {
@@ -673,11 +773,11 @@ Text scores are normalized using min-max normalization. Vector scores are alread
 ### [Search Documents (GET)](https://learn.microsoft.com/en-us/rest/api/searchservice/documents/search-get)
 
 ```http
-GET /indexes/{indexName}/docs?api-version=2024-07-01&search={text}&$filter={filter}&$select={fields}&$orderby={sort}&$top={n}&$skip={n}&$count={bool}&highlight={fields}&searchMode={mode}&queryType={type}&debug={mode}
+GET /indexes/{indexName}/docs?api-version=2024-07-01&search={text}&$filter={filter}&$select={fields}&$orderby={sort}&$top={n}&$skip={n}&$count={bool}&highlight={fields}&searchMode={mode}&queryType={type}&scoringProfile={name}&scoringParameter={param}&scoringStatistics={scope}&debug={mode}
 api-key: <query-key>
 ```
 
-All search parameters can be passed as query string parameters. The `debug` parameter accepts the same values as in the POST body.
+All search parameters can be passed as query string parameters. Use `scoringProfile` for the profile name and `scoringParameter` (repeated) for each scoring parameter value. The `debug` parameter accepts the same values as in the POST body.
 
 **Example:**
 
