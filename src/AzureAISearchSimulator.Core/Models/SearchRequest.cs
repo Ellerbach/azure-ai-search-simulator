@@ -104,6 +104,13 @@ public class SearchRequest
     public List<string>? ScoringParameters { get; set; }
 
     /// <summary>
+    /// Scoring statistics scope: "local" (default) or "global".
+    /// The simulator always uses local statistics; this property is accepted for compatibility.
+    /// </summary>
+    [JsonPropertyName("scoringStatistics")]
+    public string? ScoringStatistics { get; set; }
+
+    /// <summary>
     /// Minimum coverage required (0-100).
     /// </summary>
     [JsonPropertyName("minimumCoverage")]

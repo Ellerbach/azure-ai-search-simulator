@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace AzureAISearchSimulator.Core.Models;
@@ -179,6 +180,46 @@ public class ScoringFunction
 
     [JsonPropertyName("tag")]
     public TagFunction? Tag { get; set; }
+
+    /// <summary>
+    /// Alias for the type-specific parameters object (e.g. "parameters": { "boostingDuration": "365D" }).
+    /// Some Azure documentation examples use "parameters" instead of the type name.
+    /// After deserialization, call NormalizeParameters() to map this into the correct property.
+    /// </summary>
+    [JsonPropertyName("parameters")]
+    public JsonElement? Parameters { get; set; }
+
+    /// <summary>
+    /// If "parameters" was provided instead of the type-specific property (freshness/magnitude/distance/tag),
+    /// deserializes it into the correct property based on the function type.
+    /// </summary>
+    public void NormalizeParameters()
+    {
+        if (Parameters == null || Parameters.Value.ValueKind == JsonValueKind.Undefined)
+            return;
+
+        var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+        var json = Parameters.Value.GetRawText();
+
+        switch (Type?.ToLowerInvariant())
+        {
+            case "freshness" when Freshness == null:
+                Freshness = JsonSerializer.Deserialize<FreshnessFunction>(json, options);
+                break;
+            case "magnitude" when Magnitude == null:
+                Magnitude = JsonSerializer.Deserialize<MagnitudeFunction>(json, options);
+                break;
+            case "distance" when Distance == null:
+                Distance = JsonSerializer.Deserialize<DistanceFunction>(json, options);
+                break;
+            case "tag" when Tag == null:
+                Tag = JsonSerializer.Deserialize<TagFunction>(json, options);
+                break;
+        }
+
+        // Clear parameters after normalization so it's not persisted twice
+        Parameters = null;
+    }
 }
 
 public class FreshnessFunction

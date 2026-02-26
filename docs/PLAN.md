@@ -70,7 +70,7 @@ This document outlines the comprehensive plan for building an Azure AI Search Si
   - ✅ Normalizers for case-insensitive filtering
   - Truncated dimensions (MRL)
   - Rescoring options
-- Scoring profiles
+- ~~Scoring profiles~~ ✅ Implemented
 
 #### Future Phases
 
@@ -1059,7 +1059,7 @@ The simulator will target API version **2024-07-01** as the baseline, with compa
 | Semantic Ranking | ✅ | ❌ | Requires complex ML models |
 | Knowledge Store | ✅ | ❌ | Future phase |
 | Azure AI Skills (OCR, etc.) | ✅ | ❌ | Requires Azure AI Services |
-| Scoring Profiles | ✅ | ⚠️ | Basic support, some functions may differ |
+| Scoring Profiles | ✅ | ✅ | Text weights, freshness, magnitude, distance, tag; all interpolation & aggregation modes |
 | Synonym Maps | ✅ | ✅ | CRUD management, Solr format, query-time expansion |
 | SLA/Availability | 99.9%+ | N/A | Local dev tool |
 | Scale | Millions of docs | Limited | Dev/test only |

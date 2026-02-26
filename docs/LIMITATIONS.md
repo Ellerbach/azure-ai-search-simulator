@@ -59,12 +59,12 @@ The simulator is designed for **development, learning, and testing purposes only
 | **Normalizers** | All predefined and custom normalizer configurations |
 | **Search debug** | Subscore breakdown for hybrid/vector queries |
 | **Synonym maps** | CRUD management and query-time expansion (Solr format) |
+| **Scoring profiles** | All 4 function types (freshness, magnitude, distance, tag), text weights, interpolation modes, and aggregation modes. Distance uses Haversine approximation. `scoringStatistics: "global"` is accepted but always uses local statistics. |
 
 ### ⚠️ Partially Supported
 
 | Feature | Limitation |
 | ------- | ---------- |
-| Scoring profiles | Basic profiles supported, some functions may differ |
 | Analyzers | All Lucene language analyzers supported (27 languages); `.microsoft` names accepted and mapped to Lucene equivalents |
 | Synonym maps | CRUD management and query-time expansion supported; Solr format only |
 | Custom analyzers | Basic tokenizers and filters only |

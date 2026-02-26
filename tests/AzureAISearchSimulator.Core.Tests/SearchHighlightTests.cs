@@ -62,7 +62,8 @@ public class SearchHighlightTests : IDisposable
             _luceneManager,
             vectorSearchService,
             indexServiceMock.Object,
-            Mock.Of<ISynonymMapResolver>());
+            Mock.Of<ISynonymMapResolver>(),
+            Mock.Of<IScoringProfileService>());
 
         // Seed documents
         var upload = new IndexDocumentsRequest
