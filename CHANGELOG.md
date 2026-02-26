@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+### Fixed
+
+- **Custom Web API Skill deserialization error**: Fixed `System.Text.Json.JsonException` when custom skills return `errors` or `warnings` in the Azure AI Search format (`[{"message": "..."}]`). The `CustomSkillResponseValue` model incorrectly declared `Errors` and `Warnings` as `List<string>` instead of `List<CustomSkillMessage>`. Responses with non-empty errors or warnings now deserialize correctly.
+
 ### Added
 
 - **Document Extraction Skill**: `#Microsoft.Skills.Util.DocumentExtractionSkill` — extract text and metadata from documents within a skillset pipeline. Supports base64-encoded and URL-based `file_data` input, automatic content-type detection (PDF, Word, Excel, HTML, JSON, CSV, plain text), and `parsingMode` configuration. Integrates with the existing document cracking infrastructure.

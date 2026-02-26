@@ -163,11 +163,11 @@ public class CustomWebApiSkillExecutor : ISkillExecutor
                     // Collect warnings and errors from response
                     if (responseData.Values[0].Warnings != null)
                     {
-                        warnings.AddRange(responseData.Values[0].Warnings);
+                        warnings.AddRange(responseData.Values[0].Warnings.Select(w => w.Message ?? string.Empty));
                     }
                     if (responseData.Values[0].Errors != null && responseData.Values[0].Errors.Count > 0)
                     {
-                        return SkillExecutionResult.Failed(responseData.Values[0].Errors.ToArray());
+                        return SkillExecutionResult.Failed(responseData.Values[0].Errors.Select(e => e.Message ?? string.Empty).ToArray());
                     }
                 }
             }
@@ -301,6 +301,11 @@ internal class CustomSkillResponseValue
 {
     public string? RecordId { get; set; }
     public Dictionary<string, object?> Data { get; set; } = new();
-    public List<string>? Warnings { get; set; }
-    public List<string>? Errors { get; set; }
+    public List<CustomSkillMessage>? Warnings { get; set; }
+    public List<CustomSkillMessage>? Errors { get; set; }
+}
+
+internal class CustomSkillMessage
+{
+    public string? Message { get; set; }
 }
