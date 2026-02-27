@@ -225,6 +225,171 @@ public class CustomWebApiSkillExecutorTests
         Assert.True(result.Success);
     }
 
+    [Fact]
+    public async Task ExecuteAsync_WithErrorsAndNullData_ShouldReturnErrorsWithoutCrashing()
+    {
+        // Arrange - API returns errors with null data (no outputs)
+        var responseJson = """
+        {
+            "values": [
+                {
+                    "recordId": "1",
+                    "data": null,
+                    "errors": [{ "message": "Processing failed" }],
+                    "warnings": []
+                }
+            ]
+        }
+        """;
+
+        SetupHttpClient(responseJson);
+
+        var skill = CreateSkill(
+            outputs: new List<SkillOutput>
+            {
+                new() { Name = "output", TargetName = "output" }
+            });
+        var document = new EnrichedDocument();
+        document.SetValue("/document/content", "test content");
+
+        // Act
+        var result = await _executor.ExecuteAsync(skill, document);
+
+        // Assert - should fail with the error, not throw NullReferenceException
+        Assert.False(result.Success);
+        Assert.Contains(result.Errors, e => e.Contains("Processing failed"));
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WithErrorsAndMissingData_ShouldReturnErrorsWithoutCrashing()
+    {
+        // Arrange - API returns errors with data property omitted entirely
+        var responseJson = """
+        {
+            "values": [
+                {
+                    "recordId": "1",
+                    "errors": [{ "message": "Input validation failed" }]
+                }
+            ]
+        }
+        """;
+
+        SetupHttpClient(responseJson);
+
+        var skill = CreateSkill();
+        var document = new EnrichedDocument();
+        document.SetValue("/document/content", "test content");
+
+        // Act
+        var result = await _executor.ExecuteAsync(skill, document);
+
+        // Assert
+        Assert.False(result.Success);
+        Assert.Contains(result.Errors, e => e.Contains("Input validation failed"));
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WithWarningsAndNullData_ShouldSucceedWithWarnings()
+    {
+        // Arrange - API returns warnings with null data
+        var responseJson = """
+        {
+            "values": [
+                {
+                    "recordId": "1",
+                    "data": null,
+                    "errors": [],
+                    "warnings": [{ "message": "Partial result" }]
+                }
+            ]
+        }
+        """;
+
+        SetupHttpClient(responseJson);
+
+        var skill = CreateSkill(
+            outputs: new List<SkillOutput>
+            {
+                new() { Name = "output", TargetName = "output" }
+            });
+        var document = new EnrichedDocument();
+        document.SetValue("/document/content", "test content");
+
+        // Act
+        var result = await _executor.ExecuteAsync(skill, document);
+
+        // Assert - should succeed with warnings, not crash on null data
+        Assert.True(result.Success);
+        Assert.Contains(result.Warnings, w => w.Contains("Partial result"));
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WithEmptyDataDictionary_ShouldSucceedWithoutMappingOutputs()
+    {
+        // Arrange - API returns an empty data dictionary (no matching output keys)
+        var response = new
+        {
+            values = new[]
+            {
+                new
+                {
+                    recordId = "1",
+                    data = new Dictionary<string, object>(),
+                    errors = Array.Empty<object>(),
+                    warnings = Array.Empty<object>()
+                }
+            }
+        };
+
+        SetupHttpClient(JsonSerializer.Serialize(response));
+
+        var skill = CreateSkill(
+            outputs: new List<SkillOutput>
+            {
+                new() { Name = "output", TargetName = "output" }
+            });
+        var document = new EnrichedDocument();
+        document.SetValue("/document/content", "test content");
+
+        // Act
+        var result = await _executor.ExecuteAsync(skill, document);
+
+        // Assert - should succeed, output just won't be mapped
+        Assert.True(result.Success);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WithErrorsAndWarningsCombined_ShouldReturnErrors()
+    {
+        // Arrange - API returns both errors and warnings with null data
+        var responseJson = """
+        {
+            "values": [
+                {
+                    "recordId": "1",
+                    "data": null,
+                    "errors": [{ "message": "Fatal error occurred" }],
+                    "warnings": [{ "message": "Something was off" }]
+                }
+            ]
+        }
+        """;
+
+        SetupHttpClient(responseJson);
+
+        var skill = CreateSkill();
+        var document = new EnrichedDocument();
+        document.SetValue("/document/content", "test content");
+
+        // Act
+        var result = await _executor.ExecuteAsync(skill, document);
+
+        // Assert - errors take priority, result should be failed
+        Assert.False(result.Success);
+        Assert.Contains(result.Errors, e => e.Contains("Fatal error occurred"));
+    }
+
     // ─── Helpers ─────────────────────────────────────────────────────
 
     private Skill CreateSkill(

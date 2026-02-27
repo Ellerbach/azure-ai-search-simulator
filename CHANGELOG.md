@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+### Fixed
+
+- **Custom Web API Skill null data handling**: Fixed crash when custom skill API returns errors or warnings with null or missing `data` property. Errors and warnings are now checked before attempting to map outputs.
+
 ### Added
 
 - **Scoring profiles**: Full scoring profile support with text weights, all four function types (freshness, magnitude, distance, tag), four interpolation modes (linear, constant, quadratic, logarithmic), and five aggregation modes (sum, average, minimum, maximum, firstMatching). Includes index-level validation, `scoringProfile`/`scoringParameters` search parameters, `defaultScoringProfile`, `documentBoost` in debug output, 149 unit/validation tests, 9 integration tests, and `scoring-profile-sample.http`.

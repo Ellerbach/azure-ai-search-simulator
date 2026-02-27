@@ -140,34 +140,38 @@ public class CustomWebApiSkillExecutor : ISkillExecutor
 
                 if (responseData?.Values?.Count > 0)
                 {
-                    var resultData = responseData.Values[0].Data;
-                    
-                    // Map outputs
-                    foreach (var output in skill.Outputs)
+                    var resultValue = responseData.Values[0];
+
+                    // Collect warnings and errors from response first
+                    if (resultValue.Warnings != null)
                     {
-                        if (resultData.TryGetValue(output.Name, out var value))
-                        {
-                            var targetName = output.TargetName ?? output.Name;
-                            var outputPath = $"{ctx}/{targetName}";
-                            
-                            // Handle JsonElement values
-                            if (value is JsonElement element)
-                            {
-                                value = ConvertJsonElement(element);
-                            }
-                            
-                            document.SetValue(outputPath, value);
-                        }
+                        warnings.AddRange(resultValue.Warnings.Select(w => w.Message ?? string.Empty));
+                    }
+                    if (resultValue.Errors != null && resultValue.Errors.Count > 0)
+                    {
+                        return SkillExecutionResult.Failed(resultValue.Errors.Select(e => e.Message ?? string.Empty).ToArray());
                     }
 
-                    // Collect warnings and errors from response
-                    if (responseData.Values[0].Warnings != null)
+                    // Map outputs only if Data is available
+                    var resultData = resultValue.Data;
+                    if (resultData != null)
                     {
-                        warnings.AddRange(responseData.Values[0].Warnings.Select(w => w.Message ?? string.Empty));
-                    }
-                    if (responseData.Values[0].Errors != null && responseData.Values[0].Errors.Count > 0)
-                    {
-                        return SkillExecutionResult.Failed(responseData.Values[0].Errors.Select(e => e.Message ?? string.Empty).ToArray());
+                        foreach (var output in skill.Outputs)
+                        {
+                            if (resultData.TryGetValue(output.Name, out var value))
+                            {
+                                var targetName = output.TargetName ?? output.Name;
+                                var outputPath = $"{ctx}/{targetName}";
+                                
+                                // Handle JsonElement values
+                                if (value is JsonElement element)
+                                {
+                                    value = ConvertJsonElement(element);
+                                }
+                                
+                                document.SetValue(outputPath, value);
+                            }
+                        }
                     }
                 }
             }
