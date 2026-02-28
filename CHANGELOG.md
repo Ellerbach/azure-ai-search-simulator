@@ -9,14 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Similarity algorithms**: Full support for configurable BM25 (k1/b parameters) and ClassicSimilarity (TF-IDF) per index. Includes `@search.features` response support, `similarity-sample.http`, parameter validation, and immutability enforcement on update.
 
+### Fixed
+
+- **BM25 scoring completely broken for filterable fields**: Fixed a critical bug where BM25 scoring degenerated to IDF-only (no term frequency, no document length normalization). When a field was both `searchable` and `filterable` (the default for all `Edm.String` fields), the `TextField` and `StringField` shared the same Lucene field name. Lucene 4.8's `FieldInfo.update()` resolved the conflict by downgrading `IndexOptions` to `DOCS_ONLY` and setting `OmitNorms=true`, making all matching documents score identically regardless of BM25 k1/b parameters. Filter fields now use a `_exact` suffix to avoid the collision.
+- **Index deletion didn't clean up Lucene files**: `DeleteIndexAsync` now calls `LuceneIndexManager.DeleteIndex()` to remove Lucene index directories from disk, not just the LiteDB metadata.
+
+### Fixed
+
+- **Custom Web API Skill null data handling**: Fixed crash when custom skill API returns errors or warnings with null or missing `data` property. Errors and warnings are now checked before attempting to map outputs.
+
 ### Added
 
 - **Scoring profiles**: Full scoring profile support with text weights, all four function types (freshness, magnitude, distance, tag), four interpolation modes (linear, constant, quadratic, logarithmic), and five aggregation modes (sum, average, minimum, maximum, firstMatching). Includes index-level validation, `scoringProfile`/`scoringParameters` search parameters, `defaultScoringProfile`, `documentBoost` in debug output, 149 unit/validation tests, 9 integration tests, and `scoring-profile-sample.http`.
 
 ### Fixed
 
-- **BM25 scoring completely broken for filterable fields**: Fixed a critical bug where BM25 scoring degenerated to IDF-only (no term frequency, no document length normalization). When a field was both `searchable` and `filterable` (the default for all `Edm.String` fields), the `TextField` and `StringField` shared the same Lucene field name. Lucene 4.8's `FieldInfo.update()` resolved the conflict by downgrading `IndexOptions` to `DOCS_ONLY` and setting `OmitNorms=true`, making all matching documents score identically regardless of BM25 k1/b parameters. Filter fields now use a `_exact` suffix to avoid the collision.
-- **Index deletion didn't clean up Lucene files**: `DeleteIndexAsync` now calls `LuceneIndexManager.DeleteIndex()` to remove Lucene index directories from disk, not just the LiteDB metadata.
 - **Custom Web API Skill null data handling**: Fixed crash when custom skill API returns errors or warnings with null or missing `data` property. Errors and warnings are now checked before attempting to map outputs.
 - **Custom Web API Skill deserialization error**: Fixed `System.Text.Json.JsonException` when custom skills return `errors` or `warnings` in the Azure AI Search format (`[{"message": "..."}]`). The `CustomSkillResponseValue` model incorrectly declared `Errors` and `Warnings` as `List<string>` instead of `List<CustomSkillMessage>`. Responses with non-empty errors or warnings now deserialize correctly.
 
