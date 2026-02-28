@@ -179,7 +179,7 @@ The container exposes four mount points for data persistence and file access:
 # Mount your documents folder so indexers can access them inside the container
 docker run -p 7250:8443 -p 5250:8080 \
   -v search-data:/app/data \
-  -v ./my-documents:/app/files \
+  -v ./your-documents:/app/files \
   azure-ai-search-simulator
 ```
 

@@ -10,7 +10,7 @@
 #    cd src/AzureAISearchSimulator.Api && dotnet run --urls "http://localhost:5250"
 # 2. Start the Custom Skills API:
 #    cd samples/CustomSkillSample && dotnet run
-# 3. Ensure the sample-documents folder has some text files
+# 3. Ensure the samples/sample-data/search-demo folder has some text files
 #
 ###############################################################################
 
@@ -20,9 +20,9 @@
 @apiKey = {{$dotenv ADMIN_KEY}}
 
 # this needs to be without the container name since the data source definition already specifies the container. The indexer will combine the connection string path with the container name to get the full path to the documents.
-@absolutePathToSampleDocuments = C:\Projets\AzureAISimulator
+@absolutePathToSampleDocuments = C:\Projets\AzureAISimulator\samples\sample-data
 
-@containerName = sample-documents
+@containerName = search-demo
 
 ###############################################################################
 # Step 1: Create Index with fields for skill outputs

@@ -39,7 +39,7 @@ Send base64-encoded file data directly:
 
 ```powershell
 # Encode a file
-$b64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes("samples/data/image-extraction/report-with-charts.docx"))
+$b64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes("samples/sample-data/image-extraction/report-with-charts.docx"))
 ```
 
 Then use the push-mode skillset from the `.http` file.

@@ -41,7 +41,7 @@ api-key: {{apiKey}}
   "name": "local-test-files",
   "type": "filesystem",
   "credentials": {
-    "connectionString": "C:/Projets/AzureAISimulator/data-samples"
+    "connectionString": "C:/Projets/AzureAISimulator/samples/sample-data"
   },
   "container": {
     "name": "test-docs"

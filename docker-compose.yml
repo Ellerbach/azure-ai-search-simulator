@@ -31,8 +31,8 @@ services:
       - ./logs:/app/logs
       # Mount local files for indexer file processing (pull mode)
       - ./files:/app/files
-      # Mount local test data (optional, read-only)
-      - ./testdata:/app/testdata:ro
+      # Mount sample data (optional, read-only)
+      - ./samples/sample-data:/app/sample-data:ro
       # Mount ONNX embedding models (download with scripts/Download-EmbeddingModel.ps1)
       - ./src/AzureAISearchSimulator.Api/data/models:/app/models:ro
     healthcheck:

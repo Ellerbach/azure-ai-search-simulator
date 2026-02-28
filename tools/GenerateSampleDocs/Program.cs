@@ -10,14 +10,14 @@ using DocumentFormat.OpenXml.Spreadsheet;
 // Generates sample documents with text + embedded images for testing
 // the DocumentExtractionSkill's image extraction feature.
 //
-// Output directory: samples/data/image-extraction/
+// Output directory: samples/sample-data/image-extraction/
 // Produces:
 //   - report-with-charts.docx   (Word doc with 2 paragraphs + 2 images)
 //   - inventory-with-photos.xlsx (Excel with data + 1 image)
 // ───────────────────────────────────────────────────────────────────
 
 var outputDir = Path.Combine(
-    AppContext.BaseDirectory, "..", "..", "..", "..", "..", "samples", "data", "image-extraction");
+    AppContext.BaseDirectory, "..", "..", "..", "..", "..", "samples", "sample-data", "image-extraction");
 outputDir = Path.GetFullPath(outputDir);
 Directory.CreateDirectory(outputDir);
 
