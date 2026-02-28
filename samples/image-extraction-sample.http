@@ -8,7 +8,7 @@
 ###   2. REST Client extension installed in VS Code
 ###   3. .env file with BASE_URL, ADMIN_KEY, API_VERSION
 ###
-### Sample files used (in samples/data/image-extraction/):
+### Sample files used (in samples/sample-data/image-extraction/):
 ###   - report-with-charts.docx  (Word doc: 4 paragraphs + 2 PNG images)
 ###   - inventory-with-photos.xlsx (Excel: 5 data rows + 1 PNG image)
 
@@ -49,7 +49,7 @@ api-key: {{apiKey}}
   "name": "image-test-files",
   "type": "filesystem",
   "credentials": {
-    "connectionString": "C:/Projets/AzureAISimulator/samples/data"
+    "connectionString": "C:/Projets/AzureAISimulator/samples/sample-data"
   },
   "container": {
     "name": "image-extraction"
@@ -196,7 +196,7 @@ api-key: {{apiKey}}
 
 ### ─── Push Test A: Word document with images ────────
 ### First, get the base64 of the docx file. In PowerShell:
-###   $b64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes("samples/data/image-extraction/report-with-charts.docx"))
+###   $b64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes("samples/sample-data/image-extraction/report-with-charts.docx"))
 ###
 ### Then paste $b64 into the "data" field below.
 ### (The REST Client does not support file inclusion, so this is manual.)

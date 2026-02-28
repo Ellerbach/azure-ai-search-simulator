@@ -65,10 +65,10 @@ $dataSourceBody = @{
     name = "local-files"
     type = "filesystem"
     credentials = @{
-        connectionString = "c:\Projets\AzureAISimulator\testdata"
+        connectionString = "c:\Projets\AzureAISimulator\samples\sample-data"
     }
     container = @{
-        name = "documents"
+        name = "general-docs"
     }
 } | ConvertTo-Json -Depth 3
 

@@ -112,7 +112,7 @@ api-key: {{apiKey}}
 ### =====================================================
 ### Step 3: Create Data Source (Local File System)
 ### =====================================================
-### Points at sample-documents/ which contains longer text
+### Points at samples/sample-data/search-demo/ which contains longer text
 ### files suitable for chunking.
 
 PUT {{baseUrl}}/datasources/{{dataSourceName}}?api-version={{apiVersion}}
@@ -123,10 +123,10 @@ api-key: {{apiKey}}
   "name": "projection-docs",
   "type": "filesystem",
   "credentials": {
-    "connectionString": "C:/Projets/AzureAISimulator"
+    "connectionString": "C:/Projets/AzureAISimulator/samples/sample-data"
   },
   "container": {
-    "name": "sample-documents"
+    "name": "search-demo"
   },
   "description": "Sample documents for index projection demo"
 }

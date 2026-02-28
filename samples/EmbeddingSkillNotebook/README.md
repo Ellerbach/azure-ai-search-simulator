@@ -20,7 +20,7 @@ The notebook uses the same sample data as the IndexerTestNotebook:
 - **JSON metadata files**: Document metadata (id, title, author, category)
 - **TXT content files**: Document text content (used for embedding generation)
 
-The data is located at `../IndexerTestNotebook/data/`
+The data is located at `../sample-data/indexer-test/`
 
 ## Prerequisites
 

@@ -492,10 +492,10 @@ api-key: {{adminKey}}
   "name": "local-files",
   "type": "filesystem",
   "credentials": {
-    "connectionString": "c:\\Projets\\AzureAISimulator\\testdata\\documents"
+    "connectionString": "c:\\Projets\\AzureAISimulator\\samples\\sample-data"
   },
   "container": {
-    "name": "documents"
+    "name": "general-docs"
   }
 }
 
