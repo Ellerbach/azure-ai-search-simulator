@@ -129,6 +129,15 @@ public class SearchRequest
     /// </summary>
     [JsonPropertyName("debug")]
     public string? Debug { get; set; }
+
+    /// <summary>
+    /// When set to "enabled", returns per-field BM25 scoring details in @search.features
+    /// for each result. Each searchable field that was queried will include uniqueTokenMatches,
+    /// similarityScore, and termFrequency values.
+    /// Valid values: "none" (default), "enabled".
+    /// </summary>
+    [JsonPropertyName("featuresMode")]
+    public string? FeaturesMode { get; set; }
 }
 
 /// <summary>

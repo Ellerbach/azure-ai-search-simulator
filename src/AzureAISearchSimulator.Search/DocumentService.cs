@@ -38,6 +38,9 @@ public class DocumentService : IDocumentService
             throw new KeyNotFoundException($"Index '{indexName}' not found");
         }
 
+        // Ensure Lucene uses the correct similarity algorithm from the index definition
+        _indexManager.ConfigureSimilarity(indexName, index.Similarity);
+
         var keyField = LuceneDocumentMapper.GetKeyFieldName(index);
         IndexWriter writer;
         try
@@ -451,6 +454,9 @@ public class DocumentService : IDocumentService
             throw new KeyNotFoundException($"Index '{indexName}' not found");
         }
 
+        // Ensure Lucene uses the correct similarity algorithm from the index definition
+        _indexManager.ConfigureSimilarity(indexName, index.Similarity);
+
         var keyField = LuceneDocumentMapper.GetKeyFieldName(index);
         var searcher = _indexManager.GetSearcher(indexName);
         
@@ -466,16 +472,23 @@ public class DocumentService : IDocumentService
         return LuceneDocumentMapper.FromLuceneDocument(luceneDoc, selectedFields);
     }
 
-    public Task<long> GetDocumentCountAsync(string indexName)
+    public async Task<long> GetDocumentCountAsync(string indexName)
     {
         try
         {
+            // Ensure similarity is configured before accessing the index holder
+            var index = await _indexService.GetIndexAsync(indexName);
+            if (index != null)
+            {
+                _indexManager.ConfigureSimilarity(indexName, index.Similarity);
+            }
+
             var searcher = _indexManager.GetSearcher(indexName);
-            return Task.FromResult((long)searcher.IndexReader.NumDocs);
+            return (long)searcher.IndexReader.NumDocs;
         }
         catch
         {
-            return Task.FromResult(0L);
+            return 0L;
         }
     }
 

@@ -17,6 +17,33 @@ public static class LuceneDocumentMapper
     public static readonly LuceneVersion AppLuceneVersion = LuceneVersion.LUCENE_48;
 
     /// <summary>
+    /// Suffix appended to the Lucene field name for exact-match (filter) indexing
+    /// when a field is both searchable (TextField) and filterable (StringField).
+    /// This prevents Lucene from downgrading IndexOptions to DOCS_ONLY and omitting
+    /// norms, which would corrupt BM25 scoring (all tf=1, no doc length normalization).
+    /// </summary>
+    internal const string ExactFilterSuffix = "_exact";
+
+    /// <summary>
+    /// Gets the Lucene field name to use for filter queries on the given schema field.
+    /// Searchable+filterable fields use a separate "_exact" field for filtering
+    /// to avoid corrupting the TextField's IndexOptions and norms.
+    /// </summary>
+    public static string GetFilterFieldName(SearchField field)
+    {
+        // Key fields use their original name (they're only StringField, no conflict)
+        if (field.Key == true)
+            return field.Name;
+
+        // Searchable+filterable fields store the filter index under a suffixed name
+        if (field.Searchable == true && field.Filterable == true)
+            return field.Name + ExactFilterSuffix;
+
+        // Non-searchable filterable fields use the original name (StringField only, no conflict)
+        return field.Name;
+    }
+
+    /// <summary>
     /// Converts an Azure AI Search document to a Lucene document.
     /// </summary>
     /// <param name="searchDocument">The document as a dictionary.</param>
@@ -164,11 +191,13 @@ public static class LuceneDocumentMapper
             // Searchable - use TextField for full-text search (analyzer handles normalization)
             fields.Add(new TextField(field.Name, strValue, field.Retrievable != false ? Field.Store.YES : Field.Store.NO));
 
-            // If also filterable, add exact-match StringField so filter queries work
-            // (TextField lowercases via analyzer; filters need exact case matching)
+            // If also filterable, add exact-match StringField for filter queries.
+            // IMPORTANT: Use a SEPARATE field name to avoid corrupting TextField's IndexOptions
+            // and norms. Mixing TextField + StringField under the same name causes Lucene to
+            // downgrade to DOCS_ONLY (no term frequencies) and omit norms, breaking BM25 scoring.
             if (field.Filterable == true)
             {
-                fields.Add(new StringField(field.Name, normalizedValue, Field.Store.NO));
+                fields.Add(new StringField(field.Name + ExactFilterSuffix, normalizedValue, Field.Store.NO));
             }
 
             if (field.Sortable == true)
@@ -394,8 +423,12 @@ public static class LuceneDocumentMapper
             
             if (field.Filterable == true)
             {
-                // Filtering uses normalized value
-                fields.Add(new StringField(field.Name, normalizedValue, Field.Store.NO));
+                // For searchable+filterable fields, use a separate field name to avoid
+                // corrupting the TextField's IndexOptions and norms (same fix as CreateStringFields).
+                var filterFieldName = field.Searchable == true
+                    ? field.Name + ExactFilterSuffix
+                    : field.Name;
+                fields.Add(new StringField(filterFieldName, normalizedValue, Field.Store.NO));
             }
 
             if (field.Facetable == true)

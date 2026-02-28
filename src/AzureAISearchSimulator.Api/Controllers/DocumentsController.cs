@@ -142,6 +142,7 @@ public class DocumentsController : ControllerBase
         [FromQuery] string? scoringParameter = null,
         [FromQuery] string? scoringStatistics = null,
         [FromQuery] string? debug = null,
+        [FromQuery] string? featuresMode = null,
         [FromQuery(Name = "api-version")] string? apiVersion = null)
     {
         // Check authorization - search requires IndexDataReader
@@ -176,7 +177,8 @@ public class DocumentsController : ControllerBase
             ScoringProfile = scoringProfile,
             ScoringParameters = scoringParameters,
             ScoringStatistics = scoringStatistics,
-            Debug = debug
+            Debug = debug,
+            FeaturesMode = featuresMode
         };
 
         try

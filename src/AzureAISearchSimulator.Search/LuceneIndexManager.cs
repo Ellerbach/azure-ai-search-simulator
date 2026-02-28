@@ -2,6 +2,7 @@ using Lucene.Net.Analysis;
 using Lucene.Net.Analysis.Standard;
 using Lucene.Net.Index;
 using Lucene.Net.Search;
+using Lucene.Net.Search.Similarities;
 using Lucene.Net.Store;
 using Microsoft.Extensions.Logging;
 using AzureAISearchSimulator.Core.Configuration;
@@ -19,6 +20,7 @@ public class LuceneIndexManager : IDisposable
     private readonly ILogger<LuceneIndexManager> _logger;
     private readonly LuceneSettings _settings;
     private readonly ConcurrentDictionary<string, IndexHolder> _indexes = new();
+    private readonly ConcurrentDictionary<string, SimilarityAlgorithm> _similarityConfigs = new();
     private readonly object _lock = new();
     private bool _disposed;
 
@@ -28,6 +30,42 @@ public class LuceneIndexManager : IDisposable
     {
         _logger = logger;
         _settings = settings.Value;
+    }
+
+    /// <summary>
+    /// Configures the similarity algorithm for the specified index.
+    /// If the similarity has changed, the index holder is rebuilt to apply the new settings.
+    /// This should be called before GetWriter/GetSearcher when the index definition is available.
+    /// </summary>
+    public void ConfigureSimilarity(string indexName, SimilarityAlgorithm? similarity)
+    {
+        ThrowIfDisposed();
+        var effectiveSimilarity = similarity ?? new SimilarityAlgorithm();
+        
+        var previousSimilarity = _similarityConfigs.GetValueOrDefault(indexName);
+        _similarityConfigs[indexName] = effectiveSimilarity;
+
+        // If the index holder already exists and the similarity has changed, rebuild it.
+        // When previousSimilarity is null (first call), the holder may have been created
+        // with default similarity by another code path (e.g., GetDocumentCountAsync).
+        // In that case, compare against the default SimilarityAlgorithm.
+        if (_indexes.ContainsKey(indexName))
+        {
+            var compareWith = previousSimilarity ?? new SimilarityAlgorithm();
+            if (SimilarityChanged(compareWith, effectiveSimilarity))
+            {
+                lock (_lock)
+                {
+                    if (_indexes.TryRemove(indexName, out var oldHolder))
+                    {
+                        _logger.LogInformation(
+                            "Similarity configuration changed for {IndexName}, rebuilding index holder",
+                            indexName);
+                        oldHolder.Dispose();
+                    }
+                }
+            }
+        }
     }
 
     /// <summary>
@@ -155,12 +193,47 @@ public class LuceneIndexManager : IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
     }
 
+    private static bool SimilarityChanged(SimilarityAlgorithm previous, SimilarityAlgorithm current)
+    {
+        if (previous.ODataType != current.ODataType)
+            return true;
+
+        // For BM25, check if k1/b changed
+        if (current.ODataType == "#Microsoft.Azure.Search.BM25Similarity")
+        {
+            var prevK1 = previous.K1 ?? 1.2;
+            var prevB = previous.B ?? 0.75;
+            var curK1 = current.K1 ?? 1.2;
+            var curB = current.B ?? 0.75;
+            return Math.Abs(prevK1 - curK1) > 0.0001 || Math.Abs(prevB - curB) > 0.0001;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Creates the appropriate Lucene Similarity from a SimilarityAlgorithm configuration.
+    /// </summary>
+    public static Similarity CreateLuceneSimilarity(SimilarityAlgorithm? similarity)
+    {
+        if (similarity?.ODataType == "#Microsoft.Azure.Search.ClassicSimilarity")
+        {
+            return new DefaultSimilarity();
+        }
+
+        // Default to BM25
+        var k1 = (float)(similarity?.K1 ?? 1.2);
+        var b = (float)(similarity?.B ?? 0.75);
+        return new BM25Similarity(k1, b);
+    }
+
     private IndexHolder GetOrCreateHolder(string indexName)
     {
         return _indexes.GetOrAdd(indexName, name =>
         {
             _logger.LogInformation("Creating Lucene index holder for {IndexName}", name);
-            return new IndexHolder(name, GetIndexPath(name), _logger);
+            var similarity = _similarityConfigs.GetValueOrDefault(name);
+            return new IndexHolder(name, GetIndexPath(name), similarity, _logger);
         });
     }
 
@@ -206,6 +279,7 @@ public class LuceneIndexManager : IDisposable
         public Lucene.Net.Store.Directory Directory { get; }
         public Analyzer Analyzer { get; }
         public IndexWriter Writer { get; }
+        public Similarity LuceneSimilarity { get; }
 
         public IndexSearcher Searcher
         {
@@ -219,7 +293,7 @@ public class LuceneIndexManager : IDisposable
             }
         }
 
-        public IndexHolder(string indexName, string indexPath, ILogger logger)
+        public IndexHolder(string indexName, string indexPath, SimilarityAlgorithm? similarity, ILogger logger)
         {
             _logger = logger;
             _indexName = indexName;
@@ -233,14 +307,20 @@ public class LuceneIndexManager : IDisposable
             // Standard analyzer for text processing
             Analyzer = new StandardAnalyzer(LuceneDocumentMapper.AppLuceneVersion);
 
+            // Create the Lucene similarity from the index definition
+            LuceneSimilarity = CreateLuceneSimilarity(similarity);
+
             var config = new IndexWriterConfig(LuceneDocumentMapper.AppLuceneVersion, Analyzer)
             {
-                OpenMode = OpenMode.CREATE_OR_APPEND
+                OpenMode = OpenMode.CREATE_OR_APPEND,
+                Similarity = LuceneSimilarity
             };
 
             Writer = new IndexWriter(Directory, config);
             
-            _logger.LogDebug("Created IndexWriter for {IndexName} at {Path}", indexName, indexPath);
+            _logger.LogDebug(
+                "Created IndexWriter for {IndexName} at {Path} with similarity {SimilarityType}",
+                indexName, indexPath, LuceneSimilarity.GetType().Name);
         }
 
         public void RefreshReader()
@@ -259,13 +339,19 @@ public class LuceneIndexManager : IDisposable
             {
                 _reader?.Dispose();
                 _reader = newReader;
-                _searcher = new IndexSearcher(_reader);
+                _searcher = new IndexSearcher(_reader)
+                {
+                    Similarity = LuceneSimilarity
+                };
             }
             else if (_reader == null)
             {
                 // No documents yet, create empty reader
                 _reader = DirectoryReader.Open(Writer, applyAllDeletes: true);
-                _searcher = new IndexSearcher(_reader);
+                _searcher = new IndexSearcher(_reader)
+                {
+                    Similarity = LuceneSimilarity
+                };
             }
         }
 

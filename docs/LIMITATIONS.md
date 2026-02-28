@@ -60,6 +60,8 @@ The simulator is designed for **development, learning, and testing purposes only
 | **Search debug** | Subscore breakdown for hybrid/vector queries |
 | **Synonym maps** | CRUD management and query-time expansion (Solr format) |
 | **Scoring profiles** | All 4 function types (freshness, magnitude, distance, tag), text weights, interpolation modes, and aggregation modes. Distance uses Haversine approximation. `scoringStatistics: "global"` is accepted but always uses local statistics. |
+| **Similarity configuration** | BM25Similarity with tunable `k1`/`b` parameters, ClassicSimilarity (TF-IDF). Immutability enforced on update; `allowIndexDowntime` supported for BM25 parameter changes. |
+| **featuresMode** | Per-field BM25 scoring breakdown via `@search.features` with `uniqueTokenMatches`, `similarityScore`, and `termFrequency` per searchable field. |
 
 ### ⚠️ Partially Supported
 

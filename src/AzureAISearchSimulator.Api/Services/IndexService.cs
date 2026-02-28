@@ -1,6 +1,7 @@
 using AzureAISearchSimulator.Core.Configuration;
 using AzureAISearchSimulator.Core.Models;
 using AzureAISearchSimulator.Core.Services;
+using AzureAISearchSimulator.Search;
 using AzureAISearchSimulator.Storage.Repositories;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -15,6 +16,7 @@ public partial class IndexService : IIndexService
 {
     private readonly IIndexRepository _repository;
     private readonly SimulatorSettings _settings;
+    private readonly LuceneIndexManager _luceneIndexManager;
     private readonly ILogger<IndexService> _logger;
 
     [GeneratedRegex(@"^[a-z][a-z0-9-]*$", RegexOptions.Compiled)]
@@ -23,10 +25,12 @@ public partial class IndexService : IIndexService
     public IndexService(
         IIndexRepository repository,
         IOptions<SimulatorSettings> settings,
+        LuceneIndexManager luceneIndexManager,
         ILogger<IndexService> logger)
     {
         _repository = repository;
         _settings = settings.Value;
+        _luceneIndexManager = luceneIndexManager;
         _logger = logger;
     }
 
@@ -60,7 +64,7 @@ public partial class IndexService : IIndexService
         return await _repository.CreateAsync(index, cancellationToken);
     }
 
-    public async Task<SearchIndex> CreateOrUpdateIndexAsync(string indexName, SearchIndex index, CancellationToken cancellationToken = default)
+    public async Task<SearchIndex> CreateOrUpdateIndexAsync(string indexName, SearchIndex index, bool allowIndexDowntime = false, CancellationToken cancellationToken = default)
     {
         index.Name = indexName; // Ensure name matches URL parameter
         
@@ -77,6 +81,9 @@ public partial class IndexService : IIndexService
         var existing = await _repository.GetByNameAsync(indexName, cancellationToken);
         if (existing != null)
         {
+            // Enforce similarity immutability on update
+            ValidateSimilarityUpdate(existing, index, allowIndexDowntime);
+
             _logger.LogInformation("Updating existing index {IndexName}", indexName);
             return await _repository.UpdateAsync(index, cancellationToken);
         }
@@ -107,6 +114,17 @@ public partial class IndexService : IIndexService
     public async Task<bool> DeleteIndexAsync(string indexName, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Deleting index {IndexName}", indexName);
+        
+        // Clean up Lucene index files on disk
+        try
+        {
+            _luceneIndexManager.DeleteIndex(indexName);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to clean up Lucene index files for {IndexName}", indexName);
+        }
+        
         return await _repository.DeleteAsync(indexName, cancellationToken);
     }
 
@@ -268,6 +286,9 @@ public partial class IndexService : IIndexService
             }
         }
 
+        // Validate similarity algorithm
+        ValidateSimilarity(index, errors);
+
         // Validate scoring profiles
         ValidateScoringProfiles(index, errors);
 
@@ -412,6 +433,95 @@ public partial class IndexService : IIndexService
             if (field.Fields != null)
             {
                 CollectFields(field.Fields, result, fullName);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Validates the similarity algorithm configuration.
+    /// </summary>
+    private static void ValidateSimilarity(SearchIndex index, List<string> errors)
+    {
+        if (index.Similarity == null)
+        {
+            return; // Will be defaulted to BM25 in ApplyIndexDefaults
+        }
+
+        var validTypes = new[]
+        {
+            "#Microsoft.Azure.Search.BM25Similarity",
+            "#Microsoft.Azure.Search.ClassicSimilarity"
+        };
+
+        if (string.IsNullOrWhiteSpace(index.Similarity.ODataType))
+        {
+            errors.Add("Similarity algorithm must specify an @odata.type");
+            return;
+        }
+
+        if (!validTypes.Contains(index.Similarity.ODataType))
+        {
+            errors.Add($"Unknown similarity algorithm type '{index.Similarity.ODataType}'. Supported types: {string.Join(", ", validTypes)}");
+            return;
+        }
+
+        if (index.Similarity.ODataType == "#Microsoft.Azure.Search.BM25Similarity")
+        {
+            if (index.Similarity.K1.HasValue && index.Similarity.K1.Value < 0)
+            {
+                errors.Add("BM25 similarity parameter 'k1' must be a non-negative number");
+            }
+
+            if (index.Similarity.B.HasValue && (index.Similarity.B.Value < 0.0 || index.Similarity.B.Value > 1.0))
+            {
+                errors.Add("BM25 similarity parameter 'b' must be between 0.0 and 1.0 (inclusive)");
+            }
+        }
+        else if (index.Similarity.ODataType == "#Microsoft.Azure.Search.ClassicSimilarity")
+        {
+            if (index.Similarity.K1.HasValue)
+            {
+                errors.Add("ClassicSimilarity does not support the 'k1' parameter");
+            }
+
+            if (index.Similarity.B.HasValue)
+            {
+                errors.Add("ClassicSimilarity does not support the 'b' parameter");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Validates similarity changes when updating an existing index.
+    /// The similarity algorithm type cannot be changed on an existing index.
+    /// BM25 parameter updates (k1, b) are allowed only with allowIndexDowntime=true.
+    /// </summary>
+    private static void ValidateSimilarityUpdate(SearchIndex existing, SearchIndex updated, bool allowIndexDowntime)
+    {
+        var existingType = existing.Similarity?.ODataType ?? "#Microsoft.Azure.Search.BM25Similarity";
+        var updatedType = updated.Similarity?.ODataType ?? "#Microsoft.Azure.Search.BM25Similarity";
+
+        if (existingType != updatedType)
+        {
+            throw new InvalidOperationException(
+                "The similarity algorithm cannot be modified on existing indexes");
+        }
+
+        // Check if BM25 parameters are being changed
+        if (updatedType == "#Microsoft.Azure.Search.BM25Similarity")
+        {
+            var existingK1 = existing.Similarity?.K1;
+            var existingB = existing.Similarity?.B;
+            var updatedK1 = updated.Similarity?.K1;
+            var updatedB = updated.Similarity?.B;
+
+            bool k1Changed = existingK1 != updatedK1;
+            bool bChanged = existingB != updatedB;
+
+            if ((k1Changed || bChanged) && !allowIndexDowntime)
+            {
+                throw new InvalidOperationException(
+                    "Updating BM25 similarity parameters (k1, b) requires the 'allowIndexDowntime=true' query parameter");
             }
         }
     }

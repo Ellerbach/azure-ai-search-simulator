@@ -1,0 +1,360 @@
+### Similarity Configuration - Sample HTTP Requests
+### Demonstrates BM25 and ClassicSimilarity configuration and behavior
+### Base URL: https://localhost:7250 (HTTPS) or http://localhost:5250 (HTTP)
+
+@baseUrl = {{$dotenv BASE_URL}}
+@apiVersion = {{$dotenv API_VERSION}}
+@adminKey = {{$dotenv ADMIN_KEY}}
+@queryKey = {{$dotenv QUERY_KEY}}
+
+
+# ============================================
+# INDEX CREATION WITH CUSTOM SIMILARITY
+# ============================================
+
+### Create index with default BM25 (k1=1.2, b=0.75) — same as omitting similarity
+POST {{baseUrl}}/indexes?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "name": "sim-default",
+  "fields": [
+    { "name": "id", "type": "Edm.String", "key": true, "filterable": true },
+    { "name": "title", "type": "Edm.String", "searchable": true },
+    { "name": "content", "type": "Edm.String", "searchable": true }
+  ]
+}
+
+### Create index with custom BM25 parameters
+# k1=2.0: Higher term frequency saturation (repeated terms count more)
+# b=0.5: Reduced document length normalization
+POST {{baseUrl}}/indexes?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "name": "sim-custom-bm25",
+  "fields": [
+    { "name": "id", "type": "Edm.String", "key": true, "filterable": true },
+    { "name": "title", "type": "Edm.String", "searchable": true },
+    { "name": "content", "type": "Edm.String", "searchable": true }
+  ],
+  "similarity": {
+    "@odata.type": "#Microsoft.Azure.Search.BM25Similarity",
+    "k1": 2.0,
+    "b": 0.5
+  }
+}
+
+### Create index with ClassicSimilarity (TF-IDF)
+# Scores are bounded in the 0–1 range
+POST {{baseUrl}}/indexes?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "name": "sim-classic",
+  "fields": [
+    { "name": "id", "type": "Edm.String", "key": true, "filterable": true },
+    { "name": "title", "type": "Edm.String", "searchable": true },
+    { "name": "content", "type": "Edm.String", "searchable": true }
+  ],
+  "similarity": {
+    "@odata.type": "#Microsoft.Azure.Search.ClassicSimilarity"
+  }
+}
+
+### Create index with BM25 binary matching (k1=0 disables term frequency)
+POST {{baseUrl}}/indexes?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "name": "sim-binary",
+  "fields": [
+    { "name": "id", "type": "Edm.String", "key": true, "filterable": true },
+    { "name": "title", "type": "Edm.String", "searchable": true },
+    { "name": "content", "type": "Edm.String", "searchable": true }
+  ],
+  "similarity": {
+    "@odata.type": "#Microsoft.Azure.Search.BM25Similarity",
+    "k1": 0.0,
+    "b": 0.75
+  }
+}
+
+# ============================================
+# UPLOAD DOCUMENTS (same data to compare scoring)
+# ============================================
+
+### Upload documents to default BM25 index
+POST {{baseUrl}}/indexes/sim-default/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "value": [
+    { "@search.action": "upload", "id": "1", "title": "Azure Search", "content": "Azure AI Search is a cloud search service that gives developers APIs and tools for building search experiences." },
+    { "@search.action": "upload", "id": "2", "title": "Search Features", "content": "Search search search. Full-text search with BM25 scoring, vector search, and hybrid search capabilities." },
+    { "@search.action": "upload", "id": "3", "title": "Getting Started", "content": "This is a short document about getting started with Azure." }
+  ]
+}
+
+### Upload same documents to custom BM25 index
+POST {{baseUrl}}/indexes/sim-custom-bm25/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "value": [
+    { "@search.action": "upload", "id": "1", "title": "Azure Search", "content": "Azure AI Search is a cloud search service that gives developers APIs and tools for building search experiences." },
+    { "@search.action": "upload", "id": "2", "title": "Search Features", "content": "Search search search. Full-text search with BM25 scoring, vector search, and hybrid search capabilities." },
+    { "@search.action": "upload", "id": "3", "title": "Getting Started", "content": "This is a short document about getting started with Azure." }
+  ]
+}
+
+### Upload same documents to ClassicSimilarity index
+POST {{baseUrl}}/indexes/sim-classic/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "value": [
+    { "@search.action": "upload", "id": "1", "title": "Azure Search", "content": "Azure AI Search is a cloud search service that gives developers APIs and tools for building search experiences." },
+    { "@search.action": "upload", "id": "2", "title": "Search Features", "content": "Search search search. Full-text search with BM25 scoring, vector search, and hybrid search capabilities." },
+    { "@search.action": "upload", "id": "3", "title": "Getting Started", "content": "This is a short document about getting started with Azure." }
+  ]
+}
+
+# ============================================
+# COMPARE SCORING ACROSS SIMILARITY CONFIGS
+# ============================================
+
+### Search default BM25 index — note the scores
+POST {{baseUrl}}/indexes/sim-default/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "search",
+  "select": "id, title",
+  "count": true
+}
+
+### Search custom BM25 index — scores differ due to k1=2.0, b=0.5
+# With k1=2.0, doc "2" (which repeats "search" many times) should get a higher relative score
+POST {{baseUrl}}/indexes/sim-custom-bm25/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "search",
+  "select": "id, title",
+  "count": true
+}
+
+### Search ClassicSimilarity index — scores are in 0–1 range
+POST {{baseUrl}}/indexes/sim-classic/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "search",
+  "select": "id, title",
+  "count": true
+}
+
+# ============================================
+# UPDATE BM25 PARAMETERS
+# ============================================
+
+### Update BM25 parameters WITHOUT allowIndexDowntime — expect 400 error
+PUT {{baseUrl}}/indexes/sim-custom-bm25?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "name": "sim-custom-bm25",
+  "fields": [
+    { "name": "id", "type": "Edm.String", "key": true, "filterable": true },
+    { "name": "title", "type": "Edm.String", "searchable": true },
+    { "name": "content", "type": "Edm.String", "searchable": true }
+  ],
+  "similarity": {
+    "@odata.type": "#Microsoft.Azure.Search.BM25Similarity",
+    "k1": 1.5,
+    "b": 0.3
+  }
+}
+
+### Update BM25 parameters WITH allowIndexDowntime=true — succeeds
+PUT {{baseUrl}}/indexes/sim-custom-bm25?api-version={{apiVersion}}&allowIndexDowntime=true
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "name": "sim-custom-bm25",
+  "fields": [
+    { "name": "id", "type": "Edm.String", "key": true, "filterable": true },
+    { "name": "title", "type": "Edm.String", "searchable": true },
+    { "name": "content", "type": "Edm.String", "searchable": true }
+  ],
+  "similarity": {
+    "@odata.type": "#Microsoft.Azure.Search.BM25Similarity",
+    "k1": 1.5,
+    "b": 0.3
+  }
+}
+
+# ============================================
+# VALIDATION ERRORS
+# ============================================
+
+### Try to change similarity type on existing index — expect 400 error
+PUT {{baseUrl}}/indexes/sim-custom-bm25?api-version={{apiVersion}}&allowIndexDowntime=true
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "name": "sim-custom-bm25",
+  "fields": [
+    { "name": "id", "type": "Edm.String", "key": true, "filterable": true },
+    { "name": "title", "type": "Edm.String", "searchable": true },
+    { "name": "content", "type": "Edm.String", "searchable": true }
+  ],
+  "similarity": {
+    "@odata.type": "#Microsoft.Azure.Search.ClassicSimilarity"
+  }
+}
+
+### Invalid: negative k1 — expect 400 error
+POST {{baseUrl}}/indexes?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "name": "sim-invalid-k1",
+  "fields": [
+    { "name": "id", "type": "Edm.String", "key": true }
+  ],
+  "similarity": {
+    "@odata.type": "#Microsoft.Azure.Search.BM25Similarity",
+    "k1": -1.0
+  }
+}
+
+### Invalid: b outside range — expect 400 error
+POST {{baseUrl}}/indexes?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "name": "sim-invalid-b",
+  "fields": [
+    { "name": "id", "type": "Edm.String", "key": true }
+  ],
+  "similarity": {
+    "@odata.type": "#Microsoft.Azure.Search.BM25Similarity",
+    "b": 1.5
+  }
+}
+
+### Invalid: ClassicSimilarity with parameters — expect 400 error
+POST {{baseUrl}}/indexes?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "name": "sim-invalid-classic",
+  "fields": [
+    { "name": "id", "type": "Edm.String", "key": true }
+  ],
+  "similarity": {
+    "@odata.type": "#Microsoft.Azure.Search.ClassicSimilarity",
+    "k1": 1.2,
+    "b": 0.75
+  }
+}
+
+### Invalid: Unknown similarity type — expect 400 error
+POST {{baseUrl}}/indexes?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "name": "sim-invalid-type",
+  "fields": [
+    { "name": "id", "type": "Edm.String", "key": true }
+  ],
+  "similarity": {
+    "@odata.type": "#Microsoft.Azure.Search.CustomSimilarity"
+  }
+}
+
+# ============================================
+# FEATURES MODE — PER-FIELD BM25 BREAKDOWN
+# ============================================
+
+### Search with featuresMode enabled (POST)
+# Returns @search.features for each result with per-field
+# uniqueTokenMatches, similarityScore, and termFrequency
+POST {{baseUrl}}/indexes/sim-default/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "azure search capabilities",
+  "featuresMode": "enabled",
+  "select": "id,title,content",
+  "count": true
+}
+
+### Search with featuresMode enabled (GET)
+GET {{baseUrl}}/indexes/sim-default/docs?search=azure search capabilities&featuresMode=enabled&$select=id,title,content&$count=true&api-version={{apiVersion}}
+api-key: {{queryKey}}
+
+### Search with featuresMode enabled and searchFields restriction
+# Only returns features for the specified fields
+POST {{baseUrl}}/indexes/sim-default/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "azure search",
+  "featuresMode": "enabled",
+  "searchFields": "title",
+  "select": "id,title,content"
+}
+
+### Search with featuresMode and highlights combined
+POST {{baseUrl}}/indexes/sim-default/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "azure search",
+  "featuresMode": "enabled",
+  "highlight": "title,content",
+  "select": "id,title,content"
+}
+
+# ============================================
+# CLEANUP
+# ============================================
+
+### Delete default index
+DELETE {{baseUrl}}/indexes/sim-default?api-version={{apiVersion}}
+api-key: {{adminKey}}
+
+### Delete custom BM25 index
+DELETE {{baseUrl}}/indexes/sim-custom-bm25?api-version={{apiVersion}}
+api-key: {{adminKey}}
+
+### Delete ClassicSimilarity index
+DELETE {{baseUrl}}/indexes/sim-classic?api-version={{apiVersion}}
+api-key: {{adminKey}}
+
+### Delete binary matching index
+DELETE {{baseUrl}}/indexes/sim-binary?api-version={{apiVersion}}
+api-key: {{adminKey}}

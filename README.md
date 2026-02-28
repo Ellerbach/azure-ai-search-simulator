@@ -50,6 +50,7 @@ The Azure AI Search Simulator provides a local implementation of the Azure AI Se
 - **Search Debug**: Query diagnostics with subscore breakdown for hybrid/vector searches (`debug` parameter)
 - **Synonym Maps**: CRUD management, Solr format, query-time synonym expansion
 - **Scoring Profiles**: Text weights, freshness, magnitude, distance, and tag functions with interpolation and aggregation modes
+- **Similarity Algorithms**: Configurable BM25 (k1/b parameters) and ClassicSimilarity (TF-IDF). Per-index similarity with `@search.features` support
 
 ### 🔜 Planned (Future Phases)
 
@@ -501,6 +502,7 @@ All `.http` sample files use environment variables via `$dotenv`. To get started
 | [local-embedding-sample.http](samples/local-embedding-sample.http) | REST Client file demonstrating local ONNX embedding skill (no Azure OpenAI required) |
 | [index-projection-sample.http](samples/index-projection-sample.http) | REST Client file demonstrating index projections (one-to-many chunking into a secondary index) |
 | [scoring-profile-sample.http](samples/scoring-profile-sample.http) | REST Client file demonstrating scoring profiles (text weights, magnitude, freshness, tag, combined) |
+| [similarity-sample.http](samples/similarity-sample.http) | REST Client file demonstrating similarity algorithms (default BM25, custom BM25 k1/b, ClassicSimilarity TF-IDF) |
 | [Download-EmbeddingModel.ps1](scripts/Download-EmbeddingModel.ps1) | PowerShell script to download ONNX embedding models from HuggingFace |
 
 ### Comparing Simulator vs Real Azure AI Search
@@ -560,6 +562,7 @@ AzureAISearchSimulator/
 | Managed Identity | ✅ | ✅ (simulated) |
 | Entra ID Authentication | ✅ | ✅ |
 | Scoring Profiles | ✅ | ✅ |
+| Similarity Algorithms | ✅ (BM25, Classic) | ✅ (BM25, Classic) |
 | Scale (millions of docs) | ✅ | Limited |
 
 ### Skills Support
