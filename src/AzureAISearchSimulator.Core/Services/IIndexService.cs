@@ -15,7 +15,7 @@ public interface IIndexService
     /// <summary>
     /// Creates or updates a search index.
     /// </summary>
-    Task<SearchIndex> CreateOrUpdateIndexAsync(string indexName, SearchIndex index, CancellationToken cancellationToken = default);
+    Task<SearchIndex> CreateOrUpdateIndexAsync(string indexName, SearchIndex index, bool allowIndexDowntime = false, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Gets a search index by name.

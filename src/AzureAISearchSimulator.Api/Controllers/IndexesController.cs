@@ -142,7 +142,8 @@ public class IndexesController : ControllerBase
         string indexName,
         [FromBody] SearchIndex index,
         [FromQuery(Name = "api-version")] string apiVersion,
-        CancellationToken cancellationToken)
+        [FromQuery(Name = "allowIndexDowntime")] bool allowIndexDowntime = false,
+        CancellationToken cancellationToken = default)
     {
         // Check authorization - updating indexes requires ServiceContributor
         var authResult = this.CheckAuthorization(_authorizationService, SearchOperation.UpdateIndex);
@@ -151,7 +152,7 @@ public class IndexesController : ControllerBase
         try
         {
             var existed = await _indexService.IndexExistsAsync(indexName, cancellationToken);
-            var result = await _indexService.CreateOrUpdateIndexAsync(indexName, index, cancellationToken);
+            var result = await _indexService.CreateOrUpdateIndexAsync(indexName, index, allowIndexDowntime, cancellationToken);
 
             result.ODataContext = $"{Request.Scheme}://{Request.Host}/$metadata#indexes/$entity";
             Response.Headers["ETag"] = result.ETag;

@@ -203,6 +203,11 @@ api-key: <admin-key>
     }
   ],
   "defaultScoringProfile": "boostRating",
+  "similarity": {
+    "@odata.type": "#Microsoft.Azure.Search.BM25Similarity",
+    "k1": 1.2,
+    "b": 0.75
+  },
   "suggesters": [
     {
       "name": "sg",
@@ -258,6 +263,30 @@ api-key: <admin-key>
 ```
 
 **Response:** `204 No Content`
+
+---
+
+### [Create or Update Index](https://learn.microsoft.com/en-us/rest/api/searchservice/indexes/create-or-update)
+
+Creates a new index or updates an existing one.
+
+```http
+PUT /indexes/{indexName}?api-version=2024-07-01&allowIndexDowntime=true
+Content-Type: application/json
+api-key: <admin-key>
+```
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `allowIndexDowntime` | bool | `false` | When `true`, allows updates that require the index to be temporarily offline. Required for updating BM25 similarity parameters (`k1`, `b`) on an existing index. |
+
+**Restrictions on update:**
+
+- The similarity algorithm `@odata.type` **cannot be changed** on an existing index (returns `400 Bad Request`).
+- BM25 parameters (`k1`, `b`) can be updated only when `allowIndexDowntime=true`.
+- Fields can be added but existing fields cannot be removed.
 
 ---
 
@@ -429,6 +458,44 @@ api-key: <query-key>
 | `scoringStatistics` | string | `"local"` (default) or `"global"`. Accepted for compatibility; simulator always uses local statistics |
 | `vectorQueries` | array | Vector query objects (see below) |
 | `debug` | string | Debug mode for search diagnostics (see below) |
+| `featuresMode` | string | When `"enabled"`, returns per-field BM25 scoring features in `@search.features` (see below) |
+
+#### featuresMode Parameter
+
+The `featuresMode` parameter provides per-field BM25 scoring breakdown for each search result. This is useful for understanding why certain documents rank higher or lower and how different fields contribute to the overall score.
+
+**Supported values:**
+
+| Value | Description |
+| ----- | ----------- |
+| `"none"` | No feature-level scoring details (default) |
+| `"enabled"` | Returns detailed scoring breakdown per searchable field |
+
+When enabled, each result includes an `@search.features` object with entries for each matching searchable field:
+
+```json
+{
+  "@search.score": 3.0860271,
+  "@search.features": {
+    "description": {
+      "uniqueTokenMatches": 2.0,
+      "similarityScore": 3.0860272,
+      "termFrequency": 2.0
+    },
+    "tags": {
+      "uniqueTokenMatches": 1.0,
+      "similarityScore": 1.1271671,
+      "termFrequency": 1.0
+    }
+  }
+}
+```
+
+- **`uniqueTokenMatches`**: Number of unique search terms found in the field
+- **`similarityScore`**: BM25 similarity score for this field against the query
+- **`termFrequency`**: Total number of times the search terms appear in the field
+
+> **Note:** Only fields where at least one search term matches are included. Use `searchFields` to restrict which fields are evaluated.
 
 #### Debug Parameter
 
@@ -664,6 +731,54 @@ Text scores are normalized using min-max normalization. Vector scores are alread
 | ------ | -------- | ----- |
 | RRF | General use | Robust, no tuning needed |
 | Weighted | Score transparency | Requires weight tuning |
+
+#### Similarity Configuration
+
+The similarity algorithm controls how text search relevance scores are computed. Configure it on the index definition.
+
+**Supported algorithms:**
+
+| Algorithm | `@odata.type` | Description |
+|-----------|---------------|-------------|
+| **BM25Similarity** (default) | `#Microsoft.Azure.Search.BM25Similarity` | Okapi BM25 with tunable `k1` and `b` parameters. Scores are unbounded. |
+| **ClassicSimilarity** | `#Microsoft.Azure.Search.ClassicSimilarity` | Legacy TF-IDF scoring. Scores are in the 0–1 range. No tunable parameters. |
+
+**BM25 parameters:**
+
+| Parameter | Type | Default | Range | Description |
+|-----------|------|---------|-------|-------------|
+| `k1` | double | `1.2` | ≥ 0 (no upper bound) | Controls term frequency saturation. `0` = binary match, higher values increase impact of repeated terms. |
+| `b` | double | `0.75` | 0.0 – 1.0 | Controls document length normalization. `0` = no normalization, `1` = fully normalized. |
+
+**Index definition example:**
+
+```json
+{
+  "similarity": {
+    "@odata.type": "#Microsoft.Azure.Search.BM25Similarity",
+    "k1": 1.5,
+    "b": 0.5
+  }
+}
+```
+
+**ClassicSimilarity example:**
+
+```json
+{
+  "similarity": {
+    "@odata.type": "#Microsoft.Azure.Search.ClassicSimilarity"
+  }
+}
+```
+
+**Key rules:**
+
+- If `similarity` is null or omitted, BM25 with default parameters is used.
+- The `@odata.type` is **immutable after index creation** — attempting to change it returns `400 Bad Request`.
+- BM25 parameters (`k1`, `b`) can be updated via Create-or-Update with `allowIndexDowntime=true`.
+- ClassicSimilarity does not accept `k1` or `b` parameters.
+- Invalid parameter ranges (negative `k1`, `b` outside 0–1) return `400 Bad Request`.
 
 #### Scoring Profiles
 

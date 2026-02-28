@@ -1,6 +1,7 @@
 using AzureAISearchSimulator.Api.Services;
 using AzureAISearchSimulator.Core.Configuration;
 using AzureAISearchSimulator.Core.Models;
+using AzureAISearchSimulator.Search;
 using AzureAISearchSimulator.Storage.Repositories;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -38,8 +39,10 @@ public class IndexServiceDefaultsTests
 
         var settings = Options.Create(new SimulatorSettings());
         var logger = new Mock<ILogger<IndexService>>();
+        var luceneSettings = Options.Create(new LuceneSettings { IndexPath = Path.Combine(Path.GetTempPath(), "sim-test-" + Guid.NewGuid().ToString("N")) });
+        var luceneManager = new LuceneIndexManager(new Mock<ILogger<LuceneIndexManager>>().Object, luceneSettings);
 
-        _sut = new IndexService(_repositoryMock.Object, settings, logger.Object);
+        _sut = new IndexService(_repositoryMock.Object, settings, luceneManager, logger.Object);
     }
 
     private static SearchIndex CreateMinimalIndex() => new()

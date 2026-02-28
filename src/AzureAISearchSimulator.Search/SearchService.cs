@@ -46,12 +46,16 @@ public class SearchService : ISearchService
         var debugModes = ParseDebugModes(request.Debug);
         var debugMode = debugModes.Count > 0;
         var debugVector = debugModes.Contains("vector") || debugModes.Contains("all");
+        var featuresModeEnabled = string.Equals(request.FeaturesMode, "enabled", StringComparison.OrdinalIgnoreCase);
         
         var index = await _indexService.GetIndexAsync(indexName);
         if (index == null)
         {
             throw new KeyNotFoundException($"Index '{indexName}' not found");
         }
+
+        // Ensure Lucene uses the correct similarity algorithm from the index definition
+        _indexManager.ConfigureSimilarity(indexName, index.Similarity);
 
         var response = new SearchResponse
         {
@@ -243,6 +247,16 @@ public class SearchService : ISearchService
             // Set score first to match Azure property ordering (@search.score before document fields)
             // Replace NaN with 1.0 (occurs when Lucene uses sorted search without scoring, e.g. wildcard/filter queries)
             searchResult.Score = double.IsNaN(score) ? 1.0 : score;
+
+            // Add per-field features right after score (before highlights) to match Azure property ordering
+            if (featuresModeEnabled && textQuery != null && docId >= 0)
+            {
+                var features = ComputeFieldFeatures(searcher, index, request, textQuery, docId);
+                if (features.Count > 0)
+                {
+                    searchResult.Features = features;
+                }
+            }
 
             // Add highlights right after score (before document fields) to match Azure property ordering
             Dictionary<string, List<string>>? highlights = null;
@@ -740,7 +754,8 @@ public class SearchService : ISearchService
                 ? eqMatch.Groups[2].Value 
                 : eqMatch.Groups[3].Value;
             
-            return new TermQuery(new Term(fieldName, value));
+            var luceneFieldName = ResolveFilterFieldName(schema, fieldName);
+            return new TermQuery(new Term(luceneFieldName, value));
         }
 
         // Handle ne expressions: field ne 'value'
@@ -754,10 +769,11 @@ public class SearchService : ISearchService
                 ? neMatch.Groups[2].Value
                 : neMatch.Groups[3].Value;
 
+            var luceneFieldName = ResolveFilterFieldName(schema, fieldName);
             var boolQuery = new BooleanQuery
             {
                 { new MatchAllDocsQuery(), Occur.MUST },
-                { new TermQuery(new Term(fieldName, value)), Occur.MUST_NOT }
+                { new TermQuery(new Term(luceneFieldName, value)), Occur.MUST_NOT }
             };
             return boolQuery;
         }
@@ -790,16 +806,36 @@ public class SearchService : ISearchService
             var fieldName = searchInMatch.Groups[1].Value;
             var values = searchInMatch.Groups[2].Value.Split(',', StringSplitOptions.RemoveEmptyEntries);
             
+            var luceneFieldName = ResolveFilterFieldName(schema, fieldName);
             var boolQuery = new BooleanQuery();
             foreach (var val in values)
             {
-                boolQuery.Add(new TermQuery(new Term(fieldName, val.Trim())), Occur.SHOULD);
+                boolQuery.Add(new TermQuery(new Term(luceneFieldName, val.Trim())), Occur.SHOULD);
             }
             return boolQuery;
         }
 
         _logger.LogWarning("Unrecognized filter expression: {Expression}", expression);
         return null;
+    }
+
+    /// <summary>
+    /// Resolves the Lucene field name for filter queries.
+    /// For fields that are both searchable (TextField) and filterable (StringField),
+    /// the filter index is stored under a suffixed field name to avoid corrupting
+    /// the TextField's IndexOptions and norms.
+    /// </summary>
+    private static string ResolveFilterFieldName(SearchIndex schema, string fieldName)
+    {
+        var field = schema.Fields.FirstOrDefault(f =>
+            f.Name.Equals(fieldName, StringComparison.OrdinalIgnoreCase));
+
+        if (field != null)
+        {
+            return LuceneDocumentMapper.GetFilterFieldName(field);
+        }
+
+        return fieldName;
     }
 
     private bool IsNumericType(string edmType)
@@ -1024,6 +1060,9 @@ public class SearchService : ISearchService
             throw new KeyNotFoundException($"Index '{indexName}' not found");
         }
 
+        // Ensure Lucene uses the correct similarity algorithm from the index definition
+        _indexManager.ConfigureSimilarity(indexName, index.Similarity);
+
         var response = new SuggestResponse
         {
             ODataContext = $"https://localhost/indexes('{indexName}')/$metadata#docs(*)",
@@ -1087,6 +1126,9 @@ public class SearchService : ISearchService
         {
             throw new KeyNotFoundException($"Index '{indexName}' not found");
         }
+
+        // Ensure Lucene uses the correct similarity algorithm from the index definition
+        _indexManager.ConfigureSimilarity(indexName, index.Similarity);
 
         var response = new AutocompleteResponse
         {
@@ -1340,5 +1382,174 @@ public class SearchService : ISearchService
                 Count = kvp.Value
             })
             .ToList();
+    }
+
+    /// <summary>
+    /// Computes per-field BM25 scoring features for a single document.
+    /// Returns a dictionary keyed by field name with uniqueTokenMatches, similarityScore, and termFrequency.
+    /// Used when featuresMode is "enabled".
+    /// </summary>
+    private Dictionary<string, FieldFeatures> ComputeFieldFeatures(
+        IndexSearcher searcher,
+        SearchIndex schema,
+        SearchRequest request,
+        Query textQuery,
+        int docId)
+    {
+        var features = new Dictionary<string, FieldFeatures>();
+
+        // Determine the searchable fields that were actually queried
+        var searchableFields = !string.IsNullOrWhiteSpace(request.SearchFields)
+            ? request.SearchFields.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                .Select(f => f.Trim())
+                .ToArray()
+            : schema.Fields
+                .Where(f => f.Searchable == true)
+                .Select(f => f.Name)
+                .ToArray();
+
+        if (searchableFields.Length == 0 || string.IsNullOrWhiteSpace(request.Search) || request.Search == "*")
+        {
+            return features;
+        }
+
+        var reader = searcher.IndexReader;
+
+        // Tokenize the search query to get individual terms
+        var searchTerms = TokenizeSearchQuery(request.Search);
+
+        foreach (var fieldName in searchableFields)
+        {
+            var uniqueMatchCount = 0.0;
+            var totalTermFreq = 0.0;
+            var fieldSimilarityScore = 0.0;
+
+            // Build a per-field query to get the similarity score for this field
+            try
+            {
+                // Count unique token matches and term frequency using Lucene 4.x MultiFields API
+                foreach (var term in searchTerms)
+                {
+                    var termBytes = new Lucene.Net.Util.BytesRef(term.ToLowerInvariant());
+
+                    // Use MultiFields to get DocsEnum across all segments
+                    var fields = MultiFields.GetFields(reader);
+                    var fieldTerms = fields?.GetTerms(fieldName);
+                    if (fieldTerms != null)
+                    {
+                        var termsEnum = fieldTerms.GetEnumerator();
+                        if (termsEnum.SeekExact(termBytes))
+                        {
+                            var docsEnum = termsEnum.Docs(null, null, DocsFlags.FREQS);
+                            if (docsEnum != null)
+                            {
+                                while (docsEnum.NextDoc() != DocIdSetIterator.NO_MORE_DOCS)
+                                {
+                                    if (docsEnum.DocID == docId)
+                                    {
+                                        var tf = docsEnum.Freq;
+                                        if (tf > 0)
+                                        {
+                                            uniqueMatchCount++;
+                                            totalTermFreq += tf;
+                                        }
+                                        break;
+                                    }
+                                    if (docsEnum.DocID > docId)
+                                    {
+                                        break; // Past our doc, term not found
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Get the similarity score for this field using a per-field query
+                if (uniqueMatchCount > 0)
+                {
+                    fieldSimilarityScore = ComputeFieldSimilarityScore(searcher, fieldName, request, docId);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Error computing features for field '{FieldName}' on doc {DocId}", fieldName, docId);
+            }
+
+            // Only include fields where there was at least one match (matching Azure behavior)
+            if (uniqueMatchCount > 0 || fieldSimilarityScore > 0)
+            {
+                features[fieldName] = new FieldFeatures
+                {
+                    UniqueTokenMatches = uniqueMatchCount,
+                    SimilarityScore = Math.Round(fieldSimilarityScore, 7),
+                    TermFrequency = totalTermFreq
+                };
+            }
+        }
+
+        return features;
+    }
+
+    /// <summary>
+    /// Computes the BM25 similarity score for a single field against the search query.
+    /// </summary>
+    private double ComputeFieldSimilarityScore(
+        IndexSearcher searcher,
+        string fieldName,
+        SearchRequest request,
+        int docId)
+    {
+        try
+        {
+            // Create a per-field query using the same query text but restricted to one field
+            var analyzer = new StandardAnalyzer(LuceneDocumentMapper.AppLuceneVersion);
+            var parser = new QueryParser(LuceneDocumentMapper.AppLuceneVersion, fieldName, analyzer);
+
+            if (request.QueryType?.ToLowerInvariant() == "full")
+            {
+                parser.DefaultOperator = Operator.AND;
+                parser.AllowLeadingWildcard = true;
+            }
+            else
+            {
+                parser.DefaultOperator = Operator.OR;
+            }
+
+            var searchText = EscapeForSimpleQuery(request.Search ?? "*", request.QueryType);
+            var fieldQuery = parser.Parse(searchText);
+
+            // Use Lucene's Explain API to get the score for this specific field/document
+            var explanation = searcher.Explain(fieldQuery, docId);
+            return Math.Max(0, explanation.Value);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Error computing similarity score for field '{FieldName}' on doc {DocId}", fieldName, docId);
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Tokenizes the search query into individual search terms.
+    /// </summary>
+    private static HashSet<string> TokenizeSearchQuery(string searchText)
+    {
+        var terms = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        
+        // Split on whitespace and common delimiters, removing empty entries
+        var rawTerms = searchText.Split(new[] { ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+        
+        foreach (var rawTerm in rawTerms)
+        {
+            // Strip quotes and other punctuation for matching
+            var cleaned = rawTerm.Trim('"', '\'', '(', ')', '[', ']', '+', '-', '!', '~', '^');
+            if (!string.IsNullOrWhiteSpace(cleaned) && cleaned != "*" && cleaned != "?")
+            {
+                terms.Add(cleaned);
+            }
+        }
+
+        return terms;
     }
 }

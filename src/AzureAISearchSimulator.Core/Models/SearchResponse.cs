@@ -95,6 +95,21 @@ public class SearchResult : Dictionary<string, object?>
                 this["@search.documentDebugInfo"] = value;
         }
     }
+
+    /// <summary>
+    /// Per-field BM25 scoring features. Only populated when featuresMode is "enabled".
+    /// Contains per-field breakdown of uniqueTokenMatches, similarityScore, and termFrequency.
+    /// </summary>
+    [JsonIgnore]
+    public Dictionary<string, FieldFeatures>? Features
+    {
+        get => TryGetValue("@search.features", out var f) ? f as Dictionary<string, FieldFeatures> : null;
+        set
+        {
+            if (value != null)
+                this["@search.features"] = value;
+        }
+    }
 }
 
 /// <summary>
@@ -577,4 +592,30 @@ public class SingleVectorFieldResult
     /// </summary>
     [JsonPropertyName("vectorSimilarity")]
     public double VectorSimilarity { get; set; }
+}
+
+/// <summary>
+/// Per-field BM25 scoring features returned when featuresMode is "enabled".
+/// Contains detailed scoring breakdown for a single searchable field.
+/// </summary>
+public class FieldFeatures
+{
+    /// <summary>
+    /// Number of unique tokens found in the field that match query terms.
+    /// </summary>
+    [JsonPropertyName("uniqueTokenMatches")]
+    public double UniqueTokenMatches { get; set; }
+
+    /// <summary>
+    /// Similarity score: a measure of how similar the content of the field is
+    /// relative to the query terms.
+    /// </summary>
+    [JsonPropertyName("similarityScore")]
+    public double SimilarityScore { get; set; }
+
+    /// <summary>
+    /// Term frequency: the number of times the query terms were found in the field.
+    /// </summary>
+    [JsonPropertyName("termFrequency")]
+    public double TermFrequency { get; set; }
 }
