@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+### Added
+
+- **Python SDK sample in README**: Added a quick-start Python example using the official `azure-search-documents` SDK, mirroring the existing C# sample (create index, upload documents, search). Includes self-signed certificate bypass for local development.
+
 ### Changed
 
 - **Consolidated sample data files**: Merged all scattered sample/data directories (`sample-documents/`, `data-samples/`, `testdata/`, `my-documents/`, `samples/data/`, `samples/IndexerTestNotebook/data/`) into a single `samples/sample-data/` root with organized subfolders (`search-demo/`, `test-docs/`, `general-docs/`, `image-extraction/`, `indexer-test/`). Updated all references in `.http` files, notebooks, scripts, docker-compose, and documentation. Removed empty directories.

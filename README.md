@@ -270,6 +270,58 @@ await foreach (var result in results.Value.GetResultsAsync())
 }
 ```
 
+### Using with Azure SDK (Python)
+
+The simulator also works with the official **azure-search-documents** Python SDK:
+
+```python
+import requests
+from azure.core.credentials import AzureKeyCredential
+from azure.core.pipeline.transport import RequestsTransport
+from azure.search.documents import SearchClient
+from azure.search.documents.indexes import SearchIndexClient
+from azure.search.documents.indexes.models import (
+    SearchIndex, SimpleField, SearchableField, SearchFieldDataType
+)
+
+# Point to local simulator (HTTPS required)
+endpoint = "https://localhost:7250"
+credential = AzureKeyCredential("admin-key-12345")
+
+# Skip certificate validation for local development (self-signed cert)
+session = requests.Session()
+session.verify = False
+transport = RequestsTransport(session=session, connection_verify=False)
+
+# Create clients
+index_client = SearchIndexClient(endpoint, credential, transport=transport, connection_verify=False)
+search_client = SearchClient(endpoint, "my-index", credential, transport=transport, connection_verify=False)
+
+# Create an index
+index = SearchIndex(
+    name="my-index",
+    fields=[
+        SimpleField(name="id", type=SearchFieldDataType.String, key=True),
+        SearchableField(name="title", filterable=True),
+        SearchableField(name="content"),
+        SimpleField(name="rating", type=SearchFieldDataType.Double, filterable=True, sortable=True),
+    ],
+)
+index_client.create_index(index)
+
+# Upload documents
+documents = [
+    {"id": "1", "title": "Document One", "content": "This is the first document", "rating": 4.5},
+    {"id": "2", "title": "Document Two", "content": "This is the second document", "rating": 3.8},
+]
+search_client.upload_documents(documents)
+
+# Search
+results = search_client.search("first")
+for result in results:
+    print(f"Found: {result['title']} (Score: {result['@search.score']})")
+```
+
 ### Using REST API
 
 ```http
@@ -591,4 +643,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE.md) f
 ## Acknowledgments
 
 - Built with [Lucene.NET](https://lucenenet.apache.org/)
+- Built with [HNSW](https://github.com/curiosity-ai/hnsw-sharp)
+- Using [ONNX](https://github.com/Microsoft/onnxruntime) for local embeddings
 - Inspired by [Azure AI Search](https://azure.microsoft.com/services/search/)
