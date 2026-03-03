@@ -9,7 +9,7 @@
   <ItemGroup>
     <PackageReference Include="Azure.Storage.Blobs" Version="12.27.0" />
     <PackageReference Include="Azure.Storage.Files.DataLake" Version="12.25.0" />
-    <PackageReference Include="Azure.Identity" Version="1.17.1" />
+    <PackageReference Include="Azure.Identity" Version="1.18.0" />
   </ItemGroup>
 
   <ItemGroup>
