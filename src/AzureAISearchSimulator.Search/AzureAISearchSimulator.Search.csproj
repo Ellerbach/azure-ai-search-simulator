@@ -23,7 +23,7 @@
     <!-- Vector Search (HNSW) -->
     <PackageReference Include="HNSW" Version="26.1.63669" />
     <!-- Local Embedding Models (ONNX) -->
-    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.24.2" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.24.3" />
     <PackageReference Include="Microsoft.ML.Tokenizers" Version="2.0.0" />
     <!-- Document Cracking -->
     <PackageReference Include="PdfPig" Version="0.1.13" />
