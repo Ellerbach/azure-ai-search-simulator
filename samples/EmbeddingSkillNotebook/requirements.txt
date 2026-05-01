@@ -8,7 +8,7 @@ requests>=2.31.0
 
 # Data display and manipulation
 pandas>=2.0.0
-numpy>=1.24.0
+numpy>=2.4.4
 
 # Environment variable loading
 python-dotenv>=1.0.0
