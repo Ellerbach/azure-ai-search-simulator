@@ -14,4 +14,4 @@ jupyter>=1.0.0
 ipykernel>=6.0.0
 
 # Optional: for better notebook experience
-ipywidgets>=8.0.0
+ipywidgets>=8.1.8
