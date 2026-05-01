@@ -7,7 +7,7 @@ azure-search-documents>=11.4.0
 requests>=2.31.0
 
 # Data display
-pandas>=2.0.0
+pandas>=3.0.2
 
 # Jupyter notebook support
 jupyter>=1.0.0
