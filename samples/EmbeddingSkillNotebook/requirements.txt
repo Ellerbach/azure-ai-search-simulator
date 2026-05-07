@@ -4,7 +4,7 @@
 azure-search-documents>=11.4.0
 
 # HTTP requests
-requests>=2.31.0
+requests>=2.33.1
 
 # Data display and manipulation
 pandas>=2.0.0
