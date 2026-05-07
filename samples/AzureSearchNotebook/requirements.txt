@@ -1,7 +1,7 @@
 # Python dependencies for Azure AI Search Notebook Sample
 
 # Azure AI Search SDK
-azure-search-documents>=11.4.0
+azure-search-documents>=12.0.0
 
 # HTTP requests for downloading sample files
 requests>=2.33.1
