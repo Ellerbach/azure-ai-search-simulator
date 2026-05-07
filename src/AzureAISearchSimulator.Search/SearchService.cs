@@ -57,6 +57,9 @@ public class SearchService : ISearchService
         // Ensure Lucene uses the correct similarity algorithm from the index definition
         _indexManager.ConfigureSimilarity(indexName, index.Similarity);
 
+        // Ensure Lucene uses per-field analyzers from the index definition
+        _indexManager.ConfigureAnalyzers(indexName, index);
+
         var response = new SearchResponse
         {
             ODataContext = $"https://localhost/indexes('{indexName}')/$metadata#docs(*)",
@@ -251,7 +254,7 @@ public class SearchService : ISearchService
             // Add per-field features right after score (before highlights) to match Azure property ordering
             if (featuresModeEnabled && textQuery != null && docId >= 0)
             {
-                var features = ComputeFieldFeatures(searcher, index, request, textQuery, docId);
+                var features = ComputeFieldFeatures(indexName, searcher, index, request, textQuery, docId);
                 if (features.Count > 0)
                 {
                     searchResult.Features = features;
@@ -1390,6 +1393,7 @@ public class SearchService : ISearchService
     /// Used when featuresMode is "enabled".
     /// </summary>
     private Dictionary<string, FieldFeatures> ComputeFieldFeatures(
+        string indexName,
         IndexSearcher searcher,
         SearchIndex schema,
         SearchRequest request,
@@ -1468,7 +1472,7 @@ public class SearchService : ISearchService
                 // Get the similarity score for this field using a per-field query
                 if (uniqueMatchCount > 0)
                 {
-                    fieldSimilarityScore = ComputeFieldSimilarityScore(searcher, fieldName, request, docId);
+                    fieldSimilarityScore = ComputeFieldSimilarityScore(indexName, searcher, fieldName, request, docId);
                 }
             }
             catch (Exception ex)
@@ -1495,6 +1499,7 @@ public class SearchService : ISearchService
     /// Computes the BM25 similarity score for a single field against the search query.
     /// </summary>
     private double ComputeFieldSimilarityScore(
+        string indexName,
         IndexSearcher searcher,
         string fieldName,
         SearchRequest request,
@@ -1503,7 +1508,7 @@ public class SearchService : ISearchService
         try
         {
             // Create a per-field query using the same query text but restricted to one field
-            var analyzer = new StandardAnalyzer(LuceneDocumentMapper.AppLuceneVersion);
+            var analyzer = _indexManager.GetAnalyzer(indexName);
             var parser = new QueryParser(LuceneDocumentMapper.AppLuceneVersion, fieldName, analyzer);
 
             if (request.QueryType?.ToLowerInvariant() == "full")
