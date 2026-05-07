@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Integer field filters (eq/gt/lt/ge/le) returned zero results**: `eq` on `Edm.Int32` fields used a `TermQuery` (string lookup) instead of `NumericRangeQuery`, which never matches Lucene's numeric encoding. Range operators (`gt`/`lt`/`ge`/`le`) used `Int64Range` for `Int32` fields and passed the raw field name instead of the resolved Lucene filter field name. Now uses the correct `NumericRangeQuery.NewInt32Range` for `Edm.Int32` and resolves the field name via `ResolveFilterFieldName`.
 - **Custom analyzers never applied during indexing/search**: Custom analyzers defined in index creation (e.g., with `StemmerTokenFilter`, `word_delimiter`) were accepted but ignored — all fields used `StandardAnalyzer`. Now builds per-field Lucene analyzer chains from the index schema using `PerFieldAnalyzerWrapper`.
 - **CustomTokenFilter lost type-specific properties**: Properties like `language` on `StemmerTokenFilter` were silently dropped during JSON deserialization, causing Java SDK clients to crash. Added `[JsonExtensionData]` to `CustomTokenFilter` and `CustomTokenizer` to preserve all type-specific properties.
 
