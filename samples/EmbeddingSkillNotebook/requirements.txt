@@ -4,15 +4,15 @@
 azure-search-documents>=11.4.0
 
 # HTTP requests
-requests>=2.31.0
+requests>=2.33.1
 
 # Data display and manipulation
 pandas>=2.0.0
-numpy>=1.24.0
+numpy>=2.4.4
 
 # Environment variable loading
-python-dotenv>=1.0.0
+python-dotenv>=1.2.2
 
 # Jupyter notebook support
-jupyter>=1.0.0
-ipykernel>=6.0.0
+jupyter>=1.1.1
+ipykernel>=7.2.0

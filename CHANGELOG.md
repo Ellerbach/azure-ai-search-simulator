@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+### Fixed
+
+- **Custom analyzers never applied during indexing/search**: Custom analyzers defined in index creation (e.g., with `StemmerTokenFilter`, `word_delimiter`) were accepted but ignored — all fields used `StandardAnalyzer`. Now builds per-field Lucene analyzer chains from the index schema using `PerFieldAnalyzerWrapper`.
+- **CustomTokenFilter lost type-specific properties**: Properties like `language` on `StemmerTokenFilter` were silently dropped during JSON deserialization, causing Java SDK clients to crash. Added `[JsonExtensionData]` to `CustomTokenFilter` and `CustomTokenizer` to preserve all type-specific properties.
+
 ### Added
 
 - **Python SDK sample in README**: Added a quick-start Python example using the official `azure-search-documents` SDK, mirroring the existing C# sample (create index, upload documents, search). Includes self-signed certificate bypass for local development.

@@ -41,6 +41,9 @@ public class DocumentService : IDocumentService
         // Ensure Lucene uses the correct similarity algorithm from the index definition
         _indexManager.ConfigureSimilarity(indexName, index.Similarity);
 
+        // Ensure Lucene uses per-field analyzers from the index definition
+        _indexManager.ConfigureAnalyzers(indexName, index);
+
         var keyField = LuceneDocumentMapper.GetKeyFieldName(index);
         IndexWriter writer;
         try

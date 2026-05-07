@@ -23,15 +23,20 @@ using Lucene.Net.Analysis.Hy;
 using Lucene.Net.Analysis.Id;
 using Lucene.Net.Analysis.It;
 using Lucene.Net.Analysis.Lv;
+using Lucene.Net.Analysis.Miscellaneous;
 using Lucene.Net.Analysis.Nl;
 using Lucene.Net.Analysis.No;
 using Lucene.Net.Analysis.Pt;
 using Lucene.Net.Analysis.Ro;
 using Lucene.Net.Analysis.Ru;
+using Lucene.Net.Analysis.Snowball;
 using Lucene.Net.Analysis.Standard;
 using Lucene.Net.Analysis.Sv;
 using Lucene.Net.Analysis.Tr;
+using Lucene.Net.Analysis.Util;
 using Lucene.Net.Util;
+using AzureAISearchSimulator.Core.Models;
+using System.Text.Json;
 
 namespace AzureAISearchSimulator.Search;
 
@@ -346,5 +351,338 @@ public static class AnalyzerFactory
             : (indexAnalyzer ?? analyzer);
 
         return Create(analyzerName);
+    }
+
+    /// <summary>
+    /// Builds a PerFieldAnalyzerWrapper from a SearchIndex definition.
+    /// Maps each field's configured analyzer (built-in or custom) to the appropriate Lucene analyzer.
+    /// </summary>
+    public static Analyzer CreatePerFieldAnalyzer(SearchIndex schema, bool forSearch)
+    {
+        var defaultAnalyzer = new StandardAnalyzer(Version);
+
+        // Build lookup of custom analyzer definitions by name
+        var customAnalyzers = new Dictionary<string, CustomAnalyzer>(StringComparer.OrdinalIgnoreCase);
+        if (schema.Analyzers != null)
+        {
+            foreach (var a in schema.Analyzers)
+            {
+                customAnalyzers[a.Name] = a;
+            }
+        }
+
+        var fieldAnalyzers = new Dictionary<string, Analyzer>();
+
+        foreach (var field in schema.Fields)
+        {
+            if (field.Searchable != true)
+                continue;
+
+            var analyzerName = forSearch
+                ? (field.SearchAnalyzer ?? field.Analyzer)
+                : (field.IndexAnalyzer ?? field.Analyzer);
+
+            if (string.IsNullOrEmpty(analyzerName))
+                continue;
+
+            // Check if it's a custom analyzer defined in the index
+            if (customAnalyzers.TryGetValue(analyzerName, out var customDef))
+            {
+                fieldAnalyzers[field.Name] = BuildCustomAnalyzer(customDef, schema);
+            }
+            else
+            {
+                // Built-in analyzer
+                fieldAnalyzers[field.Name] = Create(analyzerName);
+            }
+        }
+
+        return new PerFieldAnalyzerWrapper(defaultAnalyzer, fieldAnalyzers);
+    }
+
+    /// <summary>
+    /// Builds a Lucene Analyzer from a CustomAnalyzer definition and the index's token filter/tokenizer definitions.
+    /// </summary>
+    private static Analyzer BuildCustomAnalyzer(CustomAnalyzer customDef, SearchIndex schema)
+    {
+        // Look up custom token filter definitions by name
+        var tokenFilterDefs = new Dictionary<string, CustomTokenFilter>(StringComparer.OrdinalIgnoreCase);
+        if (schema.TokenFilters != null)
+        {
+            foreach (var tf in schema.TokenFilters)
+                tokenFilterDefs[tf.Name] = tf;
+        }
+
+        // Look up custom tokenizer definitions by name
+        var tokenizerDefs = new Dictionary<string, CustomTokenizer>(StringComparer.OrdinalIgnoreCase);
+        if (schema.Tokenizers != null)
+        {
+            foreach (var t in schema.Tokenizers)
+                tokenizerDefs[t.Name] = t;
+        }
+
+        return new ConfigurableAnalyzer(Version, customDef, tokenFilterDefs, tokenizerDefs);
+    }
+
+    /// <summary>
+    /// A Lucene Analyzer that chains a configurable tokenizer with token filters,
+    /// built from Azure AI Search CustomAnalyzer definitions.
+    /// </summary>
+    private sealed class ConfigurableAnalyzer : Analyzer
+    {
+        private readonly LuceneVersion _version;
+        private readonly CustomAnalyzer _definition;
+        private readonly Dictionary<string, CustomTokenFilter> _tokenFilterDefs;
+        private readonly Dictionary<string, CustomTokenizer> _tokenizerDefs;
+
+        public ConfigurableAnalyzer(
+            LuceneVersion version,
+            CustomAnalyzer definition,
+            Dictionary<string, CustomTokenFilter> tokenFilterDefs,
+            Dictionary<string, CustomTokenizer> tokenizerDefs)
+        {
+            _version = version;
+            _definition = definition;
+            _tokenFilterDefs = tokenFilterDefs;
+            _tokenizerDefs = tokenizerDefs;
+        }
+
+        protected override TokenStreamComponents CreateComponents(string fieldName, System.IO.TextReader reader)
+        {
+            var tokenizer = CreateTokenizer(_definition.Tokenizer, reader);
+            TokenStream stream = tokenizer;
+
+            if (_definition.TokenFilters != null)
+            {
+                foreach (var filterName in _definition.TokenFilters)
+                {
+                    stream = CreateTokenFilter(filterName, stream);
+                }
+            }
+
+            return new TokenStreamComponents(tokenizer, stream);
+        }
+
+        private Tokenizer CreateTokenizer(string name, System.IO.TextReader reader)
+        {
+            // Check if it's a custom tokenizer defined in the index
+            if (_tokenizerDefs.TryGetValue(name, out var customTok))
+            {
+                return CreateTokenizerFromDef(customTok, reader);
+            }
+
+            // Built-in tokenizer names
+            return name.ToLowerInvariant() switch
+            {
+                "whitespace" => new WhitespaceTokenizer(_version, reader),
+                "standard" or "standard_v2" => new StandardTokenizer(_version, reader),
+                "keyword" or "keyword_v2" => new KeywordTokenizer(reader),
+                "letter" => new LetterTokenizer(_version, reader),
+                "lowercase" => new LowerCaseTokenizer(_version, reader),
+                "classic" => new Lucene.Net.Analysis.Standard.ClassicTokenizer(_version, reader),
+                "uax_url_email" => new Lucene.Net.Analysis.Standard.UAX29URLEmailTokenizer(_version, reader),
+                "nGram" or "ngram" => new Lucene.Net.Analysis.NGram.NGramTokenizer(_version, reader),
+                "edgeNGram" or "edgengram" => new Lucene.Net.Analysis.NGram.EdgeNGramTokenizer(_version, reader, 1, 20),
+                "path_hierarchy" or "path_hierarchy_v2" => new Lucene.Net.Analysis.Path.PathHierarchyTokenizer(reader),
+                _ => new StandardTokenizer(_version, reader)
+            };
+        }
+
+        private Tokenizer CreateTokenizerFromDef(CustomTokenizer def, System.IO.TextReader reader)
+        {
+            var typeName = def.ODataType.ToLowerInvariant();
+            return typeName switch
+            {
+                "#microsoft.azure.search.standardtokenizerv2"
+                    or "#microsoft.azure.search.standardtokenizer" =>
+                    new StandardTokenizer(_version, reader),
+                "#microsoft.azure.search.keywordtokenizerv2"
+                    or "#microsoft.azure.search.keywordtokenizer" =>
+                    new KeywordTokenizer(reader),
+                "#microsoft.azure.search.classictokenizer" =>
+                    new Lucene.Net.Analysis.Standard.ClassicTokenizer(_version, reader),
+                "#microsoft.azure.search.uax29urlemailetokenizer" =>
+                    new Lucene.Net.Analysis.Standard.UAX29URLEmailTokenizer(_version, reader),
+                "#microsoft.azure.search.pathhierarchytokenizerv2" =>
+                    new Lucene.Net.Analysis.Path.PathHierarchyTokenizer(reader),
+                _ => new StandardTokenizer(_version, reader)
+            };
+        }
+
+        private TokenStream CreateTokenFilter(string name, TokenStream input)
+        {
+            // Check if it's a custom token filter defined in the index
+            if (_tokenFilterDefs.TryGetValue(name, out var customFilter))
+            {
+                return CreateTokenFilterFromDef(customFilter, input);
+            }
+
+            // Built-in token filter names
+            return name.ToLowerInvariant() switch
+            {
+                "lowercase" => new Lucene.Net.Analysis.Core.LowerCaseFilter(_version, input),
+                "uppercase" => new Lucene.Net.Analysis.Core.UpperCaseFilter(_version, input),
+                "asciifolding" or "asciiFolding" => new ASCIIFoldingFilter(input),
+                "word_delimiter" => new Lucene.Net.Analysis.Miscellaneous.WordDelimiterFilter(
+                    _version, input,
+                    WordDelimiterFlags.GENERATE_WORD_PARTS |
+                    WordDelimiterFlags.GENERATE_NUMBER_PARTS |
+                    WordDelimiterFlags.SPLIT_ON_CASE_CHANGE |
+                    WordDelimiterFlags.SPLIT_ON_NUMERICS, null),
+                "stopwords" or "stopword" => new Lucene.Net.Analysis.Core.StopFilter(_version, input,
+                    Lucene.Net.Analysis.Core.StopAnalyzer.ENGLISH_STOP_WORDS_SET),
+                "trim" => new Lucene.Net.Analysis.Miscellaneous.TrimFilter(_version, input),
+                "porter_stem" or "porterstem" => new Lucene.Net.Analysis.En.PorterStemFilter(input),
+                "snowball" or "snowballstemmer" => new SnowballFilter(input, "English"),
+                "elision" => new Lucene.Net.Analysis.Util.ElisionFilter(input,
+                    new CharArraySet(_version, new[] { "l", "m", "t", "qu", "n", "s", "j", "d", "c" }, true)),
+                "classic" => new Lucene.Net.Analysis.Standard.ClassicFilter(input),
+                "shingle" => new Lucene.Net.Analysis.Shingle.ShingleFilter(input),
+                "ngram" or "ngram_v2" => new Lucene.Net.Analysis.NGram.NGramTokenFilter(_version, input),
+                "edgengram" or "edgengram_v2" => new Lucene.Net.Analysis.NGram.EdgeNGramTokenFilter(_version, input, 1, 2),
+                _ => input // Unknown filter — pass through
+            };
+        }
+
+        private TokenStream CreateTokenFilterFromDef(CustomTokenFilter def, TokenStream input)
+        {
+            var typeName = def.ODataType.ToLowerInvariant();
+
+            return typeName switch
+            {
+                "#microsoft.azure.search.stemmertokenfilter" =>
+                    CreateStemmerFilter(def, input),
+                "#microsoft.azure.search.stopwordstokenfilter" =>
+                    new Lucene.Net.Analysis.Core.StopFilter(_version, input,
+                        Lucene.Net.Analysis.Core.StopAnalyzer.ENGLISH_STOP_WORDS_SET),
+                "#microsoft.azure.search.lowercasetokenfilter" =>
+                    new LowerCaseFilter(_version, input),
+                "#microsoft.azure.search.uppercasetokenfilter" =>
+                    new Lucene.Net.Analysis.Core.UpperCaseFilter(_version, input),
+                "#microsoft.azure.search.asciifoldingTokenfilter" =>
+                    new ASCIIFoldingFilter(input),
+                "#microsoft.azure.search.ngramtokenfilterv2"
+                    or "#microsoft.azure.search.ngramtokenfilter" =>
+                    CreateNGramFilter(def, input),
+                "#microsoft.azure.search.edgengramtokenfilterv2"
+                    or "#microsoft.azure.search.edgengramtokenfilter" =>
+                    CreateEdgeNGramFilter(def, input),
+                "#microsoft.azure.search.worddelimitertokenfilter" =>
+                    new WordDelimiterFilter(_version, input,
+                        WordDelimiterFlags.GENERATE_WORD_PARTS |
+                        WordDelimiterFlags.GENERATE_NUMBER_PARTS |
+                        WordDelimiterFlags.SPLIT_ON_CASE_CHANGE |
+                        WordDelimiterFlags.SPLIT_ON_NUMERICS, null),
+                "#microsoft.azure.search.lengthTokenfilter" =>
+                    CreateLengthFilter(def, input),
+                "#microsoft.azure.search.keepTokenfilter" =>
+                    input, // Pass through for unsupported keep filter
+                "#microsoft.azure.search.shingletokenfilter" =>
+                    new Lucene.Net.Analysis.Shingle.ShingleFilter(input),
+                "#microsoft.azure.search.truncatetokenfilter" =>
+                    new Lucene.Net.Analysis.Miscellaneous.TruncateTokenFilter(input, 300),
+                "#microsoft.azure.search.elisiontokenfilter" =>
+                    new Lucene.Net.Analysis.Util.ElisionFilter(input,
+                        new CharArraySet(_version, new[] { "l", "m", "t", "qu", "n", "s", "j", "d", "c" }, true)),
+                "#microsoft.azure.search.classictokenfilter" =>
+                    new Lucene.Net.Analysis.Standard.ClassicFilter(input),
+                _ => input // Unknown filter type — pass through
+            };
+        }
+
+        private TokenStream CreateStemmerFilter(CustomTokenFilter def, TokenStream input)
+        {
+            var language = GetExtensionProperty(def, "language") ?? "english";
+            // Map Azure language names to Snowball stemmer names
+            var snowballLang = language.ToLowerInvariant() switch
+            {
+                "arabic" => "Arabic",
+                "armenian" => "Armenian",
+                "basque" => "Basque",
+                "catalan" => "Catalan",
+                "danish" => "Danish",
+                "dutch" => "Dutch",
+                "english" => "English",
+                "finnish" => "Finnish",
+                "french" => "French",
+                "german" => "German",
+                "german2" => "German2",
+                "greek" => "Greek",
+                "hungarian" => "Hungarian",
+                "indonesian" => "Indonesian",
+                "irish" => "Irish",
+                "italian" => "Italian",
+                "latvian" => "Latvian",
+                "norwegian" => "Norwegian",
+                "portuguese" => "Portuguese",
+                "romanian" => "Romanian",
+                "russian" => "Russian",
+                "spanish" => "Spanish",
+                "swedish" => "Swedish",
+                "turkish" => "Turkish",
+                "lightenglish" or "light_english" => "English",
+                "minimalenglish" or "minimal_english" => "English",
+                "possessiveenglish" or "possessive_english" => "English",
+                "lightfrench" or "light_french" => "French",
+                "minimalfrench" or "minimal_french" => "French",
+                "lightgerman" or "light_german" => "German",
+                "minimalgerman" or "minimal_german" => "German",
+                "lightitalian" or "light_italian" => "Italian",
+                "lightportuguese" or "light_portuguese" => "Portuguese",
+                "minimalportuguese" or "minimal_portuguese" => "Portuguese",
+                "lightspanish" or "light_spanish" => "Spanish",
+                "lightrussian" or "light_russian" => "Russian",
+                _ => "English"
+            };
+            return new SnowballFilter(input, snowballLang);
+        }
+
+        private TokenStream CreateNGramFilter(CustomTokenFilter def, TokenStream input)
+        {
+            var minGram = GetExtensionPropertyInt(def, "minGram") ?? 1;
+            var maxGram = GetExtensionPropertyInt(def, "maxGram") ?? 2;
+            return new Lucene.Net.Analysis.NGram.NGramTokenFilter(_version, input, minGram, maxGram);
+        }
+
+        private TokenStream CreateEdgeNGramFilter(CustomTokenFilter def, TokenStream input)
+        {
+            var minGram = GetExtensionPropertyInt(def, "minGram") ?? 1;
+            var maxGram = GetExtensionPropertyInt(def, "maxGram") ?? 2;
+            return new Lucene.Net.Analysis.NGram.EdgeNGramTokenFilter(_version, input, minGram, maxGram);
+        }
+
+        private TokenStream CreateLengthFilter(CustomTokenFilter def, TokenStream input)
+        {
+            var min = GetExtensionPropertyInt(def, "min") ?? 0;
+            var max = GetExtensionPropertyInt(def, "max") ?? 300;
+            return new Lucene.Net.Analysis.Miscellaneous.LengthFilter(_version, input, min, max);
+        }
+
+        private static string? GetExtensionProperty(CustomTokenFilter def, string propertyName)
+        {
+            if (def.AdditionalProperties == null)
+                return null;
+
+            if (def.AdditionalProperties.TryGetValue(propertyName, out var element))
+            {
+                return element.ValueKind == JsonValueKind.String ? element.GetString() : element.GetRawText();
+            }
+
+            return null;
+        }
+
+        private static int? GetExtensionPropertyInt(CustomTokenFilter def, string propertyName)
+        {
+            if (def.AdditionalProperties == null)
+                return null;
+
+            if (def.AdditionalProperties.TryGetValue(propertyName, out var element))
+            {
+                if (element.ValueKind == JsonValueKind.Number && element.TryGetInt32(out var val))
+                    return val;
+            }
+
+            return null;
+        }
     }
 }

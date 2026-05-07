@@ -21,6 +21,7 @@ public class LuceneIndexManager : IDisposable
     private readonly LuceneSettings _settings;
     private readonly ConcurrentDictionary<string, IndexHolder> _indexes = new();
     private readonly ConcurrentDictionary<string, SimilarityAlgorithm> _similarityConfigs = new();
+    private readonly ConcurrentDictionary<string, SearchIndex> _indexSchemas = new();
     private readonly object _lock = new();
     private bool _disposed;
 
@@ -63,6 +64,35 @@ public class LuceneIndexManager : IDisposable
                             indexName);
                         oldHolder.Dispose();
                     }
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Configures the index schema for per-field analyzer support.
+    /// If the schema has custom analyzers or field-level analyzer settings,
+    /// the index holder is rebuilt to apply the new analyzer configuration.
+    /// This should be called before GetWriter/GetSearcher when the index definition is available.
+    /// </summary>
+    public void ConfigureAnalyzers(string indexName, SearchIndex schema)
+    {
+        ThrowIfDisposed();
+
+        var hadSchema = _indexSchemas.ContainsKey(indexName);
+        _indexSchemas[indexName] = schema;
+
+        // Rebuild holder if it was already created without analyzer config
+        if (!hadSchema && _indexes.ContainsKey(indexName))
+        {
+            lock (_lock)
+            {
+                if (_indexes.TryRemove(indexName, out var oldHolder))
+                {
+                    _logger.LogInformation(
+                        "Analyzer configuration set for {IndexName}, rebuilding index holder",
+                        indexName);
+                    oldHolder.Dispose();
                 }
             }
         }
@@ -233,7 +263,8 @@ public class LuceneIndexManager : IDisposable
         {
             _logger.LogInformation("Creating Lucene index holder for {IndexName}", name);
             var similarity = _similarityConfigs.GetValueOrDefault(name);
-            return new IndexHolder(name, GetIndexPath(name), similarity, _logger);
+            _indexSchemas.TryGetValue(name, out var schema);
+            return new IndexHolder(name, GetIndexPath(name), similarity, schema, _logger);
         });
     }
 
@@ -293,7 +324,7 @@ public class LuceneIndexManager : IDisposable
             }
         }
 
-        public IndexHolder(string indexName, string indexPath, SimilarityAlgorithm? similarity, ILogger logger)
+        public IndexHolder(string indexName, string indexPath, SimilarityAlgorithm? similarity, SearchIndex? schema, ILogger logger)
         {
             _logger = logger;
             _indexName = indexName;
@@ -304,8 +335,18 @@ public class LuceneIndexManager : IDisposable
             // Use FSDirectory for persistence
             Directory = FSDirectory.Open(indexPath);
             
-            // Standard analyzer for text processing
-            Analyzer = new StandardAnalyzer(LuceneDocumentMapper.AppLuceneVersion);
+            // Build per-field analyzer from schema if available, otherwise fall back to standard
+            if (schema != null && HasAnalyzerConfiguration(schema))
+            {
+                // Use the same analyzer for both indexing and searching;
+                // forSearch=false so that indexAnalyzer/analyzer are used for the writer
+                Analyzer = AnalyzerFactory.CreatePerFieldAnalyzer(schema, forSearch: false);
+                logger.LogDebug("Created per-field analyzer for index {IndexName}", indexName);
+            }
+            else
+            {
+                Analyzer = new StandardAnalyzer(LuceneDocumentMapper.AppLuceneVersion);
+            }
 
             // Create the Lucene similarity from the index definition
             LuceneSimilarity = CreateLuceneSimilarity(similarity);
@@ -372,6 +413,20 @@ public class LuceneIndexManager : IDisposable
             }
 
             _disposed = true;
+        }
+
+        private static bool HasAnalyzerConfiguration(SearchIndex schema)
+        {
+            // Has custom analyzer definitions
+            if (schema.Analyzers != null && schema.Analyzers.Count > 0)
+                return true;
+
+            // Has field-level analyzer settings (built-in analyzers assigned to fields)
+            return schema.Fields.Any(f =>
+                f.Searchable == true &&
+                (!string.IsNullOrEmpty(f.Analyzer) ||
+                 !string.IsNullOrEmpty(f.IndexAnalyzer) ||
+                 !string.IsNullOrEmpty(f.SearchAnalyzer)));
         }
     }
 }
