@@ -21,7 +21,7 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.3" />
     <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.3" />
     <!-- Vector Search (HNSW) -->
-    <PackageReference Include="HNSW" Version="26.1.63669" />
+    <PackageReference Include="HNSW" Version="26.4.177" />
     <!-- Local Embedding Models (ONNX) -->
     <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.24.2" />
     <PackageReference Include="Microsoft.ML.Tokenizers" Version="2.0.0" />
