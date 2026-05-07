@@ -968,7 +968,12 @@ public class SearchService : ISearchService
             {
                 // Determine the correct sort field type based on the index schema
                 var sortFieldType = GetSortFieldType(fieldName, index);
-                sortFields.Add(new SortField(fieldName + "_sort", sortFieldType, reverse));
+                // String fields store DocValues at the plain field name;
+                // numeric/date fields use the "_sort" suffix
+                var sortFieldName = sortFieldType == SortFieldType.STRING
+                    ? fieldName
+                    : fieldName + "_sort";
+                sortFields.Add(new SortField(sortFieldName, sortFieldType, reverse));
             }
         }
 
