@@ -1316,7 +1316,7 @@ public class SearchService : ISearchService
     {
         var valueCounts = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
 
-        // Iterate through all terms in the field
+        // Try reading from the inverted index first (works for filterable string fields)
         var terms = MultiFields.GetTerms(reader, fieldName);
         if (terms != null)
         {
@@ -1329,6 +1329,36 @@ public class SearchService : ISearchService
                 if (!string.IsNullOrWhiteSpace(termText))
                 {
                     valueCounts[termText] = docFreq;
+                }
+            }
+        }
+
+        // If no terms found, read from SortedSetDocValues (facet-only fields without filterable)
+        if (valueCounts.Count == 0)
+        {
+            var facetFieldName = fieldName + "_facet";
+            for (int i = 0; i < reader.Leaves.Count; i++)
+            {
+                var leaf = reader.Leaves[i];
+                var docValues = leaf.AtomicReader.GetSortedSetDocValues(facetFieldName);
+                if (docValues == null)
+                    continue;
+
+                for (int doc = 0; doc < leaf.AtomicReader.MaxDoc; doc++)
+                {
+                    docValues.SetDocument(doc);
+                    long ord;
+                    while ((ord = docValues.NextOrd()) != SortedSetDocValues.NO_MORE_ORDS)
+                    {
+                        var bytesRef = new Lucene.Net.Util.BytesRef();
+                        docValues.LookupOrd(ord, bytesRef);
+                        var termText = bytesRef.Utf8ToString();
+                        if (!string.IsNullOrWhiteSpace(termText))
+                        {
+                            valueCounts.TryGetValue(termText, out var existing);
+                            valueCounts[termText] = existing + 1;
+                        }
+                    }
                 }
             }
         }
