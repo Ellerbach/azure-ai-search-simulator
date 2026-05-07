@@ -1,0 +1,113 @@
+### Custom Analyzer Sample - Tests stemming & token filter properties
+### Reproduces the bug: custom analyzers ignored + StemmerTokenFilter language dropped
+
+# Variables loaded from .env file (copy .env.example to .env in the workspace root)
+@baseUrl = {{$dotenv BASE_URL}}
+@apiVersion = {{$dotenv API_VERSION}}
+@adminKey = {{$dotenv ADMIN_KEY}}
+
+# ============================================
+# STEP 1: Create index with custom English stemmer analyzer
+# ============================================
+
+### Create index with custom analyzer
+POST {{baseUrl}}/indexes?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "name": "test-analyzer",
+  "fields": [
+    { "name": "id", "type": "Edm.String", "key": true },
+    { "name": "commentEnUS", "type": "Edm.String", "searchable": true, "analyzer": "commentEnUSAnalyzer" },
+    { "name": "plain", "type": "Edm.String", "searchable": true }
+  ],
+  "analyzers": [
+    {
+      "@odata.type": "#Microsoft.Azure.Search.CustomAnalyzer",
+      "name": "commentEnUSAnalyzer",
+      "tokenizer": "whitespace",
+      "tokenFilters": ["lowercase", "word_delimiter", "englishStemmer"]
+    }
+  ],
+  "tokenFilters": [
+    {
+      "@odata.type": "#Microsoft.Azure.Search.StemmerTokenFilter",
+      "name": "englishStemmer",
+      "language": "english"
+    }
+  ]
+}
+
+# ============================================
+# STEP 2: Verify index definition preserves language property
+# ============================================
+
+### Get index — language property should be present in tokenFilters
+GET {{baseUrl}}/indexes/test-analyzer?api-version={{apiVersion}}
+api-key: {{adminKey}}
+
+# ============================================
+# STEP 3: Upload documents
+# ============================================
+
+### Upload documents
+POST {{baseUrl}}/indexes/test-analyzer/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "value": [
+    { "@search.action": "mergeOrUpload", "id": "1", "commentEnUS": "The running club is fantastic", "plain": "The running club is fantastic" },
+    { "@search.action": "mergeOrUpload", "id": "2", "commentEnUS": "We love to run every morning", "plain": "We love to run every morning" },
+    { "@search.action": "mergeOrUpload", "id": "3", "commentEnUS": "The cats are playing in the gardens", "plain": "The cats are playing in the gardens" }
+  ]
+}
+
+# ============================================
+# STEP 4: Search with stemmed terms
+# ============================================
+
+### Search "run" — should match docs 1 & 2 (stemmer: running → run)
+POST {{baseUrl}}/indexes/test-analyzer/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "search": "run",
+  "searchFields": "commentEnUS",
+  "queryType": "full",
+  "select": "id,commentEnUS"
+}
+
+### Search "cat" — should match doc 3 (stemmer: cats → cat)
+POST {{baseUrl}}/indexes/test-analyzer/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "search": "cat",
+  "searchFields": "commentEnUS",
+  "queryType": "full",
+  "select": "id,commentEnUS"
+}
+
+### Search "run" on plain field (no custom analyzer) — should NOT match "running"
+POST {{baseUrl}}/indexes/test-analyzer/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "search": "run",
+  "searchFields": "plain",
+  "queryType": "full",
+  "select": "id,plain"
+}
+
+# ============================================
+# CLEANUP
+# ============================================
+
+### Delete the test index
+DELETE {{baseUrl}}/indexes/test-analyzer?api-version={{apiVersion}}
+api-key: {{adminKey}}
