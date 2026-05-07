@@ -555,6 +555,7 @@ All `.http` sample files use environment variables via `$dotenv`. To get started
 | [index-projection-sample.http](samples/index-projection-sample.http) | REST Client file demonstrating index projections (one-to-many chunking into a secondary index) |
 | [scoring-profile-sample.http](samples/scoring-profile-sample.http) | REST Client file demonstrating scoring profiles (text weights, magnitude, freshness, tag, combined) |
 | [similarity-sample.http](samples/similarity-sample.http) | REST Client file demonstrating similarity algorithms (default BM25, custom BM25 k1/b, ClassicSimilarity TF-IDF) |
+| [custom-analyzer-sample.http](samples/custom-analyzer-sample.http) | REST Client file demonstrating custom analyzers (English stemmer, word delimiter, per-field analyzer) |
 | [Download-EmbeddingModel.ps1](scripts/Download-EmbeddingModel.ps1) | PowerShell script to download ONNX embedding models from HuggingFace |
 
 ### Comparing Simulator vs Real Azure AI Search

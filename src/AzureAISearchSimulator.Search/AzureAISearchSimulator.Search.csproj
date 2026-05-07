@@ -21,13 +21,14 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.3" />
     <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.3" />
     <!-- Vector Search (HNSW) -->
-    <PackageReference Include="HNSW" Version="26.1.63669" />
+    <PackageReference Include="HNSW" Version="26.4.177" />
     <!-- Local Embedding Models (ONNX) -->
     <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.24.2" />
     <PackageReference Include="Microsoft.ML.Tokenizers" Version="2.0.0" />
     <!-- Document Cracking -->
     <PackageReference Include="PdfPig" Version="0.1.14" />
-    <PackageReference Include="DocumentFormat.OpenXml" Version="3.4.1" />
+    <PackageReference Include="PdfPig" Version="0.1.13" />
+    <PackageReference Include="DocumentFormat.OpenXml" Version="3.5.1" />
     <PackageReference Include="HtmlAgilityPack" Version="1.11.72" />
     <!-- Image Normalization -->
     <PackageReference Include="PhotoSauce.MagicScaler" Version="0.15.0" />
