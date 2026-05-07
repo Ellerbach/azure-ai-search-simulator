@@ -1088,7 +1088,10 @@ public class SearchService : ISearchService
                 
                 if (fragments.Length > 0)
                 {
-                    highlights[field.Name] = fragments.ToList();
+                    // Merge adjacent highlight tags: "<em>word1</em> <em>word2</em>" → "<em>word1 word2</em>"
+                    highlights[field.Name] = fragments
+                        .Select(f => MergeAdjacentHighlightTags(f, preTag, postTag))
+                        .ToList();
                 }
             }
         }
@@ -1098,6 +1101,19 @@ public class SearchService : ISearchService
         }
 
         return highlights;
+    }
+
+    /// <summary>
+    /// Merges adjacent highlight tags so that consecutive highlighted terms form a single span.
+    /// E.g. "<em>beautiful</em> <em>spa</em>" becomes "<em>beautiful spa</em>".
+    /// </summary>
+    private static string MergeAdjacentHighlightTags(string fragment, string preTag, string postTag)
+    {
+        // Replace occurrences of "postTag whitespace preTag" with just the whitespace
+        var pattern = System.Text.RegularExpressions.Regex.Escape(postTag)
+            + @"(\s+)"
+            + System.Text.RegularExpressions.Regex.Escape(preTag);
+        return System.Text.RegularExpressions.Regex.Replace(fragment, pattern, "$1");
     }
 
     public async Task<SuggestResponse> SuggestAsync(string indexName, SuggestRequest request)

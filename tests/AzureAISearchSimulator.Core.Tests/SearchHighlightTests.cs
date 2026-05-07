@@ -243,4 +243,92 @@ public class SearchHighlightTests : IDisposable
         Assert.Null(result.Highlights);
         Assert.False(result.ContainsKey("@search.highlights"));
     }
+
+    // ─── Phrase search tests ──────────────────────────────────────
+
+    [Fact]
+    public async Task PhraseSearch_ExactMatch_ReturnsMatchingDocWithHighlights()
+    {
+        // Phrase search: "luxury spa" should only match doc 1 (title = "Luxury Spa Resort")
+        var request = new SearchRequest
+        {
+            Search = "\"luxury spa\"",
+            Highlight = "title,description",
+            HighlightPreTag = "<em>",
+            HighlightPostTag = "</em>",
+            Top = 10
+        };
+
+        var response = await _searchService.SearchAsync("highlight-test", request);
+
+        // Only doc 1 contains the exact phrase "luxury spa"
+        Assert.Single(response.Value);
+        var result = response.Value[0];
+        Assert.Equal("1", result["id"]?.ToString());
+
+        // Highlights should be present and contain the phrase as one contiguous span
+        Assert.NotNull(result.Highlights);
+        Assert.True(result.Highlights.ContainsKey("title"));
+        var titleHighlight = result.Highlights["title"][0];
+        Assert.Contains("<em>Luxury Spa</em>", titleHighlight);
+
+        // Description has "spa" and "luxury" but NOT adjacent as "luxury spa",
+        // so phrase query should NOT highlight the description
+        Assert.False(result.Highlights.ContainsKey("description"));
+    }
+
+    [Fact]
+    public async Task PhraseSearch_WordsNotAdjacent_ReturnsEmpty()
+    {
+        // "affordable spa" — no document has these words adjacent in this order
+        var request = new SearchRequest
+        {
+            Search = "\"affordable spa\"",
+            Top = 10
+        };
+
+        var response = await _searchService.SearchAsync("highlight-test", request);
+
+        Assert.Empty(response.Value);
+    }
+
+    [Fact]
+    public async Task PhraseSearch_VsNonPhrase_ReturnsDifferentResults()
+    {
+        // Non-phrase: "luxury spa" (without quotes) matches both docs
+        // because "luxury" appears in doc 1 title/description and doc 2 doesn't,
+        // but the OR semantics may match broadly.
+        var nonPhraseRequest = new SearchRequest
+        {
+            Search = "beautiful spa",
+            Top = 10
+        };
+        var nonPhraseResponse = await _searchService.SearchAsync("highlight-test", nonPhraseRequest);
+
+        // Phrase: "beautiful spa" (with quotes) must match only doc 1
+        // where "beautiful spa" appears adjacent in description
+        var phraseRequest = new SearchRequest
+        {
+            Search = "\"beautiful spa\"",
+            Highlight = "description",
+            HighlightPreTag = "<em>",
+            HighlightPostTag = "</em>",
+            Top = 10
+        };
+        var phraseResponse = await _searchService.SearchAsync("highlight-test", phraseRequest);
+
+        // Non-phrase should return more results (OR of "beautiful" and "spa")
+        Assert.True(nonPhraseResponse.Value.Count >= phraseResponse.Value.Count);
+
+        // Phrase should return exactly doc 1 (description = "A beautiful spa with...")
+        Assert.Single(phraseResponse.Value);
+        Assert.Equal("1", phraseResponse.Value[0]["id"]?.ToString());
+
+        // Highlight should wrap the entire phrase as one contiguous span
+        var result = phraseResponse.Value[0];
+        Assert.NotNull(result.Highlights);
+        Assert.True(result.Highlights.ContainsKey("description"));
+        var fragment = result.Highlights["description"][0];
+        Assert.Contains("<em>beautiful spa</em>", fragment);
+    }
 }
