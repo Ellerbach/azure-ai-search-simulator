@@ -14,5 +14,5 @@ numpy>=2.4.4
 python-dotenv>=1.0.0
 
 # Jupyter notebook support
-jupyter>=1.0.0
+jupyter>=1.1.1
 ipykernel>=7.2.0
