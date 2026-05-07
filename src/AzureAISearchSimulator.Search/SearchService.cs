@@ -758,6 +758,29 @@ public class SearchService : ISearchService
                 : eqMatch.Groups[3].Value;
             
             var luceneFieldName = ResolveFilterFieldName(schema, fieldName);
+
+            // Use NumericRangeQuery for numeric field types (Lucene stores them with numeric encoding)
+            var eqField = schema.Fields.FirstOrDefault(f =>
+                f.Name.Equals(fieldName, StringComparison.OrdinalIgnoreCase));
+            if (eqField != null && IsNumericType(eqField.Type))
+            {
+                if (eqField.Type.Equals("Edm.Double", StringComparison.OrdinalIgnoreCase) ||
+                    eqField.Type.Equals("Edm.Single", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (double.TryParse(value, System.Globalization.CultureInfo.InvariantCulture, out var dblVal))
+                        return NumericRangeQuery.NewDoubleRange(luceneFieldName, dblVal, dblVal, true, true);
+                }
+                else if (eqField.Type.Equals("Edm.Int32", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (int.TryParse(value, out var intVal))
+                        return NumericRangeQuery.NewInt32Range(luceneFieldName, intVal, intVal, true, true);
+                }
+                else if (long.TryParse(value, out var longVal))
+                {
+                    return NumericRangeQuery.NewInt64Range(luceneFieldName, longVal, longVal, true, true);
+                }
+            }
+
             return new TermQuery(new Term(luceneFieldName, value));
         }
 
@@ -796,7 +819,8 @@ public class SearchService : ISearchService
             
             if (field != null && IsNumericType(field.Type))
             {
-                return BuildNumericRangeQuery(fieldName, op, value, field.Type);
+                var luceneFieldName = ResolveFilterFieldName(schema, fieldName);
+                return BuildNumericRangeQuery(luceneFieldName, op, value, field.Type);
             }
         }
 
@@ -872,7 +896,23 @@ public class SearchService : ISearchService
             }
         }
 
-        // Handle integer types
+        // Handle Edm.Int32 — stored with Int32Field
+        if (edmType.Equals("edm.int32", StringComparison.OrdinalIgnoreCase))
+        {
+            if (int.TryParse(value, out var intValue))
+            {
+                return op switch
+                {
+                    "gt" => NumericRangeQuery.NewInt32Range(fieldName, intValue + 1, int.MaxValue, true, true),
+                    "ge" => NumericRangeQuery.NewInt32Range(fieldName, intValue, int.MaxValue, true, true),
+                    "lt" => NumericRangeQuery.NewInt32Range(fieldName, int.MinValue, intValue - 1, true, true),
+                    "le" => NumericRangeQuery.NewInt32Range(fieldName, int.MinValue, intValue, true, true),
+                    _ => new MatchAllDocsQuery()
+                };
+            }
+        }
+
+        // Handle Edm.Int64 and DateTimeOffset — stored with Int64Field
         if (long.TryParse(value, out var longValue))
         {
             return op switch
