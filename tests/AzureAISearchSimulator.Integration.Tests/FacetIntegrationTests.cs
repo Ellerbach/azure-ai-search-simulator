@@ -155,6 +155,133 @@ public class FacetIntegrationTests : IDisposable
         Assert.Equal(2, luxury.Count);
     }
 
+    [Fact]
+    public async Task Facets_WithFilter_OnlyCountsFilteredDocuments()
+    {
+        var indexName = $"facet-filter-{Guid.NewGuid():N}";
+        var index = new SearchIndex
+        {
+            Name = indexName,
+            Fields = new List<SearchField>
+            {
+                new() { Name = "id", Type = "Edm.String", Key = true },
+                new() { Name = "hotelName", Type = "Edm.String", Searchable = true },
+                new() { Name = "category", Type = "Edm.String", Facetable = true, Filterable = true },
+                new() { Name = "rating", Type = "Edm.Double", Facetable = true, Filterable = true, Sortable = true }
+            }
+        };
+        RegisterIndex(index);
+
+        await UploadDocuments(indexName,
+            new Dictionary<string, object?> { ["id"] = "1", ["hotelName"] = "Grand Palace", ["category"] = "Luxury", ["rating"] = 4.8 },
+            new Dictionary<string, object?> { ["id"] = "2", ["hotelName"] = "Budget Stay", ["category"] = "Budget", ["rating"] = 3.2 },
+            new Dictionary<string, object?> { ["id"] = "3", ["hotelName"] = "Royal Suite", ["category"] = "Luxury", ["rating"] = 4.2 },
+            new Dictionary<string, object?> { ["id"] = "4", ["hotelName"] = "Comfort Inn", ["category"] = "Mid-range", ["rating"] = 3.8 },
+            new Dictionary<string, object?> { ["id"] = "5", ["hotelName"] = "The Ritz", ["category"] = "Luxury", ["rating"] = 4.9 });
+
+        // Without filter: all 3 categories should appear
+        var noFilterResponse = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Facets = new List<string> { "category" }
+        });
+
+        Assert.NotNull(noFilterResponse.SearchFacets);
+        var allFacets = noFilterResponse.SearchFacets["category"];
+        Assert.Equal(3, allFacets.Count);
+        Assert.Equal(3, allFacets.First(f => f.Value?.ToString() == "Luxury").Count);
+
+        // With filter: only Luxury should appear in facets
+        var filteredResponse = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Facets = new List<string> { "category" },
+            Filter = "category eq 'Luxury'"
+        });
+
+        Assert.NotNull(filteredResponse.SearchFacets);
+        var filteredFacets = filteredResponse.SearchFacets["category"];
+        Assert.Single(filteredFacets);
+        Assert.Equal("Luxury", filteredFacets[0].Value?.ToString());
+        Assert.Equal(3, filteredFacets[0].Count);
+    }
+
+    [Fact]
+    public async Task Facets_WithNumericFilter_ReducesFacetCounts()
+    {
+        var indexName = $"facet-numfilt-{Guid.NewGuid():N}";
+        var index = new SearchIndex
+        {
+            Name = indexName,
+            Fields = new List<SearchField>
+            {
+                new() { Name = "id", Type = "Edm.String", Key = true },
+                new() { Name = "hotelName", Type = "Edm.String", Searchable = true },
+                new() { Name = "category", Type = "Edm.String", Facetable = true, Filterable = true },
+                new() { Name = "rating", Type = "Edm.Double", Facetable = true, Filterable = true }
+            }
+        };
+        RegisterIndex(index);
+
+        await UploadDocuments(indexName,
+            new Dictionary<string, object?> { ["id"] = "1", ["hotelName"] = "Grand Palace", ["category"] = "Luxury", ["rating"] = 4.8 },
+            new Dictionary<string, object?> { ["id"] = "2", ["hotelName"] = "Budget Stay", ["category"] = "Budget", ["rating"] = 3.2 },
+            new Dictionary<string, object?> { ["id"] = "3", ["hotelName"] = "Royal Suite", ["category"] = "Luxury", ["rating"] = 3.5 },
+            new Dictionary<string, object?> { ["id"] = "4", ["hotelName"] = "The Ritz", ["category"] = "Luxury", ["rating"] = 4.9 });
+
+        // Filter by rating > 4: only 2 Luxury hotels match (Grand Palace 4.8, The Ritz 4.9)
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Facets = new List<string> { "category" },
+            Filter = "rating gt 4"
+        });
+
+        Assert.NotNull(response.SearchFacets);
+        var facets = response.SearchFacets["category"];
+        // Only Luxury should appear (Budget 3.2 and Luxury 3.5 are filtered out)
+        Assert.Single(facets);
+        Assert.Equal("Luxury", facets[0].Value?.ToString());
+        Assert.Equal(2, facets[0].Count);
+    }
+
+    [Fact]
+    public async Task Facets_WithTextSearch_OnlyCountsMatchingDocuments()
+    {
+        var indexName = $"facet-text-{Guid.NewGuid():N}";
+        var index = new SearchIndex
+        {
+            Name = indexName,
+            Fields = new List<SearchField>
+            {
+                new() { Name = "id", Type = "Edm.String", Key = true },
+                new() { Name = "description", Type = "Edm.String", Searchable = true },
+                new() { Name = "category", Type = "Edm.String", Facetable = true, Filterable = true }
+            }
+        };
+        RegisterIndex(index);
+
+        await UploadDocuments(indexName,
+            new Dictionary<string, object?> { ["id"] = "1", ["description"] = "A luxury spa resort with pool", ["category"] = "Luxury" },
+            new Dictionary<string, object?> { ["id"] = "2", ["description"] = "Affordable rooms for travelers", ["category"] = "Budget" },
+            new Dictionary<string, object?> { ["id"] = "3", ["description"] = "Spa and wellness retreat", ["category"] = "Luxury" },
+            new Dictionary<string, object?> { ["id"] = "4", ["description"] = "Basic motel with parking", ["category"] = "Budget" });
+
+        // Search for "spa": only doc 1 and 3 match
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "spa",
+            Facets = new List<string> { "category" }
+        });
+
+        Assert.NotNull(response.SearchFacets);
+        var facets = response.SearchFacets["category"];
+        // Only Luxury should appear (both spa-matching docs are Luxury)
+        Assert.Single(facets);
+        Assert.Equal("Luxury", facets[0].Value?.ToString());
+        Assert.Equal(2, facets[0].Count);
+    }
+
     public void Dispose()
     {
         _luceneManager?.Dispose();

@@ -300,7 +300,7 @@ public class SearchService : ISearchService
         // Calculate facets if requested
         if (request.Facets != null && request.Facets.Any())
         {
-            response.SearchFacets = CalculateFacets(searcher, index, request.Facets, textQuery, request.Filter);
+            response.SearchFacets = CalculateFacets(searcher, index, request.Facets, textQuery, filterQuery);
         }
 
         // Include count if requested
@@ -1254,16 +1254,25 @@ public class SearchService : ISearchService
 
     /// <summary>
     /// Calculates facets for the search results.
+    /// Facets are computed only over documents matching the combined text + filter query.
     /// </summary>
     private Dictionary<string, List<FacetResult>> CalculateFacets(
         IndexSearcher searcher,
         SearchIndex schema,
         List<string> facetSpecs,
         Query? textQuery,
-        string? filter)
+        Query? filterQuery)
     {
         var facets = new Dictionary<string, List<FacetResult>>();
         var reader = searcher.IndexReader;
+
+        // Build the effective query combining text and filter
+        Query effectiveQuery = BuildEffectiveQuery(textQuery, filterQuery);
+
+        // Collect all matching document IDs
+        var matchingDocs = new HashSet<int>();
+        var collector = new MatchingDocsCollector(matchingDocs);
+        searcher.Search(effectiveQuery, collector);
 
         foreach (var facetSpec in facetSpecs)
         {
@@ -1285,16 +1294,56 @@ public class SearchService : ISearchService
             if (interval.HasValue)
             {
                 // Range/interval facet (for numeric fields)
-                facets[fieldName] = CalculateIntervalFacet(reader, fieldName, field.Type, interval.Value, count);
+                facets[fieldName] = CalculateIntervalFacet(reader, fieldName, field.Type, interval.Value, count, matchingDocs);
             }
             else
             {
                 // Value facet
-                facets[fieldName] = CalculateValueFacet(reader, fieldName, count);
+                facets[fieldName] = CalculateValueFacet(searcher, reader, fieldName, count, matchingDocs);
             }
         }
 
         return facets;
+    }
+
+    private static Query BuildEffectiveQuery(Query? textQuery, Query? filterQuery)
+    {
+        if (textQuery != null && filterQuery != null)
+        {
+            var bq = new BooleanQuery();
+            bq.Add(textQuery, Occur.MUST);
+            bq.Add(filterQuery, Occur.MUST);
+            return bq;
+        }
+        return textQuery ?? filterQuery ?? new MatchAllDocsQuery();
+    }
+
+    /// <summary>
+    /// Simple collector that records all matching document IDs.
+    /// </summary>
+    private class MatchingDocsCollector : ICollector
+    {
+        private readonly HashSet<int> _matchingDocs;
+        private int _docBase;
+
+        public MatchingDocsCollector(HashSet<int> matchingDocs)
+        {
+            _matchingDocs = matchingDocs;
+        }
+
+        public void SetScorer(Scorer scorer) { }
+
+        public void Collect(int doc)
+        {
+            _matchingDocs.Add(_docBase + doc);
+        }
+
+        public void SetNextReader(AtomicReaderContext context)
+        {
+            _docBase = context.DocBase;
+        }
+
+        public bool AcceptsDocsOutOfOrder => true;
     }
 
     /// <summary>
@@ -1331,31 +1380,44 @@ public class SearchService : ISearchService
     }
 
     /// <summary>
-    /// Calculates value facets by counting unique values.
+    /// Calculates value facets by counting unique values only from matching documents.
     /// </summary>
-    private List<FacetResult> CalculateValueFacet(IndexReader reader, string fieldName, int maxCount)
+    private List<FacetResult> CalculateValueFacet(IndexSearcher searcher, IndexReader reader, string fieldName, int maxCount, HashSet<int> matchingDocs)
     {
         var valueCounts = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
 
-        // Try reading from the inverted index first (works for filterable string fields)
+        // Try reading from the inverted index (filterable string fields store a StringField)
         var terms = MultiFields.GetTerms(reader, fieldName);
+        bool foundFromInvertedIndex = false;
         if (terms != null)
         {
             var termsEnum = terms.GetEnumerator();
             while (termsEnum.MoveNext())
             {
                 var termText = termsEnum.Term.Utf8ToString();
-                var docFreq = termsEnum.DocFreq;
-                
-                if (!string.IsNullOrWhiteSpace(termText))
+                if (string.IsNullOrWhiteSpace(termText))
+                    continue;
+
+                // Count only documents in the matching set
+                var docsEnum = termsEnum.Docs(null, null);
+                int count = 0;
+                int docId;
+                while ((docId = docsEnum.NextDoc()) != Lucene.Net.Search.DocIdSetIterator.NO_MORE_DOCS)
                 {
-                    valueCounts[termText] = docFreq;
+                    if (matchingDocs.Contains(docId))
+                        count++;
+                }
+
+                if (count > 0)
+                {
+                    valueCounts[termText] = count;
+                    foundFromInvertedIndex = true;
                 }
             }
         }
 
-        // If no terms found, read from SortedSetDocValues (facet-only fields without filterable)
-        if (valueCounts.Count == 0)
+        // If no terms found via inverted index, read from SortedSetDocValues (facet-only fields)
+        if (!foundFromInvertedIndex)
         {
             var facetFieldName = fieldName + "_facet";
             for (int i = 0; i < reader.Leaves.Count; i++)
@@ -1367,6 +1429,10 @@ public class SearchService : ISearchService
 
                 for (int doc = 0; doc < leaf.AtomicReader.MaxDoc; doc++)
                 {
+                    int globalDocId = leaf.DocBase + doc;
+                    if (!matchingDocs.Contains(globalDocId))
+                        continue;
+
                     docValues.SetDocument(doc);
                     long ord;
                     while ((ord = docValues.NextOrd()) != SortedSetDocValues.NO_MORE_ORDS)
@@ -1398,26 +1464,27 @@ public class SearchService : ISearchService
     }
 
     /// <summary>
-    /// Calculates interval facets for numeric fields.
+    /// Calculates interval facets for numeric fields, only from matching documents.
     /// </summary>
     private List<FacetResult> CalculateIntervalFacet(
         IndexReader reader, 
         string fieldName, 
         string fieldType, 
         double interval, 
-        int maxCount)
+        int maxCount,
+        HashSet<int> matchingDocs)
     {
         var rangeCounts = new Dictionary<(double From, double To), long>();
 
-        // Read all numeric values from the index
+        // Read numeric values only from matching documents
         var values = new List<double>();
         
-        for (int i = 0; i < reader.MaxDoc; i++)
+        foreach (var docId in matchingDocs)
         {
-            if (reader.HasDeletions && !reader.Document(i).Fields.Any())
+            if (docId >= reader.MaxDoc)
                 continue;
 
-            var doc = reader.Document(i);
+            var doc = reader.Document(docId);
             var field = doc.GetField(fieldName);
             
             if (field != null)
