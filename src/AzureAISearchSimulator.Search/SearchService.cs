@@ -912,7 +912,21 @@ public class SearchService : ISearchService
             }
         }
 
-        // Handle Edm.Int64 and DateTimeOffset — stored with Int64Field
+        // Handle Edm.DateTimeOffset — stored with Int64Field (ticks)
+        if (DateTimeOffset.TryParse(value, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal, out var dateTimeOffsetValue))
+        {
+            var ticks = dateTimeOffsetValue.UtcTicks;
+            return op switch
+            {
+                "gt" => NumericRangeQuery.NewInt64Range(fieldName, ticks + 1, long.MaxValue, true, true),
+                "ge" => NumericRangeQuery.NewInt64Range(fieldName, ticks, long.MaxValue, true, true),
+                "lt" => NumericRangeQuery.NewInt64Range(fieldName, long.MinValue, ticks - 1, true, true),
+                "le" => NumericRangeQuery.NewInt64Range(fieldName, long.MinValue, ticks, true, true),
+                _ => new MatchAllDocsQuery()
+            };
+        }
+
+        // Handle Edm.Int64 — stored with Int64Field
         if (long.TryParse(value, out var longValue))
         {
             return op switch
