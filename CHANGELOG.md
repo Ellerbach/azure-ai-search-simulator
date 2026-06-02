@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **DateTimeOffset filters (gt/lt/ge/le) had no effect**: Filtering on `Edm.DateTimeOffset` fields (e.g., `lastRenovationDate gt 2020-01-11`) returned unfiltered results because `long.TryParse` cannot parse date strings. Now parses date values with `DateTimeOffset.TryParse` (assuming UTC) and converts to ticks for the `Int64Range` query.
 - **Facets ignored search query and filters**: Facet counts were computed over the entire index instead of only the documents matching the current search and filter. For example, filtering by `category eq 'Luxury'` still returned facet counts for all categories. Now facets are calculated only from the matching document set (text query + filter combined), matching Azure AI Search behavior where facets reflect the narrowed result set.
 - **Highlight tags not merged for phrase matches**: Phrase searches like `"beautiful spa"` produced `<em>beautiful</em> <em>spa</em>` instead of the Azure AI Search style `<em>beautiful spa</em>`. Adjacent highlight tags are now merged into a single contiguous span.
 - **OrderBy on string fields didn't sort results**: `$orderby=hotelName asc` returned documents in insertion order. `BuildSort` always appended `_sort` to the field name, but `LuceneDocumentMapper` stores string `SortedDocValuesField` at the plain field name (only numeric types use the `_sort` suffix). Now uses the plain field name for `STRING` sort type.

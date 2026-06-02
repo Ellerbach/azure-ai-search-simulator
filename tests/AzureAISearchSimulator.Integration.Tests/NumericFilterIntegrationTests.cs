@@ -88,6 +88,20 @@ public class NumericFilterIntegrationTests : IDisposable
         };
     }
 
+    private SearchIndex CreateDateIndex(string indexName)
+    {
+        return new SearchIndex
+        {
+            Name = indexName,
+            Fields = new List<SearchField>
+            {
+                new() { Name = "id", Type = "Edm.String", Key = true },
+                new() { Name = "title", Type = "Edm.String", Searchable = true },
+                new() { Name = "lastRenovationDate", Type = "Edm.DateTimeOffset", Filterable = true }
+            }
+        };
+    }
+
     // ─── eq on Int32 ─────────────────────────────────────────────────
 
     [Fact]
@@ -238,6 +252,94 @@ public class NumericFilterIntegrationTests : IDisposable
 
         // Note: floating point eq may not match due to precision; at minimum verify no crash
         Assert.True(response.Value.Count >= 0);
+    }
+
+    // ─── gt/lt/ge/le on DateTimeOffset ─────────────────────────────
+
+    [Fact]
+    public async Task Filter_DateTimeOffset_Gt_ReturnsLaterDates()
+    {
+        var indexName = $"dategt-{Guid.NewGuid():N}";
+        var index = CreateDateIndex(indexName);
+        RegisterIndex(index);
+
+        await UploadDocuments(indexName,
+            new Dictionary<string, object?> { ["id"] = "1", ["title"] = "old", ["lastRenovationDate"] = "2019-06-15T00:00:00Z" },
+            new Dictionary<string, object?> { ["id"] = "2", ["title"] = "mid", ["lastRenovationDate"] = "2020-01-11T00:00:00Z" },
+            new Dictionary<string, object?> { ["id"] = "3", ["title"] = "new", ["lastRenovationDate"] = "2022-03-20T00:00:00Z" });
+
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Filter = "lastRenovationDate gt 2020-01-11"
+        });
+
+        Assert.Single(response.Value);
+        Assert.Equal("3", response.Value[0]["id"]?.ToString());
+    }
+
+    [Fact]
+    public async Task Filter_DateTimeOffset_Ge_IncludesBoundary()
+    {
+        var indexName = $"datege-{Guid.NewGuid():N}";
+        var index = CreateDateIndex(indexName);
+        RegisterIndex(index);
+
+        await UploadDocuments(indexName,
+            new Dictionary<string, object?> { ["id"] = "1", ["title"] = "old", ["lastRenovationDate"] = "2019-06-15T00:00:00Z" },
+            new Dictionary<string, object?> { ["id"] = "2", ["title"] = "mid", ["lastRenovationDate"] = "2020-01-11T00:00:00Z" },
+            new Dictionary<string, object?> { ["id"] = "3", ["title"] = "new", ["lastRenovationDate"] = "2022-03-20T00:00:00Z" });
+
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Filter = "lastRenovationDate ge 2020-01-11"
+        });
+
+        Assert.Equal(2, response.Value.Count);
+    }
+
+    [Fact]
+    public async Task Filter_DateTimeOffset_Lt_ReturnsEarlierDates()
+    {
+        var indexName = $"datelt-{Guid.NewGuid():N}";
+        var index = CreateDateIndex(indexName);
+        RegisterIndex(index);
+
+        await UploadDocuments(indexName,
+            new Dictionary<string, object?> { ["id"] = "1", ["title"] = "old", ["lastRenovationDate"] = "2019-06-15T00:00:00Z" },
+            new Dictionary<string, object?> { ["id"] = "2", ["title"] = "mid", ["lastRenovationDate"] = "2020-01-11T00:00:00Z" },
+            new Dictionary<string, object?> { ["id"] = "3", ["title"] = "new", ["lastRenovationDate"] = "2022-03-20T00:00:00Z" });
+
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Filter = "lastRenovationDate lt 2020-01-11"
+        });
+
+        Assert.Single(response.Value);
+        Assert.Equal("1", response.Value[0]["id"]?.ToString());
+    }
+
+    [Fact]
+    public async Task Filter_DateTimeOffset_Le_IncludesBoundary()
+    {
+        var indexName = $"datele-{Guid.NewGuid():N}";
+        var index = CreateDateIndex(indexName);
+        RegisterIndex(index);
+
+        await UploadDocuments(indexName,
+            new Dictionary<string, object?> { ["id"] = "1", ["title"] = "old", ["lastRenovationDate"] = "2019-06-15T00:00:00Z" },
+            new Dictionary<string, object?> { ["id"] = "2", ["title"] = "mid", ["lastRenovationDate"] = "2020-01-11T00:00:00Z" },
+            new Dictionary<string, object?> { ["id"] = "3", ["title"] = "new", ["lastRenovationDate"] = "2022-03-20T00:00:00Z" });
+
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Filter = "lastRenovationDate le 2020-01-11"
+        });
+
+        Assert.Equal(2, response.Value.Count);
     }
 
     public void Dispose()
