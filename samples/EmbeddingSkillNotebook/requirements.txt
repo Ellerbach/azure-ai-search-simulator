@@ -7,7 +7,7 @@ azure-search-documents>=11.4.0
 requests>=2.33.1
 
 # Data display and manipulation
-pandas>=2.0.0
+pandas>=3.0.3
 numpy>=2.4.4
 
 # Environment variable loading
