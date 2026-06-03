@@ -824,14 +824,21 @@ public class SearchService : ISearchService
             }
         }
 
-        // Handle search.in(field, 'val1,val2,val3')
+        // Handle search.in(field, 'val1,val2,val3') and search.in(field, 'val1|val2', '|')
         var searchInMatch = System.Text.RegularExpressions.Regex.Match(
-            expression, @"search\.in\((\w+),\s*'([^']*)'\)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            expression,
+            @"search\.in\((\w+)\s*,\s*'([^']*)'(?:\s*,\s*'([^']*)')?\s*\)",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
         
         if (searchInMatch.Success)
         {
             var fieldName = searchInMatch.Groups[1].Value;
-            var values = searchInMatch.Groups[2].Value.Split(',', StringSplitOptions.RemoveEmptyEntries);
+            var valueList = searchInMatch.Groups[2].Value;
+            var delimiter = searchInMatch.Groups[3].Success ? searchInMatch.Groups[3].Value : ",";
+
+            var values = delimiter.Length == 0
+                ? new[] { valueList }
+                : valueList.Split(delimiter.ToCharArray(), StringSplitOptions.RemoveEmptyEntries);
             
             var luceneFieldName = ResolveFilterFieldName(schema, fieldName);
             var boolQuery = new BooleanQuery();
