@@ -1,14 +1,14 @@
 # Python dependencies for Embedding Skill Demo Notebook
 
 # Azure AI Search SDK
-azure-search-documents>=11.4.0
+azure-search-documents>=12.0.0
 
 # HTTP requests
 requests>=2.33.1
 
 # Data display and manipulation
 pandas>=3.0.3
-numpy>=2.4.4
+numpy>=2.4.6
 
 # Environment variable loading
 python-dotenv>=1.2.2
