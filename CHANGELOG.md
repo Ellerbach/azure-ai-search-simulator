@@ -97,7 +97,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Search response parity**: Removed `@search.coverage` unless `minimumCoverage` is set. Moved `@search.score` before document fields. Replaced `NaN` scores with `1.0` for wildcard/filter-only searches.
 - **Highlight parity**: Only highlight fields specified in the `highlight` parameter. `@search.highlights` now appears after `@search.score`, before document fields.
-- **Filters on searchable+filterable fields**: `search.in()` and `eq` filters now work on fields that are both `searchable` and `filterable` (e.g., `category`).
+- **Filters on searchable+filterable fields**: `search.in()` and `eq` filters now work on fields that are both `searchable` and `filterable` (e.g., `category`), and `search.in()` now supports the optional third delimiter argument (for example: `search.in(category, 'Luxury|Resort|Boutique', '|')`).
 - **Double range filters**: Filters like `rating ge 4.0` now correctly use double range queries for `Edm.Double`/`Edm.Single` fields.
 - **Merge operations**: Fixed `merge` and `mergeOrUpload` actions being treated as `upload` due to `JsonElement` deserialization, which replaced entire documents instead of merging fields.
 
