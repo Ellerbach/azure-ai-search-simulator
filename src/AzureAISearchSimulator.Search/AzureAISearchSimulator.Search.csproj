@@ -11,16 +11,16 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Azure.Core" Version="1.58.0" />
+    <PackageReference Include="Azure.Core" Version="1.59.0" />
     <PackageReference Include="Lucene.Net" Version="4.8.0-beta00017" />
     <PackageReference Include="Lucene.Net.Analysis.Common" Version="4.8.0-beta00017" />
     <PackageReference Include="Lucene.Net.QueryParser" Version="4.8.0-beta00017" />
     <PackageReference Include="Lucene.Net.Facet" Version="4.8.0-beta00017" />
     <PackageReference Include="Lucene.Net.Highlighter" Version="4.8.0-beta00016" />
     <PackageReference Include="Lucene.Net.Suggest" Version="4.8.0-beta00017" />
-    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.8" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.8" />
-    <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.8" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.9" />
     <!-- Vector Search (HNSW) -->
     <PackageReference Include="HNSW" Version="26.6.1848" />
     <!-- Local Embedding Models (ONNX) -->
