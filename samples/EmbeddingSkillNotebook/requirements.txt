@@ -15,4 +15,4 @@ python-dotenv>=1.2.2
 
 # Jupyter notebook support
 jupyter>=1.1.1
-ipykernel>=7.2.0
+ipykernel>=7.3.0
