@@ -11,7 +11,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Azure.Core" Version="1.59.0" />
+    <PackageReference Include="Azure.Core" Version="1.60.0" />
     <PackageReference Include="Lucene.Net" Version="4.8.0-beta00018" />
     <PackageReference Include="Lucene.Net.Analysis.Common" Version="4.8.0-beta00018" />
     <PackageReference Include="Lucene.Net.QueryParser" Version="4.8.0-beta00018" />
