@@ -148,8 +148,12 @@ public class SearchService : ISearchService
             }
         }
 
-        // Execute Lucene text search
-        var topN = (request.Skip ?? 0) + (request.Top ?? 50);
+        // Execute Lucene text search.
+        // Lucene's searcher.Search(query, numHits) requires numHits > 0, but Azure allows
+        // "top": 0 (e.g. for facet-only or count-only queries). TopDocs.TotalHits reflects
+        // the true match count regardless of numHits, and results are re-sliced to the
+        // requested top/skip below, so clamping numHits to at least 1 is safe here.
+        var topN = Math.Max(1, (request.Skip ?? 0) + (request.Top ?? 50));
         TopDocs? topDocs = null;
         
         textSearchStopwatch.Start();
@@ -1301,26 +1305,51 @@ public class SearchService : ISearchService
             var fieldName = parsed.FieldName;
             var count = parsed.Count ?? 10;
             var interval = parsed.Interval;
+            var metric = parsed.Metric;
 
             // Verify field is facetable
-            var field = schema.Fields.FirstOrDefault(f => 
+            var field = schema.Fields.FirstOrDefault(f =>
                 f.Name.Equals(fieldName, StringComparison.OrdinalIgnoreCase));
-            
+
             if (field == null || field.Facetable != true)
             {
                 _logger.LogWarning("Field '{FieldName}' is not facetable, skipping", fieldName);
                 continue;
             }
 
-            if (interval.HasValue)
+            List<FacetResult>? results;
+            if (metric != null)
+            {
+                // metric facet (aggregation) takes precedence over count/interval
+                results = CalculateMetricFacet(metric, field, fieldName, parsed, reader, matchingDocs);
+                if (results == null)
+                {
+                    // Unsupported metric or wrong field type - skip this facet expression entirely
+                    // (don't add an empty entry to the response).
+                    continue;
+                }
+            }
+            else if (interval.HasValue)
             {
                 // Range/interval facet (for numeric fields)
-                facets[fieldName] = CalculateIntervalFacet(reader, fieldName, field.Type, interval.Value, count, matchingDocs);
+                results = CalculateIntervalFacet(reader, fieldName, field.Type, interval.Value, count, matchingDocs);
             }
             else
             {
                 // Value facet
-                facets[fieldName] = CalculateValueFacet(searcher, reader, fieldName, count, matchingDocs);
+                results = CalculateValueFacet(searcher, reader, fieldName, count, matchingDocs);
+            }
+
+            // The same field may appear in multiple facet expressions
+            // (e.g. once as a value facet and once with a metric, or with several metrics) -
+            // append, don't overwrite.
+            if (facets.TryGetValue(fieldName, out var existing))
+            {
+                existing.AddRange(results);
+            }
+            else
+            {
+                facets[fieldName] = results;
             }
         }
 
@@ -1368,36 +1397,129 @@ public class SearchService : ISearchService
     }
 
     /// <summary>
-    /// Parses a facet specification like "category,count:5" or "rating,interval:1".
+    /// A parsed facet specification, e.g. "category,count:5", "rating,interval:1",
+    /// or "sales, metric: sum, default: 0".
     /// </summary>
-    private (string FieldName, int? Count, double? Interval) ParseFacetSpec(string facetSpec)
+    private sealed record FacetSpec(
+        string FieldName,
+        int? Count,
+        double? Interval,
+        string? Metric,
+        string? DefaultRaw,
+        bool DefaultIsString);
+
+    /// <summary>
+    /// Parses a facet specification. Whitespace around parameter names and values is tolerated.
+    /// Commas inside a single-quoted default string (e.g. "default: 'a, b'") are not treated
+    /// as parameter separators.
+    /// </summary>
+    private FacetSpec ParseFacetSpec(string facetSpec)
     {
-        var parts = facetSpec.Split(',');
+        var parts = SplitFacetSpecParts(facetSpec);
         var fieldName = parts[0].Trim();
         int? count = null;
         double? interval = null;
+        string? metric = null;
+        string? defaultRaw = null;
+        bool defaultIsString = false;
 
         foreach (var part in parts.Skip(1))
         {
             var trimmed = part.Trim();
             if (trimmed.StartsWith("count:", StringComparison.OrdinalIgnoreCase))
             {
-                if (int.TryParse(trimmed.Substring(6), out var c))
+                if (int.TryParse(trimmed.Substring(6).Trim(), out var c))
                 {
                     count = c;
                 }
             }
             else if (trimmed.StartsWith("interval:", StringComparison.OrdinalIgnoreCase))
             {
-                if (double.TryParse(trimmed.Substring(9), System.Globalization.NumberStyles.Any, 
+                if (double.TryParse(trimmed.Substring(9).Trim(), System.Globalization.NumberStyles.Any,
                     System.Globalization.CultureInfo.InvariantCulture, out var i))
                 {
                     interval = i;
                 }
             }
+            else if (trimmed.StartsWith("metric:", StringComparison.OrdinalIgnoreCase))
+            {
+                metric = trimmed.Substring(7).Trim();
+            }
+            else if (trimmed.StartsWith("default:", StringComparison.OrdinalIgnoreCase))
+            {
+                var raw = trimmed.Substring(8).Trim();
+                if (raw.Length >= 2 && raw[0] == '\'' && raw[^1] == '\'')
+                {
+                    defaultIsString = true;
+                    defaultRaw = raw.Substring(1, raw.Length - 2).Replace("\\'", "'");
+                }
+                else
+                {
+                    defaultRaw = raw;
+                }
+            }
         }
 
-        return (fieldName, count, interval);
+        return new FacetSpec(fieldName, count, interval, metric, defaultRaw, defaultIsString);
+    }
+
+    /// <summary>
+    /// Splits a facet spec on top-level commas, ignoring commas inside a single-quoted
+    /// string (used by the "default:'...'" parameter). A backslash before a quote escapes it.
+    /// </summary>
+    private static List<string> SplitFacetSpecParts(string facetSpec)
+    {
+        var parts = new List<string>();
+        var current = new System.Text.StringBuilder();
+        bool inQuotes = false;
+
+        for (int i = 0; i < facetSpec.Length; i++)
+        {
+            var c = facetSpec[i];
+            if (c == '\\' && i + 1 < facetSpec.Length && facetSpec[i + 1] == '\'')
+            {
+                current.Append('\'');
+                i++;
+                continue;
+            }
+            if (c == '\'')
+            {
+                inQuotes = !inQuotes;
+                current.Append(c);
+                continue;
+            }
+            if (c == ',' && !inQuotes)
+            {
+                parts.Add(current.ToString());
+                current.Clear();
+                continue;
+            }
+            current.Append(c);
+        }
+        parts.Add(current.ToString());
+
+        return parts;
+    }
+
+    /// <summary>
+    /// Resolves the "default:" value for a numeric metric (sum/min/max/avg). Returns null
+    /// (and logs a warning) if a default was specified but isn't a valid number for the field.
+    /// </summary>
+    private double? ResolveNumericDefault(FacetSpec parsed, string fieldName, string metric)
+    {
+        if (parsed.DefaultRaw == null)
+            return null;
+
+        if (parsed.DefaultIsString || !double.TryParse(parsed.DefaultRaw, System.Globalization.NumberStyles.Any,
+            System.Globalization.CultureInfo.InvariantCulture, out var value))
+        {
+            _logger.LogWarning(
+                "Facet default value '{Default}' for field '{FieldName}' is not a valid number for metric '{Metric}', ignoring default",
+                parsed.DefaultRaw, fieldName, metric);
+            return null;
+        }
+
+        return value;
     }
 
     /// <summary>
@@ -1485,6 +1607,42 @@ public class SearchService : ISearchService
     }
 
     /// <summary>
+    /// Dispatches to the correct aggregation calculation for a metric facet expression.
+    /// Returns null (not an empty list) when the metric or field type isn't supported, so the
+    /// caller can skip the facet expression entirely rather than adding an empty entry.
+    /// </summary>
+    private List<FacetResult>? CalculateMetricFacet(string metric, SearchField field, string fieldName, FacetSpec parsed, IndexReader reader, HashSet<int> matchingDocs)
+    {
+        // Aggregation facet: metric takes precedence over count/interval
+        var metricLower = metric.ToLowerInvariant();
+
+        if (metricLower is not ("sum" or "min" or "max" or "avg"))
+        {
+            _logger.LogWarning("Facet metric '{Metric}' is not supported, skipping", metric);
+            return null;
+        }
+
+        if (field.Type is not ("Edm.Int32" or "Edm.Int64" or "Edm.Double"))
+        {
+            _logger.LogWarning(
+                "Facet metric '{Metric}' requires a numeric field, but '{FieldName}' is {FieldType}, skipping",
+                metricLower, fieldName, field.Type);
+            return null;
+        }
+
+        var defaultValue = ResolveNumericDefault(parsed, fieldName, metricLower);
+
+        return metricLower switch
+        {
+            "sum" => CalculateSumFacet(reader, fieldName, field.Type, matchingDocs, defaultValue),
+            "min" => CalculateMinMaxFacet(reader, fieldName, field.Type, matchingDocs, defaultValue, isMax: false),
+            "max" => CalculateMinMaxFacet(reader, fieldName, field.Type, matchingDocs, defaultValue, isMax: true),
+            "avg" => CalculateAvgFacet(reader, fieldName, field.Type, matchingDocs, defaultValue),
+            _ => throw new InvalidOperationException($"Unreachable metric '{metricLower}'")
+        };
+    }
+
+    /// <summary>
     /// Calculates interval facets for numeric fields, only from matching documents.
     /// </summary>
     private List<FacetResult> CalculateIntervalFacet(
@@ -1564,6 +1722,124 @@ public class SearchService : ISearchService
                 Count = kvp.Value
             })
             .ToList();
+    }
+
+    /// <summary>
+    /// Reads the stored numeric value of a field from a document, or null if the field
+    /// wasn't stored (the document had no value for it).
+    /// </summary>
+    private static double? GetStoredNumericValue(Document doc, string fieldName, string fieldType)
+    {
+        var field = doc.GetField(fieldName);
+        if (field == null)
+            return null;
+
+        return fieldType switch
+        {
+            "Edm.Double" => field.GetDoubleValue(),
+            "Edm.Int32" => field.GetInt32Value(),
+            "Edm.Int64" => field.GetInt64Value(),
+            _ => null
+        };
+    }
+
+    /// <summary>
+    /// Calculates a sum aggregation facet (metric:sum) over matching documents.
+    /// Documents without a value for the field contribute the default (if specified),
+    /// otherwise nothing. Returns a single facet bucket containing only the sum.
+    /// </summary>
+    private List<FacetResult> CalculateSumFacet(
+        IndexReader reader,
+        string fieldName,
+        string fieldType,
+        HashSet<int> matchingDocs,
+        double? defaultValue)
+    {
+        double sum = 0;
+
+        foreach (var docId in matchingDocs)
+        {
+            if (docId >= reader.MaxDoc)
+                continue;
+
+            var doc = reader.Document(docId);
+            var value = GetStoredNumericValue(doc, fieldName, fieldType) ?? defaultValue;
+            if (value.HasValue)
+            {
+                sum += value.Value;
+            }
+        }
+
+        return new List<FacetResult> { new() { Sum = sum } };
+    }
+
+    /// <summary>
+    /// Calculates a min or max aggregation facet over matching documents.
+    /// Documents without a value for the field contribute the default (if specified),
+    /// otherwise are excluded. Returns a single facet bucket containing only the min/max.
+    /// If no document contributes a value, the bucket's min/max is null.
+    /// </summary>
+    private List<FacetResult> CalculateMinMaxFacet(
+        IndexReader reader,
+        string fieldName,
+        string fieldType,
+        HashSet<int> matchingDocs,
+        double? defaultValue,
+        bool isMax)
+    {
+        double? result = null;
+
+        foreach (var docId in matchingDocs)
+        {
+            if (docId >= reader.MaxDoc)
+                continue;
+
+            var doc = reader.Document(docId);
+            var value = GetStoredNumericValue(doc, fieldName, fieldType) ?? defaultValue;
+            if (!value.HasValue)
+                continue;
+
+            result = result.HasValue
+                ? (isMax ? Math.Max(result.Value, value.Value) : Math.Min(result.Value, value.Value))
+                : value.Value;
+        }
+
+        return new List<FacetResult> { isMax ? new FacetResult { Max = result } : new FacetResult { Min = result } };
+    }
+
+    /// <summary>
+    /// Calculates an average aggregation facet (metric:avg) over matching documents.
+    /// Documents without a value for the field contribute the default (if specified) to
+    /// both the sum and the count, otherwise are excluded from both. Returns a single
+    /// facet bucket containing only the average. If no document contributes a value,
+    /// the bucket's avg is null.
+    /// </summary>
+    private List<FacetResult> CalculateAvgFacet(
+        IndexReader reader,
+        string fieldName,
+        string fieldType,
+        HashSet<int> matchingDocs,
+        double? defaultValue)
+    {
+        double sum = 0;
+        long count = 0;
+
+        foreach (var docId in matchingDocs)
+        {
+            if (docId >= reader.MaxDoc)
+                continue;
+
+            var doc = reader.Document(docId);
+            var value = GetStoredNumericValue(doc, fieldName, fieldType) ?? defaultValue;
+            if (!value.HasValue)
+                continue;
+
+            sum += value.Value;
+            count++;
+        }
+
+        double? avg = count > 0 ? sum / count : null;
+        return new List<FacetResult> { new() { Avg = avg } };
     }
 
     /// <summary>

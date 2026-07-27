@@ -282,6 +282,377 @@ public class FacetIntegrationTests : IDisposable
         Assert.Equal(2, facets[0].Count);
     }
 
+    [Theory]
+    [InlineData("Edm.Int32")]
+    [InlineData("Edm.Int64")]
+    [InlineData("Edm.Double")]
+    public async Task Facets_MetricSum_ReturnsSumOfNumericField(string fieldType)
+    {
+        var indexName = $"facet-sum-{Guid.NewGuid():N}";
+        var index = new SearchIndex
+        {
+            Name = indexName,
+            Fields = new List<SearchField>
+            {
+                new() { Name = "id", Type = "Edm.String", Key = true },
+                new() { Name = "title", Type = "Edm.String", Searchable = true },
+                new() { Name = "sleepsCount", Type = fieldType, Facetable = true, Filterable = true }
+            }
+        };
+        RegisterIndex(index);
+
+        await UploadDocuments(indexName,
+            new Dictionary<string, object?> { ["id"] = "1", ["title"] = "Hotel A", ["sleepsCount"] = 4 },
+            new Dictionary<string, object?> { ["id"] = "2", ["title"] = "Hotel B", ["sleepsCount"] = 2 },
+            new Dictionary<string, object?> { ["id"] = "3", ["title"] = "Hotel C", ["sleepsCount"] = 6 });
+
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Facets = new List<string> { "sleepsCount, metric: sum" }
+        });
+
+        Assert.NotNull(response.SearchFacets);
+        Assert.True(response.SearchFacets.ContainsKey("sleepsCount"));
+
+        var sumFacets = response.SearchFacets["sleepsCount"];
+        Assert.Single(sumFacets);
+        Assert.Equal(12.0, sumFacets[0].Sum);
+        Assert.Null(sumFacets[0].Count);
+        Assert.Null(sumFacets[0].Value);
+        Assert.Null(sumFacets[0].From);
+        Assert.Null(sumFacets[0].To);
+    }
+
+    [Fact]
+    public async Task Facets_MetricSum_RespectsFilter()
+    {
+        var indexName = $"facet-sum-filt-{Guid.NewGuid():N}";
+        var index = new SearchIndex
+        {
+            Name = indexName,
+            Fields = new List<SearchField>
+            {
+                new() { Name = "id", Type = "Edm.String", Key = true },
+                new() { Name = "category", Type = "Edm.String", Facetable = true, Filterable = true },
+                new() { Name = "price", Type = "Edm.Double", Facetable = true, Filterable = true }
+            }
+        };
+        RegisterIndex(index);
+
+        await UploadDocuments(indexName,
+            new Dictionary<string, object?> { ["id"] = "1", ["category"] = "Luxury", ["price"] = 100.5 },
+            new Dictionary<string, object?> { ["id"] = "2", ["category"] = "Budget", ["price"] = 50.0 },
+            new Dictionary<string, object?> { ["id"] = "3", ["category"] = "Luxury", ["price"] = 200.25 });
+
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Filter = "category eq 'Luxury'",
+            Facets = new List<string> { "price,metric:sum" }
+        });
+
+        Assert.NotNull(response.SearchFacets);
+        var sumFacets = response.SearchFacets["price"];
+        Assert.Single(sumFacets);
+        Assert.Equal(300.75, sumFacets[0].Sum);
+    }
+
+    [Fact]
+    public async Task Facets_MetricSum_RespectsTextSearch()
+    {
+        var indexName = $"facet-sum-text-{Guid.NewGuid():N}";
+        var index = new SearchIndex
+        {
+            Name = indexName,
+            Fields = new List<SearchField>
+            {
+                new() { Name = "id", Type = "Edm.String", Key = true },
+                new() { Name = "description", Type = "Edm.String", Searchable = true },
+                new() { Name = "rooms", Type = "Edm.Int32", Facetable = true, Filterable = true }
+            }
+        };
+        RegisterIndex(index);
+
+        await UploadDocuments(indexName,
+            new Dictionary<string, object?> { ["id"] = "1", ["description"] = "A luxury spa resort", ["rooms"] = 10 },
+            new Dictionary<string, object?> { ["id"] = "2", ["description"] = "Affordable rooms", ["rooms"] = 20 },
+            new Dictionary<string, object?> { ["id"] = "3", ["description"] = "Spa and wellness retreat", ["rooms"] = 5 });
+
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "spa",
+            Facets = new List<string> { "rooms,metric:sum" }
+        });
+
+        Assert.NotNull(response.SearchFacets);
+        var sumFacets = response.SearchFacets["rooms"];
+        Assert.Single(sumFacets);
+        Assert.Equal(15.0, sumFacets[0].Sum);
+    }
+
+    [Fact]
+    public async Task Facets_MetricSum_DocumentsMissingFieldContributeNothing()
+    {
+        var indexName = $"facet-sum-miss-{Guid.NewGuid():N}";
+        var index = new SearchIndex
+        {
+            Name = indexName,
+            Fields = new List<SearchField>
+            {
+                new() { Name = "id", Type = "Edm.String", Key = true },
+                new() { Name = "quantity", Type = "Edm.Int32", Facetable = true, Filterable = true }
+            }
+        };
+        RegisterIndex(index);
+
+        await UploadDocuments(indexName,
+            new Dictionary<string, object?> { ["id"] = "1", ["quantity"] = 7 },
+            new Dictionary<string, object?> { ["id"] = "2" },
+            new Dictionary<string, object?> { ["id"] = "3", ["quantity"] = 3 });
+
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Facets = new List<string> { "quantity,metric:sum" }
+        });
+
+        Assert.NotNull(response.SearchFacets);
+        var sumFacets = response.SearchFacets["quantity"];
+        Assert.Single(sumFacets);
+        Assert.Equal(10.0, sumFacets[0].Sum);
+    }
+
+    [Fact]
+    public async Task Facets_MetricSum_OnNonNumericField_IsSkipped()
+    {
+        var indexName = $"facet-sum-str-{Guid.NewGuid():N}";
+        var index = new SearchIndex
+        {
+            Name = indexName,
+            Fields = new List<SearchField>
+            {
+                new() { Name = "id", Type = "Edm.String", Key = true },
+                new() { Name = "category", Type = "Edm.String", Facetable = true, Filterable = true }
+            }
+        };
+        RegisterIndex(index);
+
+        await UploadDocuments(indexName,
+            new Dictionary<string, object?> { ["id"] = "1", ["category"] = "Luxury" });
+
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Facets = new List<string> { "category,metric:sum" }
+        });
+
+        // Non-numeric sum facet is skipped with a warning, not an error
+        Assert.True(response.SearchFacets == null || !response.SearchFacets.ContainsKey("category"));
+    }
+
+    [Fact]
+    public async Task Facets_SameFieldAsValueAndSumFacet_ReturnsBothBuckets()
+    {
+        var indexName = $"facet-sum-both-{Guid.NewGuid():N}";
+        var index = new SearchIndex
+        {
+            Name = indexName,
+            Fields = new List<SearchField>
+            {
+                new() { Name = "id", Type = "Edm.String", Key = true },
+                new() { Name = "rating", Type = "Edm.Int32", Facetable = true, Filterable = true }
+            }
+        };
+        RegisterIndex(index);
+
+        await UploadDocuments(indexName,
+            new Dictionary<string, object?> { ["id"] = "1", ["rating"] = 4 },
+            new Dictionary<string, object?> { ["id"] = "2", ["rating"] = 4 },
+            new Dictionary<string, object?> { ["id"] = "3", ["rating"] = 5 });
+
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Facets = new List<string> { "rating,interval:1", "rating,metric:sum" }
+        });
+
+        Assert.NotNull(response.SearchFacets);
+        var ratingFacets = response.SearchFacets["rating"];
+
+        // Interval buckets (4-5 -> 2 docs, 5-6 -> 1 doc) plus one sum bucket
+        var sumBucket = ratingFacets.FirstOrDefault(f => f.Sum.HasValue);
+        Assert.NotNull(sumBucket);
+        Assert.Equal(13.0, sumBucket.Sum);
+        Assert.Null(sumBucket.Count);
+
+        var intervalBuckets = ratingFacets.Where(f => f.Sum == null).ToList();
+        Assert.Equal(2, intervalBuckets.Count);
+        Assert.Equal(3, intervalBuckets.Sum(b => b.Count));
+    }
+
+    [Fact]
+    public async Task Facets_MetricMinMaxAvg_ComputeAcrossMatchingDocuments()
+    {
+        var indexName = $"facet-minmaxavg-{Guid.NewGuid():N}";
+        var index = new SearchIndex
+        {
+            Name = indexName,
+            Fields = new List<SearchField>
+            {
+                new() { Name = "id", Type = "Edm.String", Key = true },
+                new() { Name = "price", Type = "Edm.Double", Facetable = true, Filterable = true }
+            }
+        };
+        RegisterIndex(index);
+
+        await UploadDocuments(indexName,
+            new Dictionary<string, object?> { ["id"] = "1", ["price"] = 10.0 },
+            new Dictionary<string, object?> { ["id"] = "2", ["price"] = 40.0 },
+            new Dictionary<string, object?> { ["id"] = "3", ["price"] = 25.0 });
+
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Facets = new List<string> { "price,metric:min", "price,metric:max", "price,metric:avg" }
+        });
+
+        Assert.NotNull(response.SearchFacets);
+        var priceFacets = response.SearchFacets["price"];
+        Assert.Equal(3, priceFacets.Count);
+
+        Assert.Equal(10.0, priceFacets.Single(f => f.Min.HasValue).Min);
+        Assert.Equal(40.0, priceFacets.Single(f => f.Max.HasValue).Max);
+        Assert.Equal(25.0, priceFacets.Single(f => f.Avg.HasValue).Avg);
+    }
+
+    [Fact]
+    public async Task Facets_MetricMinMaxAvg_RespectDefaultForMissingValues()
+    {
+        var indexName = $"facet-minmaxavg-default-{Guid.NewGuid():N}";
+        var index = new SearchIndex
+        {
+            Name = indexName,
+            Fields = new List<SearchField>
+            {
+                new() { Name = "id", Type = "Edm.String", Key = true },
+                new() { Name = "score", Type = "Edm.Int32", Facetable = true, Filterable = true }
+            }
+        };
+        RegisterIndex(index);
+
+        await UploadDocuments(indexName,
+            new Dictionary<string, object?> { ["id"] = "1", ["score"] = 10 },
+            new Dictionary<string, object?> { ["id"] = "2" }, // missing -> substitutes default:2
+            new Dictionary<string, object?> { ["id"] = "3", ["score"] = 6 });
+
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Facets = new List<string> { "score,metric:min,default:2", "score,metric:avg,default:2" }
+        });
+
+        Assert.NotNull(response.SearchFacets);
+        var scoreFacets = response.SearchFacets["score"];
+
+        Assert.Equal(2.0, scoreFacets.Single(f => f.Min.HasValue).Min);
+        // (10 + 2 + 6) / 3 = 6
+        Assert.Equal(6.0, scoreFacets.Single(f => f.Avg.HasValue).Avg);
+    }
+
+    [Fact]
+    public async Task Facets_MetricMinMax_OnNonNumericField_IsSkipped()
+    {
+        var indexName = $"facet-minmax-str-{Guid.NewGuid():N}";
+        var index = new SearchIndex
+        {
+            Name = indexName,
+            Fields = new List<SearchField>
+            {
+                new() { Name = "id", Type = "Edm.String", Key = true },
+                new() { Name = "category", Type = "Edm.String", Facetable = true, Filterable = true }
+            }
+        };
+        RegisterIndex(index);
+
+        await UploadDocuments(indexName,
+            new Dictionary<string, object?> { ["id"] = "1", ["category"] = "Luxury" });
+
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Facets = new List<string> { "category,metric:min" }
+        });
+
+        Assert.True(response.SearchFacets == null || !response.SearchFacets.ContainsKey("category"));
+    }
+
+    [Fact]
+    public async Task Facets_UnsupportedMetric_IsSkipped()
+    {
+        var indexName = $"facet-metric-unsupported-{Guid.NewGuid():N}";
+        var index = new SearchIndex
+        {
+            Name = indexName,
+            Fields = new List<SearchField>
+            {
+                new() { Name = "id", Type = "Edm.String", Key = true },
+                new() { Name = "price", Type = "Edm.Double", Facetable = true, Filterable = true }
+            }
+        };
+        RegisterIndex(index);
+
+        await UploadDocuments(indexName,
+            new Dictionary<string, object?> { ["id"] = "1", ["price"] = 10.0 });
+
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Facets = new List<string> { "price,metric:median" }
+        });
+
+        Assert.True(response.SearchFacets == null || !response.SearchFacets.ContainsKey("price"));
+    }
+
+    [Fact]
+    public async Task Search_WithTopZero_ReturnsFacetsAndCountWithNoDocuments()
+    {
+        // Azure allows "top": 0 for facet-only or count-only queries (e.g. the "distinct values"
+        // pattern in Azure's own docs). Lucene's searcher.Search requires numHits > 0 internally,
+        // so this must be handled without surfacing that as a client-facing error.
+        var indexName = $"facet-top-zero-{Guid.NewGuid():N}";
+        var index = new SearchIndex
+        {
+            Name = indexName,
+            Fields = new List<SearchField>
+            {
+                new() { Name = "id", Type = "Edm.String", Key = true },
+                new() { Name = "category", Type = "Edm.String", Facetable = true, Filterable = true }
+            }
+        };
+        RegisterIndex(index);
+
+        await UploadDocuments(indexName,
+            new Dictionary<string, object?> { ["id"] = "1", ["category"] = "Luxury" },
+            new Dictionary<string, object?> { ["id"] = "2", ["category"] = "Budget" },
+            new Dictionary<string, object?> { ["id"] = "3", ["category"] = "Luxury" });
+
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Count = true,
+            Top = 0,
+            Facets = new List<string> { "category,count:5" }
+        });
+
+        Assert.Empty(response.Value);
+        Assert.Equal(3, response.ODataCount);
+        Assert.NotNull(response.SearchFacets);
+        var facets = response.SearchFacets["category"];
+        Assert.Equal(2, facets.Single(f => f.Value?.ToString() == "Luxury").Count);
+        Assert.Equal(1, facets.Single(f => f.Value?.ToString() == "Budget").Count);
+    }
+
     public void Dispose()
     {
         _luceneManager?.Dispose();

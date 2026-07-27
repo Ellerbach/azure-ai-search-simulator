@@ -66,6 +66,8 @@
 ### Advanced Search Features
 
 - [x] Implement facets (count and interval)
+- [x] Implement facet aggregation metrics (`metric:sum`/`min`/`max`/`avg`) with `default:` substitution
+- [ ] Implement facet `cardinality` aggregation metric and `precisionThreshold`
 - [x] Add highlighting support
 - [x] Implement autocomplete
 - [x] Implement suggestions
