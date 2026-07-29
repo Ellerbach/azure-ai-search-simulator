@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using AzureAISearchSimulator.Core.Models;
 
 namespace AzureAISearchSimulator.Core.Tests;
@@ -93,11 +95,114 @@ public class FacetTests
         Assert.Contains("rating,interval:1", request.Facets);
     }
 
+    [Fact]
+    public void FacetResult_SumFacet_ShouldHaveOnlySum()
+    {
+        // Arrange
+        var facet = new FacetResult
+        {
+            Sum = 40.0
+        };
+
+        // Assert
+        Assert.Equal(40.0, facet.Sum);
+        Assert.Null(facet.Count);
+        Assert.Null(facet.Value);
+        Assert.Null(facet.From);
+        Assert.Null(facet.To);
+    }
+
+    [Fact]
+    public void FacetResult_SumFacet_SerializesToSumOnly()
+    {
+        // Arrange - same null-suppression the API uses globally (Program.cs)
+        var options = new JsonSerializerOptions
+        {
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+        };
+        var facet = new FacetResult { Sum = 40.0 };
+
+        // Act
+        var json = JsonSerializer.Serialize(facet, options);
+
+        // Assert - Azure returns a bucket containing only the metric: {"sum": 40.0}
+        Assert.Contains("\"sum\"", json);
+        Assert.DoesNotContain("\"count\"", json);
+        Assert.DoesNotContain("\"value\"", json);
+        Assert.DoesNotContain("\"from\"", json);
+        Assert.DoesNotContain("\"to\"", json);
+    }
+
+    [Fact]
+    public void FacetResult_ValueFacet_SerializesWithoutSum()
+    {
+        // Arrange
+        var options = new JsonSerializerOptions
+        {
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+        };
+        var facet = new FacetResult { Value = "Luxury", Count = 15 };
+
+        // Act
+        var json = JsonSerializer.Serialize(facet, options);
+
+        // Assert
+        Assert.Contains("\"value\"", json);
+        Assert.Contains("\"count\"", json);
+        Assert.DoesNotContain("\"sum\"", json);
+    }
+
+    [Theory]
+    [InlineData("min")]
+    [InlineData("max")]
+    [InlineData("avg")]
+    public void FacetResult_AggregationFacet_ShouldHaveOnlyThatMetric(string metric)
+    {
+        // Arrange
+        var facet = metric switch
+        {
+            "min" => new FacetResult { Min = 1.0 },
+            "max" => new FacetResult { Max = 5.0 },
+            "avg" => new FacetResult { Avg = 3.0 },
+            _ => throw new InvalidOperationException()
+        };
+
+        // Assert - only the requested metric is set, everything else is null
+        Assert.Null(facet.Count);
+        Assert.Null(facet.Value);
+        Assert.Null(facet.From);
+        Assert.Null(facet.To);
+        Assert.Null(facet.Sum);
+        if (metric != "min") Assert.Null(facet.Min);
+        if (metric != "max") Assert.Null(facet.Max);
+        if (metric != "avg") Assert.Null(facet.Avg);
+    }
+
+    [Fact]
+    public void FacetResult_MinMaxAvg_SerializeToMetricOnly()
+    {
+        var options = new JsonSerializerOptions
+        {
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+        };
+
+        Assert.Equal("{\"min\":1}", JsonSerializer.Serialize(new FacetResult { Min = 1.0 }, options));
+        Assert.Equal("{\"max\":5}", JsonSerializer.Serialize(new FacetResult { Max = 5.0 }, options));
+        Assert.Equal("{\"avg\":3}", JsonSerializer.Serialize(new FacetResult { Avg = 3.0 }, options));
+    }
+
     [Theory]
     [InlineData("category")]
     [InlineData("category,count:10")]
     [InlineData("rating,interval:1")]
     [InlineData("price,interval:100,count:20")]
+    [InlineData("sleepsCount,metric:sum")]
+    [InlineData("sleepsCount, metric: sum")]
+    [InlineData("sleepsCount,metric:min")]
+    [InlineData("sleepsCount,metric:max")]
+    [InlineData("sleepsCount,metric:avg")]
+    [InlineData("intField,metric:sum,default:5")]
+    [InlineData("stringField,metric:sum,default:'5'")]
     public void FacetSpec_ShouldSupportVariousFormats(string facetSpec)
     {
         // Arrange & Act

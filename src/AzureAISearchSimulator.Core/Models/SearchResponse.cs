@@ -125,9 +125,34 @@ public class FacetResult
 
     /// <summary>
     /// Count of documents with this value.
+    /// Null for aggregation facets (e.g. metric:sum), which contain only the metric value.
     /// </summary>
     [JsonPropertyName("count")]
-    public long Count { get; set; }
+    public long? Count { get; set; }
+
+    /// <summary>
+    /// Sum of the field values across all matching documents (for metric:sum facets).
+    /// </summary>
+    [JsonPropertyName("sum")]
+    public double? Sum { get; set; }
+
+    /// <summary>
+    /// Minimum field value across all matching documents (for metric:min facets).
+    /// </summary>
+    [JsonPropertyName("min")]
+    public double? Min { get; set; }
+
+    /// <summary>
+    /// Maximum field value across all matching documents (for metric:max facets).
+    /// </summary>
+    [JsonPropertyName("max")]
+    public double? Max { get; set; }
+
+    /// <summary>
+    /// Average field value across all matching documents (for metric:avg facets).
+    /// </summary>
+    [JsonPropertyName("avg")]
+    public double? Avg { get; set; }
 
     /// <summary>
     /// Range start (for range facets).

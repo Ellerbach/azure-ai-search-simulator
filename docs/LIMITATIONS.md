@@ -44,7 +44,7 @@ The simulator is designed for **development, learning, and testing purposes only
 | OData filters | Comparison, logical, and collection operators |
 | Sorting | Single and multi-field sorting |
 | Paging | Top and skip parameters |
-| Facets | Count and interval facets |
+| Facets | Count, interval, and aggregation (`metric:sum`/`min`/`max`/`avg`) facets |
 | Highlighting | Hit highlighting in search results |
 | Autocomplete | Term completion suggestions |
 | Suggestions | Type-ahead suggestions |
@@ -342,6 +342,22 @@ Not supported:
 - Maximum query length: 8,000 characters
 - Maximum terms in a query: 100
 - Regular expressions have limited complexity
+
+### Facet Limitations
+
+Supported:
+
+- Value facets with `count:N`
+- Interval facets with `interval:N` (numeric fields)
+- Aggregation metrics `sum`, `min`, `max`, `avg` (top-level `Edm.Int32`, `Edm.Int64`, `Edm.Double` fields)
+- `default:` missing-value substitution for the aggregation metrics above (numeric default only)
+
+Not supported:
+
+- The `cardinality` aggregation metric (and its `precisionThreshold` parameter)
+- `sort`, `values`, and `timeoffset` facet parameters
+- Facet hierarchies (`>` and `;` operators) and facet filters (`includeTermFilter` / `excludeTermFilter`)
+- Facets on complex-type sub-fields (e.g. `Rooms/BaseRate`) — complex types are not indexed field-by-field
 
 ## Security Limitations
 

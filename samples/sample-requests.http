@@ -28,7 +28,7 @@ api-key: {{adminKey}}
     { "name": "hotelName", "type": "Edm.String", "searchable": true, "filterable": true, "sortable": true },
     { "name": "description", "type": "Edm.String", "searchable": true },
     { "name": "category", "type": "Edm.String", "searchable": true, "filterable": true, "facetable": true },
-    { "name": "rating", "type": "Edm.Double", "filterable": true, "sortable": true },
+    { "name": "rating", "type": "Edm.Double", "filterable": true, "sortable": true, "facetable": true },
     { "name": "parkingIncluded", "type": "Edm.Boolean", "filterable": true },
     { "name": "lastRenovationDate", "type": "Edm.DateTimeOffset", "filterable": true, "sortable": true },
     { "name": "tags", "type": "Collection(Edm.String)", "searchable": true, "filterable": true }
@@ -74,7 +74,7 @@ api-key: {{adminKey}}
     { "name": "hotelName", "type": "Edm.String", "searchable": true, "filterable": true, "sortable": true },
     { "name": "description", "type": "Edm.String", "searchable": true },
     { "name": "category", "type": "Edm.String", "searchable": true, "filterable": true, "facetable": true },
-    { "name": "rating", "type": "Edm.Double", "filterable": true, "sortable": true },
+    { "name": "rating", "type": "Edm.Double", "filterable": true, "sortable": true, "facetable": true },
     { "name": "parkingIncluded", "type": "Edm.Boolean", "filterable": true },
     { "name": "lastRenovationDate", "type": "Edm.DateTimeOffset", "filterable": true, "sortable": true },
     { "name": "tags", "type": "Collection(Edm.String)", "searchable": true, "filterable": true },
@@ -284,6 +284,58 @@ api-key: {{queryKey}}
   "search": "*",
   "count": true,
   "top": 3
+}
+
+### Search with a value facet (category, a string field)
+POST {{baseUrl}}/indexes/hotels/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "*",
+  "facets": [ "category,count:5" ],
+  "count": true,
+  "top": 0
+}
+
+### Search with a sum facet aggregation (rating, a numeric field)
+# metric:sum only applies to numeric facetable fields (Edm.Int32, Edm.Int64, Edm.Double).
+# The response contains a single bucket: { "sum": <total> }
+POST {{baseUrl}}/indexes/hotels/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "*",
+  "facets": [ "rating, metric: sum" ],
+  "count": true,
+  "top": 0
+}
+
+### Search with min/max/avg facet aggregations on the same field
+# Each metric returns its own single-value bucket: { "min": ... }, { "max": ... }, { "avg": ... }
+POST {{baseUrl}}/indexes/hotels/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "*",
+  "facets": [ "rating,metric:min", "rating,metric:max", "rating,metric:avg" ],
+  "count": true,
+  "top": 0
+}
+
+### Search with a facet aggregation and a default for missing values
+# Documents without a value for the field substitute "default" instead of being excluded
+POST {{baseUrl}}/indexes/hotels/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "*",
+  "facets": [ "rating,metric:avg,default:0" ],
+  "count": true,
+  "top": 0
 }
 
 ### Search with paging
