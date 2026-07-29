@@ -1781,7 +1781,8 @@ public class SearchService : ISearchService
     /// Calculates a min or max aggregation facet over matching documents.
     /// Documents without a value for the field contribute the default (if specified),
     /// otherwise are excluded. Returns a single facet bucket containing only the min/max.
-    /// If no document contributes a value, the bucket's min/max is null.
+    /// If no document contributes a value, returns no bucket at all rather than one with
+    /// a null min/max (which would serialize to an empty, unhelpful {} object).
     /// </summary>
     private List<FacetResult> CalculateMinMaxFacet(
         IndexReader reader,
@@ -1808,6 +1809,9 @@ public class SearchService : ISearchService
                 : value.Value;
         }
 
+        if (!result.HasValue)
+            return new List<FacetResult>();
+
         return new List<FacetResult> { isMax ? new FacetResult { Max = result } : new FacetResult { Min = result } };
     }
 
@@ -1816,7 +1820,8 @@ public class SearchService : ISearchService
     /// Documents without a value for the field contribute the default (if specified) to
     /// both the sum and the count, otherwise are excluded from both. Returns a single
     /// facet bucket containing only the average. If no document contributes a value,
-    /// the bucket's avg is null.
+    /// returns no bucket at all rather than one with a null avg (which would serialize
+    /// to an empty, unhelpful {} object).
     /// </summary>
     private List<FacetResult> CalculateAvgFacet(
         IndexReader reader,
@@ -1842,8 +1847,10 @@ public class SearchService : ISearchService
             count++;
         }
 
-        double? avg = count > 0 ? sum / count : null;
-        return new List<FacetResult> { new() { Avg = avg } };
+        if (count == 0)
+            return new List<FacetResult>();
+
+        return new List<FacetResult> { new() { Avg = sum / count } };
     }
 
     /// <summary>

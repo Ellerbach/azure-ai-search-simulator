@@ -632,6 +632,39 @@ public class FacetIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task Facets_MetricMinMaxAvg_NoContributingValuesAndNoDefault_ReturnsNoBucket()
+    {
+        var indexName = $"facet-minmaxavg-empty-{Guid.NewGuid():N}";
+        var index = new SearchIndex
+        {
+            Name = indexName,
+            Fields = new List<SearchField>
+            {
+                new() { Name = "id", Type = "Edm.String", Key = true },
+                new() { Name = "score", Type = "Edm.Int32", Facetable = true, Filterable = true }
+            }
+        };
+        RegisterIndex(index);
+
+        // No document has a value for "score", and no default is specified, so min/max/avg
+        // have nothing to contribute - each should return no bucket rather than one
+        // that serializes to an empty, unhelpful {} object.
+        await UploadDocuments(indexName,
+            new Dictionary<string, object?> { ["id"] = "1" },
+            new Dictionary<string, object?> { ["id"] = "2" });
+
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Facets = new List<string> { "score,metric:min", "score,metric:max", "score,metric:avg" }
+        });
+
+        Assert.NotNull(response.SearchFacets);
+        Assert.True(response.SearchFacets.ContainsKey("score"));
+        Assert.Empty(response.SearchFacets["score"]);
+    }
+
+    [Fact]
     public async Task Facets_MetricMinMax_OnNonNumericField_IsSkipped()
     {
         var indexName = $"facet-minmax-str-{Guid.NewGuid():N}";
