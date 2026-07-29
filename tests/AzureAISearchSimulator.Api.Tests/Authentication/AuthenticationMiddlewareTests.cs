@@ -273,12 +273,7 @@ public class AuthenticationMiddlewareTests
     [Fact]
     public async Task InvokeAsync_SetsApiKeyTypeForBackwardCompatibility()
     {
-        var nextCalled = false;
-        RequestDelegate next = (HttpContext ctx) =>
-        {
-            nextCalled = true;
-            return Task.CompletedTask;
-        };
+        RequestDelegate next = (HttpContext ctx) => Task.CompletedTask;
 
         var mockHandler = CreateMockApiKeyHandler(
             canHandle: true,
@@ -300,12 +295,7 @@ public class AuthenticationMiddlewareTests
     [Fact]
     public async Task InvokeAsync_WithQueryAccess_SetsQueryApiKeyType()
     {
-        var nextCalled = false;
-        RequestDelegate next = (HttpContext ctx) =>
-        {
-            nextCalled = true;
-            return Task.CompletedTask;
-        };
+        RequestDelegate next = (HttpContext ctx) => Task.CompletedTask;
 
         var mockHandler = CreateMockApiKeyHandler(
             canHandle: true,
