@@ -1317,11 +1317,15 @@ public class SearchService : ISearchService
                 continue;
             }
 
+            // Lucene field names are case-sensitive, so downstream reads and the response
+            // dictionary key must use the schema's canonical casing, not the request's.
+            var canonicalFieldName = field.Name;
+
             List<FacetResult>? results;
             if (metric != null)
             {
                 // metric facet (aggregation) takes precedence over count/interval
-                results = CalculateMetricFacet(metric, field, fieldName, parsed, reader, matchingDocs);
+                results = CalculateMetricFacet(metric, field, canonicalFieldName, parsed, reader, matchingDocs);
                 if (results == null)
                 {
                     // Unsupported metric or wrong field type - skip this facet expression entirely
@@ -1332,24 +1336,24 @@ public class SearchService : ISearchService
             else if (interval.HasValue)
             {
                 // Range/interval facet (for numeric fields)
-                results = CalculateIntervalFacet(reader, fieldName, field.Type, interval.Value, count, matchingDocs);
+                results = CalculateIntervalFacet(reader, canonicalFieldName, field.Type, interval.Value, count, matchingDocs);
             }
             else
             {
                 // Value facet
-                results = CalculateValueFacet(searcher, reader, fieldName, count, matchingDocs);
+                results = CalculateValueFacet(searcher, reader, canonicalFieldName, count, matchingDocs);
             }
 
             // The same field may appear in multiple facet expressions
             // (e.g. once as a value facet and once with a metric, or with several metrics) -
             // append, don't overwrite.
-            if (facets.TryGetValue(fieldName, out var existing))
+            if (facets.TryGetValue(canonicalFieldName, out var existing))
             {
                 existing.AddRange(results);
             }
             else
             {
-                facets[fieldName] = results;
+                facets[canonicalFieldName] = results;
             }
         }
 

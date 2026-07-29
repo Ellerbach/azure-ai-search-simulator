@@ -492,6 +492,77 @@ public class FacetIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task Facets_MetricSum_FieldNameCasingDiffersFromSchema_StillComputesSum()
+    {
+        var indexName = $"facet-sum-casing-{Guid.NewGuid():N}";
+        var index = new SearchIndex
+        {
+            Name = indexName,
+            Fields = new List<SearchField>
+            {
+                new() { Name = "id", Type = "Edm.String", Key = true },
+                new() { Name = "Rating", Type = "Edm.Int32", Facetable = true, Filterable = true }
+            }
+        };
+        RegisterIndex(index);
+
+        await UploadDocuments(indexName,
+            new Dictionary<string, object?> { ["id"] = "1", ["Rating"] = 4 },
+            new Dictionary<string, object?> { ["id"] = "2", ["Rating"] = 5 });
+
+        // Request uses different casing than the schema field ("Rating") - the field lookup
+        // is case-insensitive, but the actual Lucene reads and response key must use the
+        // schema's canonical casing or the sum silently comes back empty/zero.
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Facets = new List<string> { "rating,metric:sum" }
+        });
+
+        Assert.NotNull(response.SearchFacets);
+        Assert.True(response.SearchFacets.ContainsKey("Rating"));
+        Assert.False(response.SearchFacets.ContainsKey("rating"));
+
+        var sumFacets = response.SearchFacets["Rating"];
+        Assert.Single(sumFacets);
+        Assert.Equal(9.0, sumFacets[0].Sum);
+    }
+
+    [Fact]
+    public async Task Facets_MetricSum_SameFieldRequestedWithDifferentCasing_AppendsToOneBucket()
+    {
+        var indexName = $"facet-sum-casing-merge-{Guid.NewGuid():N}";
+        var index = new SearchIndex
+        {
+            Name = indexName,
+            Fields = new List<SearchField>
+            {
+                new() { Name = "id", Type = "Edm.String", Key = true },
+                new() { Name = "Price", Type = "Edm.Double", Facetable = true, Filterable = true }
+            }
+        };
+        RegisterIndex(index);
+
+        await UploadDocuments(indexName,
+            new Dictionary<string, object?> { ["id"] = "1", ["Price"] = 10.0 },
+            new Dictionary<string, object?> { ["id"] = "2", ["Price"] = 40.0 });
+
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Facets = new List<string> { "price,metric:min", "PRICE,metric:max" }
+        });
+
+        Assert.NotNull(response.SearchFacets);
+        Assert.True(response.SearchFacets.ContainsKey("Price"));
+
+        var priceFacets = response.SearchFacets["Price"];
+        Assert.Equal(2, priceFacets.Count);
+        Assert.Equal(10.0, priceFacets.Single(f => f.Min.HasValue).Min);
+        Assert.Equal(40.0, priceFacets.Single(f => f.Max.HasValue).Max);
+    }
+
+    [Fact]
     public async Task Facets_MetricMinMaxAvg_ComputeAcrossMatchingDocuments()
     {
         var indexName = $"facet-minmaxavg-{Guid.NewGuid():N}";
