@@ -1278,6 +1278,39 @@ public class SearchService : ISearchService
     }
 
     /// <summary>
+    /// Resolves a (possibly path-qualified) facet field name against the schema's field tree,
+    /// descending into a complex-type field's sub-fields for each "/"-separated segment after
+    /// the first (e.g. "Tiles/PendingPaymentCount" resolves "Tiles" at the top level, then
+    /// "PendingPaymentCount" within Tiles' sub-fields). Returns null if any segment doesn't
+    /// resolve, or if a non-final segment isn't a complex-type field with sub-fields.
+    /// canonicalFieldName is rebuilt from the schema's own casing for each segment, since Lucene
+    /// field names are case-sensitive and must match how LuceneDocumentMapper indexed them.
+    /// </summary>
+    private static SearchField? ResolveFieldByPath(List<SearchField> topLevelFields, string path, out string canonicalFieldName)
+    {
+        var segments = path.Split('/');
+        var candidates = topLevelFields;
+        SearchField? current = null;
+        var canonicalSegments = new List<string>(segments.Length);
+
+        foreach (var segment in segments)
+        {
+            current = candidates?.FirstOrDefault(f => f.Name.Equals(segment, StringComparison.OrdinalIgnoreCase));
+            if (current == null)
+            {
+                canonicalFieldName = path;
+                return null;
+            }
+
+            canonicalSegments.Add(current.Name);
+            candidates = current.Fields;
+        }
+
+        canonicalFieldName = string.Join("/", canonicalSegments);
+        return current;
+    }
+
+    /// <summary>
     /// Calculates facets for the search results.
     /// Facets are computed only over documents matching the combined text + filter query.
     /// </summary>
@@ -1307,19 +1340,16 @@ public class SearchService : ISearchService
             var interval = parsed.Interval;
             var metric = parsed.Metric;
 
-            // Verify field is facetable
-            var field = schema.Fields.FirstOrDefault(f =>
-                f.Name.Equals(fieldName, StringComparison.OrdinalIgnoreCase));
+            // Verify field is facetable. fieldName may be a path into a complex-type field
+            // (e.g. "Tiles/PendingPaymentCount"), so resolve it by walking the schema's
+            // field/sub-field tree rather than a flat top-level lookup.
+            var field = ResolveFieldByPath(schema.Fields, fieldName, out var canonicalFieldName);
 
             if (field == null || field.Facetable != true)
             {
                 _logger.LogWarning("Field '{FieldName}' is not facetable, skipping", fieldName);
                 continue;
             }
-
-            // Lucene field names are case-sensitive, so downstream reads and the response
-            // dictionary key must use the schema's canonical casing, not the request's.
-            var canonicalFieldName = field.Name;
 
             List<FacetResult>? results;
             if (metric != null)
