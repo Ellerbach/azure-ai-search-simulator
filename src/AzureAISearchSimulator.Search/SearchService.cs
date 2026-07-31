@@ -1293,9 +1293,9 @@ public class SearchService : ISearchService
         SearchField? current = null;
         var canonicalSegments = new List<string>(segments.Length);
 
-        foreach (var segment in segments)
+        for (var i = 0; i < segments.Length; i++)
         {
-            current = candidates?.FirstOrDefault(f => f.Name.Equals(segment, StringComparison.OrdinalIgnoreCase));
+            current = candidates?.FirstOrDefault(f => f.Name.Equals(segments[i], StringComparison.OrdinalIgnoreCase));
             if (current == null)
             {
                 canonicalFieldName = path;
@@ -1303,7 +1303,20 @@ public class SearchService : ISearchService
             }
 
             canonicalSegments.Add(current.Name);
-            candidates = current.Fields;
+
+            var isLastSegment = i == segments.Length - 1;
+            if (!isLastSegment)
+            {
+                // Only Edm.ComplexType sub-fields are indexed by LuceneDocumentMapper;
+                // Collection(Edm.ComplexType) sub-fields are not, so don't descend into them.
+                if (current.Type != SearchFieldDataType.ComplexType)
+                {
+                    canonicalFieldName = path;
+                    return null;
+                }
+
+                candidates = current.Fields;
+            }
         }
 
         canonicalFieldName = string.Join("/", canonicalSegments);

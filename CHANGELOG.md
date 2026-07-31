@@ -8,9 +8,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Facets on complex-type sub-fields (e.g. `Tiles/PendingPaymentCount`)**: Facet expressions can now reference a path into an `Edm.ComplexType` field's sub-fields (value, interval, and metric facets all work). Previously complex fields were only stored as JSON and never indexed field-by-field, so any facet spec naming a sub-field path silently resolved to no field and was skipped. `LuceneDocumentMapper` now indexes each sub-field under a path-qualified Lucene field name (e.g. `"Tiles/PendingPaymentCount"`), and facet field resolution walks the schema's field/sub-field tree instead of a flat top-level lookup. `Collection(Edm.ComplexType)` sub-field faceting (e.g. `Rooms/BaseRate` where `Rooms` is a collection) remains unsupported.
-
-### Added
-
 - **Facet aggregation metrics (`metric:sum`/`min`/`max`/`avg`)**: Facet expressions now support the Azure AI Search preview aggregation syntax `"field,metric:sum"` (whitespace-tolerant, e.g. `"field, metric: sum"`) on numeric facetable fields (`Edm.Int32`, `Edm.Int64`, `Edm.Double`). Each metric returns a single facet bucket containing only that metric (e.g. `{"sum": 40.0}`, `{"min": 60.0}`), computed over documents matching the current search text and filter. Also supports the `default:` parameter to substitute a value for documents missing the field (e.g. `"field,metric:sum,default:0"`). The same field can be requested with multiple metrics or alongside a regular value/interval facet in one query. Azure's `cardinality` metric and `precisionThreshold` parameter are not supported.
 
 ### Fixed
