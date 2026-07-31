@@ -158,6 +158,14 @@ public static class LuceneDocumentMapper
                 fields.Add(new StoredField(field.Name, JsonSerializer.Serialize(value)));
                 break;
 
+            case "edm.complextype":
+                // Complex fields are not indexed as a single value. Instead, each sub-field
+                // is indexed under a path-qualified name (e.g. "Tiles/PendingPaymentCount"),
+                // matching the OData path syntax used in $filter/$orderby/facet expressions
+                // and the field-path convention already used for scoring profiles.
+                fields.AddRange(CreateComplexFields(field, value, normalizers, charFilters));
+                break;
+
             default:
                 // Unknown type - store as JSON string
                 fields.Add(new StoredField(field.Name, JsonSerializer.Serialize(value)));
@@ -384,6 +392,90 @@ public static class LuceneDocumentMapper
         }
 
         return fields;
+    }
+
+    /// <summary>
+    /// Indexes the sub-fields of an Edm.ComplexType field. Each sub-field is delegated back
+    /// to <see cref="CreateLuceneFields"/> under a path-qualified name (e.g. "Tiles/PendingPaymentCount"),
+    /// so it gets exactly the same filterable/sortable/facetable Lucene field shapes a top-level
+    /// field of that type would get. Document retrieval is served from the parent document's
+    /// "_raw_json" regardless of what gets stored here.
+    /// </summary>
+    private static IEnumerable<IIndexableField> CreateComplexFields(
+        SearchField field,
+        object value,
+        IEnumerable<CustomNormalizer>? normalizers,
+        IEnumerable<CustomCharFilter>? charFilters)
+    {
+        var fields = new List<IIndexableField>();
+
+        if (field.Fields == null || field.Fields.Count == 0)
+        {
+            return fields;
+        }
+
+        var nestedValues = ExtractComplexObjectValue(value);
+        if (nestedValues == null)
+        {
+            return fields;
+        }
+
+        foreach (var subField in field.Fields)
+        {
+            if (!nestedValues.TryGetValue(subField.Name, out var subValue) || subValue == null)
+            {
+                continue;
+            }
+
+            var qualifiedField = WithQualifiedName(subField, field.Name + "/" + subField.Name);
+            fields.AddRange(CreateLuceneFields(qualifiedField, subValue, normalizers, charFilters));
+        }
+
+        return fields;
+    }
+
+    /// <summary>
+    /// Clones a sub-field definition with its Lucene field name replaced by the full path from
+    /// the complex-type root, keeping all query-relevant attributes (type, searchable/filterable/
+    /// sortable/facetable, retrievable, normalizer, nested sub-fields for multi-level complex
+    /// types). Retrievable is kept (rather than forced off) because the metric aggregation facets
+    /// (sum/min/max/avg) read their per-document value from the field's *stored* Lucene value,
+    /// not from doc values - dropping it would silently zero out those aggregations. The
+    /// resulting duplicate storage (also present in the parent's "_raw_json") is otherwise unused.
+    /// </summary>
+    private static SearchField WithQualifiedName(SearchField field, string qualifiedName)
+    {
+        return new SearchField
+        {
+            Name = qualifiedName,
+            Type = field.Type,
+            Key = false,
+            Searchable = field.Searchable,
+            Filterable = field.Filterable,
+            Sortable = field.Sortable,
+            Facetable = field.Facetable,
+            Retrievable = field.Retrievable,
+            Normalizer = field.Normalizer,
+            Fields = field.Fields
+        };
+    }
+
+    /// <summary>
+    /// Extracts a complex field's value as a name/value map, regardless of whether it arrived
+    /// as a JsonElement object (documents submitted over HTTP) or a plain Dictionary (documents
+    /// constructed directly in-process, e.g. by tests or internal callers).
+    /// </summary>
+    private static Dictionary<string, object?>? ExtractComplexObjectValue(object value)
+    {
+        switch (value)
+        {
+            case Dictionary<string, object?> dict:
+                return dict;
+            case JsonElement je when je.ValueKind == JsonValueKind.Object:
+                return je.EnumerateObject().ToDictionary(p => p.Name, p => (object?)p.Value);
+            default:
+                return null;
+        }
     }
 
     private static IEnumerable<IIndexableField> CreateCollectionStringFields(

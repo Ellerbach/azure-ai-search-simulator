@@ -757,6 +757,169 @@ public class FacetIntegrationTests : IDisposable
         Assert.Equal(1, facets.Single(f => f.Value?.ToString() == "Budget").Count);
     }
 
+    [Fact]
+    public async Task Facets_OnComplexTypeSubField_ValueFacet_ReturnsFacetValues()
+    {
+        var indexName = $"facet-complex-value-{Guid.NewGuid():N}";
+        var index = new SearchIndex
+        {
+            Name = indexName,
+            Fields = new List<SearchField>
+            {
+                new() { Name = "id", Type = "Edm.String", Key = true },
+                new()
+                {
+                    Name = "Tiles",
+                    Type = "Edm.ComplexType",
+                    Fields = new List<SearchField>
+                    {
+                        new() { Name = "PendingPaymentCount", Type = "Edm.Int32", Facetable = true, Filterable = true },
+                        new() { Name = "Status", Type = "Edm.String", Facetable = true, Filterable = true }
+                    }
+                }
+            }
+        };
+        RegisterIndex(index);
+
+        await UploadDocuments(indexName,
+            new Dictionary<string, object?> { ["id"] = "1", ["Tiles"] = new Dictionary<string, object?> { ["PendingPaymentCount"] = 3, ["Status"] = "Open" } },
+            new Dictionary<string, object?> { ["id"] = "2", ["Tiles"] = new Dictionary<string, object?> { ["PendingPaymentCount"] = 0, ["Status"] = "Closed" } },
+            new Dictionary<string, object?> { ["id"] = "3", ["Tiles"] = new Dictionary<string, object?> { ["PendingPaymentCount"] = 5, ["Status"] = "Open" } });
+
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Facets = new List<string> { "Tiles/Status" }
+        });
+
+        Assert.NotNull(response.SearchFacets);
+        Assert.True(response.SearchFacets.ContainsKey("Tiles/Status"),
+            "Facets should resolve a path into a complex-type field's sub-fields");
+
+        var statusFacets = response.SearchFacets["Tiles/Status"];
+        Assert.Equal(2, statusFacets.Single(f => f.Value?.ToString() == "Open").Count);
+        Assert.Equal(1, statusFacets.Single(f => f.Value?.ToString() == "Closed").Count);
+    }
+
+    [Fact]
+    public async Task Facets_OnComplexTypeSubField_MetricFacet_AggregatesAcrossDocuments()
+    {
+        var indexName = $"facet-complex-metric-{Guid.NewGuid():N}";
+        var index = new SearchIndex
+        {
+            Name = indexName,
+            Fields = new List<SearchField>
+            {
+                new() { Name = "id", Type = "Edm.String", Key = true },
+                new()
+                {
+                    Name = "Tiles",
+                    Type = "Edm.ComplexType",
+                    Fields = new List<SearchField>
+                    {
+                        new() { Name = "PendingPaymentCount", Type = "Edm.Int32", Facetable = true, Filterable = true }
+                    }
+                }
+            }
+        };
+        RegisterIndex(index);
+
+        await UploadDocuments(indexName,
+            new Dictionary<string, object?> { ["id"] = "1", ["Tiles"] = new Dictionary<string, object?> { ["PendingPaymentCount"] = 3 } },
+            new Dictionary<string, object?> { ["id"] = "2", ["Tiles"] = new Dictionary<string, object?> { ["PendingPaymentCount"] = 0 } },
+            new Dictionary<string, object?> { ["id"] = "3", ["Tiles"] = new Dictionary<string, object?> { ["PendingPaymentCount"] = 5 } });
+
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Facets = new List<string> { "Tiles/PendingPaymentCount,metric:sum" }
+        });
+
+        Assert.NotNull(response.SearchFacets);
+        Assert.True(response.SearchFacets.ContainsKey("Tiles/PendingPaymentCount"));
+        Assert.Equal(8, response.SearchFacets["Tiles/PendingPaymentCount"].Single().Sum);
+    }
+
+    [Fact]
+    public async Task Facets_OnComplexTypeSubField_WithJsonElementDocument_ReturnsFacetValues()
+    {
+        // Documents submitted over HTTP are deserialized with nested objects as JsonElement
+        // (not Dictionary<string, object?>), since IndexAction's value type is `object?`.
+        // This reproduces that shape directly rather than going through the controller.
+        var indexName = $"facet-complex-jsonelement-{Guid.NewGuid():N}";
+        var index = new SearchIndex
+        {
+            Name = indexName,
+            Fields = new List<SearchField>
+            {
+                new() { Name = "id", Type = "Edm.String", Key = true },
+                new()
+                {
+                    Name = "Tiles",
+                    Type = "Edm.ComplexType",
+                    Fields = new List<SearchField>
+                    {
+                        new() { Name = "PendingPaymentCount", Type = "Edm.Int32", Facetable = true, Filterable = true }
+                    }
+                }
+            }
+        };
+        RegisterIndex(index);
+
+        var doc1 = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object?>>(
+            "{\"id\":\"1\",\"Tiles\":{\"PendingPaymentCount\":3}}")!;
+        var doc2 = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object?>>(
+            "{\"id\":\"2\",\"Tiles\":{\"PendingPaymentCount\":5}}")!;
+
+        Assert.IsType<System.Text.Json.JsonElement>(doc1["Tiles"]);
+
+        await UploadDocuments(indexName, doc1, doc2);
+
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Facets = new List<string> { "Tiles/PendingPaymentCount,metric:sum" }
+        });
+
+        Assert.NotNull(response.SearchFacets);
+        Assert.Equal(8, response.SearchFacets["Tiles/PendingPaymentCount"].Single().Sum);
+    }
+
+    [Fact]
+    public async Task Facets_OnComplexTypeSubField_NotFacetable_IsSkipped()
+    {
+        var indexName = $"facet-complex-notfacetable-{Guid.NewGuid():N}";
+        var index = new SearchIndex
+        {
+            Name = indexName,
+            Fields = new List<SearchField>
+            {
+                new() { Name = "id", Type = "Edm.String", Key = true },
+                new()
+                {
+                    Name = "Tiles",
+                    Type = "Edm.ComplexType",
+                    Fields = new List<SearchField>
+                    {
+                        new() { Name = "PendingPaymentCount", Type = "Edm.Int32", Facetable = false, Filterable = true }
+                    }
+                }
+            }
+        };
+        RegisterIndex(index);
+
+        await UploadDocuments(indexName,
+            new Dictionary<string, object?> { ["id"] = "1", ["Tiles"] = new Dictionary<string, object?> { ["PendingPaymentCount"] = 3 } });
+
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Facets = new List<string> { "Tiles/PendingPaymentCount" }
+        });
+
+        Assert.True(response.SearchFacets == null || !response.SearchFacets.ContainsKey("Tiles/PendingPaymentCount"));
+    }
+
     public void Dispose()
     {
         _luceneManager?.Dispose();
