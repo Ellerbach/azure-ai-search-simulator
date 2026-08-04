@@ -243,9 +243,6 @@ public class EntraIdTokenValidatorTests
         settings.EntraId.TenantId = "my-tenant";
         settings.EntraId.AllowMultipleTenants = false;
 
-        // The expected metadata URL format for single tenant
-        var expectedFormat = "https://login.microsoftonline.com/my-tenant/v2.0/.well-known/openid-configuration";
-        
         // Verify settings are configured for single tenant
         Assert.Equal("my-tenant", settings.EntraId.TenantId);
         Assert.False(settings.EntraId.AllowMultipleTenants);
@@ -256,9 +253,6 @@ public class EntraIdTokenValidatorTests
     {
         var settings = CreateDefaultSettings();
         settings.EntraId.AllowMultipleTenants = true;
-
-        // The expected metadata URL format for multi-tenant
-        var expectedFormat = "https://login.microsoftonline.com/common/v2.0/.well-known/openid-configuration";
 
         Assert.True(settings.EntraId.AllowMultipleTenants);
     }
