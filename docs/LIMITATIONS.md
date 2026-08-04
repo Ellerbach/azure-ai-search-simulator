@@ -349,15 +349,17 @@ Supported:
 
 - Value facets with `count:N`
 - Interval facets with `interval:N` (numeric fields)
-- Aggregation metrics `sum`, `min`, `max`, `avg` (top-level `Edm.Int32`, `Edm.Int64`, `Edm.Double` fields)
+- Aggregation metrics `sum`, `min`, `max`, `avg` (`Edm.Int32`, `Edm.Int64`, `Edm.Double` fields, including sub-fields of a complex type)
 - `default:` missing-value substitution for the aggregation metrics above (numeric default only)
+- Facets on `Edm.ComplexType` sub-fields (e.g. `Tiles/PendingPaymentCount`) — sub-fields are indexed field-by-field under a path-qualified name
 
 Not supported:
 
 - The `cardinality` aggregation metric (and its `precisionThreshold` parameter)
 - `sort`, `values`, and `timeoffset` facet parameters
 - Facet hierarchies (`>` and `;` operators) and facet filters (`includeTermFilter` / `excludeTermFilter`)
-- Facets on complex-type sub-fields (e.g. `Rooms/BaseRate`) — complex types are not indexed field-by-field
+- Facets on `Collection(Edm.ComplexType)` sub-fields (e.g. `Rooms/BaseRate` where `Rooms` is a collection) — only non-collection complex types are indexed field-by-field
+- `$filter`/`$orderby` on complex-type sub-fields — only facets resolve field paths today
 
 ## Security Limitations
 
