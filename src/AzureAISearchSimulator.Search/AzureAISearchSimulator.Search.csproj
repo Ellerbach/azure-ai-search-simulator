@@ -18,15 +18,15 @@
     <PackageReference Include="Lucene.Net.Facet" Version="4.8.0-beta00018" />
     <PackageReference Include="Lucene.Net.Highlighter" Version="4.8.0-beta00018" />
     <PackageReference Include="Lucene.Net.Suggest" Version="4.8.0-beta00018" />
-    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.10" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.10" />
-    <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.10" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.11" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.11" />
+    <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.11" />
     <!-- Vector Search (HNSW) -->
     <PackageReference Include="HNSW" Version="26.6.1848" />
     <!-- Pinned: HNSW brings in a vulnerable transitive MessagePack (CVE-2026-48502, fixed in 3.1.7) -->
     <PackageReference Include="MessagePack" Version="3.1.8" />
     <!-- Local Embedding Models (ONNX) -->
-    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.28.0" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.29.0" />
     <PackageReference Include="Microsoft.ML.Tokenizers" Version="2.0.0" />
     <!-- Document Cracking -->
     <PackageReference Include="PdfPig" Version="0.1.15" />
