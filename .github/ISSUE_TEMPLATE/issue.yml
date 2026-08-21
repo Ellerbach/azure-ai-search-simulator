@@ -1,12 +1,11 @@
 name: Bug report or feature request
 description: Report a problem or suggest an improvement
-title: ""
 body:
   - type: markdown
     attributes:
       value: |
         Thanks for helping improve Azure AI Search Simulator.
-        Please report security vulnerabilities privately as described in the [security policy](../../SECURITY.md).
+        Please report security vulnerabilities privately as described in the [security policy](https://github.com/Ellerbach/azure-ai-search-simulator/security/policy).
 
   - type: dropdown
     id: type
@@ -39,7 +38,7 @@ body:
   - type: textarea
     id: environment
     attributes:
-      label: Environment and additional context      
+      label: Environment and additional context
       description: Include the simulator version, OS, .NET version, logs, API examples, or relevant Azure AI Search documentation when applicable. Remove credentials, tokens, connection strings, and personal data before submission.
 
   - type: checkboxes
