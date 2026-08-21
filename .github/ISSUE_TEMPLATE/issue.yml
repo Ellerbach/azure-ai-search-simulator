@@ -39,8 +39,8 @@ body:
   - type: textarea
     id: environment
     attributes:
-      label: Environment and additional context
-      description: Include the simulator version, OS, .NET version, logs, API examples, or relevant Azure AI Search documentation when applicable.
+      label: Environment and additional context      
+      description: Include the simulator version, OS, .NET version, logs, API examples, or relevant Azure AI Search documentation when applicable. Remove credentials, tokens, connection strings, and personal data before submission.
 
   - type: checkboxes
     id: checks
