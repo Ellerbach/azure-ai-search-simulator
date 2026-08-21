@@ -1,0 +1,51 @@
+name: Bug report or feature request
+description: Report a problem or suggest an improvement
+title: ""
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve Azure AI Search Simulator.
+        Please report security vulnerabilities privately as described in the [security policy](../../SECURITY.md).
+
+  - type: dropdown
+    id: type
+    attributes:
+      label: Issue type
+      options:
+        - Bug report
+        - Feature request
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Describe the problem or proposed feature and why it matters.
+    validations:
+      required: true
+
+  - type: textarea
+    id: details
+    attributes:
+      label: Reproduction steps or proposed solution
+      description: For a bug, include steps, expected behavior, and actual behavior. For a feature, describe the desired behavior or solution.
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment and additional context      
+      description: Include the simulator version, OS, .NET version, logs, API examples, or relevant Azure AI Search documentation when applicable. Remove credentials, tokens, connection strings, and personal data before submission.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues to avoid creating a duplicate.
+          required: true
