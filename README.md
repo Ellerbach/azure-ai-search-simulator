@@ -171,7 +171,7 @@ docker run -p 7250:8443 -p 5250:8080 \
 
 #### Docker Volume Mapping
 
-The container exposes five mount points for data persistence and file access:
+The Docker Compose file defines six mount points in total: five recommended for normal operation and one optional mount for sample data used in demos.
 
 | Mount Point | Purpose | Recommended Mount |
 | ----------- | ------- | ----------------- |
@@ -179,6 +179,7 @@ The container exposes five mount points for data persistence and file access:
 | `/app/lucene-indexes` | Lucene search index files | Named volume |
 | `/app/logs` | Serilog log files (`simulator-{date}.log`) | Bind mount for easy host access |
 | `/app/files` | Documents for indexer file processing (pull mode) | Bind mount to your documents folder |
+| `/app/sample-data` | Optional sample documents and demo data | Read-only bind mount |
 | `/app/models` | ONNX embedding models for local `local://` skill mode | Bind mount (read-only) |
 
 ##### Mount a local documents folder for indexer processing
