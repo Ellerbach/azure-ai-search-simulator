@@ -1,18 +1,24 @@
 # Azure AI Search Simulator
 
-A local simulator for Azure AI Search that allows developers to learn, experiment, and test Azure AI Search concepts without requiring an actual Azure subscription.
+Develop and test Azure AI Search integrations locally, without provisioning an Azure subscription. The simulator implements a practical subset of the Azure AI Search REST API and works with the official SDKs, samples include .NET and Python SDKs.
 
-![Build Status](https://img.shields.io/badge/build-passing-brightgreen)
-![.NET](https://img.shields.io/badge/.NET-10.0-purple)
-![License](https://img.shields.io/badge/license-MIT-blue)
+[![Build](https://github.com/Ellerbach/azure-ai-search-simulator/actions/workflows/build.yml/badge.svg)](https://github.com/Ellerbach/azure-ai-search-simulator/actions/workflows/build.yml)
+[![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4)](https://dotnet.microsoft.com/download/dotnet/10.0)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE.md)
+[![Sponsor](https://img.shields.io/badge/Sponsor-Ellerbach-EA4AAA?logo=githubsponsors)](https://github.com/sponsors/Ellerbach)
+
+**[Quick start](#quick-start) | [Features](#features) | [Documentation](#documentation) | [Samples](#samples) | [Limitations](docs/LIMITATIONS.md) | [Sponsor](https://github.com/sponsors/Ellerbach)**
+
+> [!IMPORTANT]
+> This project is a development and learning tool, not a production replacement for Azure AI Search. See [Supported vs Azure AI Search](#supported-vs-azure-ai-search) before relying on a feature.
 
 ## Overview
 
-The Azure AI Search Simulator provides a local implementation of the Azure AI Search REST API, enabling you to:
+Use the Azure AI Search simulator to:
 
 - 🔍 **Learn** Azure AI Search concepts in a safe, cost-free environment
-- 🧪 **Test** your search configurations before deploying to Azure
-- 🚀 **Develop** search-powered applications without Azure dependencies
+- 🧪 **Test** indexes, queries, and skillsets before deploying to Azure
+- 🚀 **Develop** search-powered applications against a local endpoint
 - 📚 **Experiment** with indexing pipelines and skillsets
 
 ## Features
@@ -52,7 +58,7 @@ The Azure AI Search Simulator provides a local implementation of the Azure AI Se
 - **Scoring Profiles**: Text weights, freshness, magnitude, distance, and tag functions with interpolation and aggregation modes
 - **Similarity Algorithms**: Configurable BM25 (k1/b parameters) and ClassicSimilarity (TF-IDF). Per-index similarity with `@search.features` support
 
-### 🔜 Planned (Future Phases)
+### 🔜 Planned
 
 - Azure SQL / Cosmos DB connectors
 - Admin UI dashboard
@@ -68,7 +74,7 @@ The Azure AI Search Simulator provides a local implementation of the Azure AI Se
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/azure-ai-search-simulator.git
+git clone https://github.com/Ellerbach/azure-ai-search-simulator.git
 cd azure-ai-search-simulator
 
 # Build the solution
@@ -79,6 +85,8 @@ dotnet run --project src/AzureAISearchSimulator.Api --urls "https://localhost:72
 
 # API available at https://localhost:7250
 ```
+
+The default admin API key is `admin-key-12345`; the default query API key is `query-key-67890`. The HTTPS endpoint uses a local development certificate.
 
 ### Running with Docker
 
@@ -163,7 +171,7 @@ docker run -p 7250:8443 -p 5250:8080 \
 
 #### Docker Volume Mapping
 
-The container exposes four mount points for data persistence and file access:
+The Docker Compose file defines six mount points in total: five recommended for normal operation and one optional mount for sample data used in demos.
 
 | Mount Point | Purpose | Recommended Mount |
 | ----------- | ------- | ----------------- |
@@ -171,9 +179,10 @@ The container exposes four mount points for data persistence and file access:
 | `/app/lucene-indexes` | Lucene search index files | Named volume |
 | `/app/logs` | Serilog log files (`simulator-{date}.log`) | Bind mount for easy host access |
 | `/app/files` | Documents for indexer file processing (pull mode) | Bind mount to your documents folder |
+| `/app/sample-data` | Optional sample documents and demo data | Read-only bind mount |
 | `/app/models` | ONNX embedding models for local `local://` skill mode | Bind mount (read-only) |
 
-**Example: Mount a local documents folder for indexer processing**
+##### Mount a local documents folder for indexer processing
 
 ```bash
 # Mount your documents folder so indexers can access them inside the container
@@ -183,7 +192,7 @@ docker run -p 7250:8443 -p 5250:8080 \
   azure-ai-search-simulator
 ```
 
-**Example: Mount ONNX models for local embedding**
+##### Mount ONNX models for local embedding
 
 ```bash
 # Download a model first, then mount the models directory
@@ -636,6 +645,12 @@ AzureAISearchSimulator/
 ## Contributing
 
 Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md) for details.
+
+## Support the Project
+
+If this simulator saves you time, you can support its continued development through GitHub Sponsors:
+
+**[https://github.com/sponsors/Ellerbach](https://github.com/sponsors/Ellerbach)**
 
 ## License
 
