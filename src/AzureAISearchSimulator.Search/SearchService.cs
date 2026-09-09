@@ -725,10 +725,9 @@ public class SearchService : ISearchService
         try
         {
             var boolQuery = new BooleanQuery();
-            
-            // Split by 'and' (case insensitive)
-            var parts = filter.Split(new[] { " and ", " AND " }, StringSplitOptions.RemoveEmptyEntries);
-            
+
+            var parts = SplitTopLevelAndClauses(filter);
+
             foreach (var part in parts)
             {
                 var trimmed = part.Trim();
@@ -746,6 +745,64 @@ public class SearchService : ISearchService
             _logger.LogWarning(ex, "Failed to parse filter '{Filter}'", filter);
             return null;
         }
+    }
+
+    /// <summary>
+    /// Splits a filter string into top-level "and"-conjoined clauses, the same way
+    /// `filter.Split(" and ")` used to, except a " and "/" AND " occurring inside a single-quoted
+    /// OData string literal (e.g. "tags/any(t: t eq 'bed and breakfast')") is not treated as a
+    /// separator. OData escapes a literal quote inside a string as '' (doubled), which this
+    /// tracks so it doesn't get misread as the string ending.
+    /// </summary>
+    private static List<string> SplitTopLevelAndClauses(string filter)
+    {
+        const string lowerAnd = " and ";
+        const string upperAnd = " AND ";
+
+        var parts = new List<string>();
+        var current = new System.Text.StringBuilder();
+        var inQuotes = false;
+        var i = 0;
+
+        while (i < filter.Length)
+        {
+            var c = filter[i];
+
+            if (c == '\'')
+            {
+                if (inQuotes && i + 1 < filter.Length && filter[i + 1] == '\'')
+                {
+                    // Escaped quote ('') inside a string literal - not the end of the string.
+                    current.Append("''");
+                    i += 2;
+                    continue;
+                }
+
+                inQuotes = !inQuotes;
+                current.Append(c);
+                i++;
+                continue;
+            }
+
+            if (!inQuotes && i + lowerAnd.Length <= filter.Length)
+            {
+                var slice = filter.Substring(i, lowerAnd.Length);
+                if (slice == lowerAnd || slice == upperAnd)
+                {
+                    parts.Add(current.ToString());
+                    current.Clear();
+                    i += lowerAnd.Length;
+                    continue;
+                }
+            }
+
+            current.Append(c);
+            i++;
+        }
+
+        parts.Add(current.ToString());
+
+        return parts.Where(p => !string.IsNullOrWhiteSpace(p)).ToList();
     }
 
     private Query? ParseFilterExpression(SearchIndex schema, string expression)
@@ -906,7 +963,7 @@ public class SearchService : ISearchService
         var elementType = elementTypeMatch.Success ? elementTypeMatch.Groups[1].Value : field.Type;
         var luceneFieldName = ResolveFilterFieldName(schema, fieldName);
 
-        return ParseCollectionElementPredicate(luceneFieldName, elementType, lambdaVar, predicate);
+        return ParseCollectionElementPredicate(luceneFieldName, elementType, lambdaVar, predicate, field.Normalizer, schema.Normalizers, schema.CharFilters);
     }
 
     /// <summary>
@@ -915,7 +972,14 @@ public class SearchService : ISearchService
     /// clauses. Only equality-style predicates are supported here (eq, gt/lt/ge/le, search.in) -
     /// see <see cref="ParseCollectionLambdaFilter"/> for why "ne" and "all()" are out of scope.
     /// </summary>
-    private Query? ParseCollectionElementPredicate(string luceneFieldName, string elementType, string lambdaVar, string predicate)
+    private Query? ParseCollectionElementPredicate(
+        string luceneFieldName,
+        string elementType,
+        string lambdaVar,
+        string predicate,
+        string? normalizerName,
+        IEnumerable<CustomNormalizer>? normalizers,
+        IEnumerable<CustomCharFilter>? charFilters)
     {
         var escapedVar = System.Text.RegularExpressions.Regex.Escape(lambdaVar);
 
@@ -925,7 +989,7 @@ public class SearchService : ISearchService
         if (eqMatch.Success)
         {
             var value = !string.IsNullOrEmpty(eqMatch.Groups[1].Value) ? eqMatch.Groups[1].Value : eqMatch.Groups[2].Value;
-            return BuildCollectionElementEqualityQuery(luceneFieldName, elementType, value);
+            return BuildCollectionElementEqualityQuery(luceneFieldName, elementType, value, normalizerName, normalizers, charFilters);
         }
 
         var rangeMatch = System.Text.RegularExpressions.Regex.Match(
@@ -950,7 +1014,7 @@ public class SearchService : ISearchService
             var boolQuery = new BooleanQuery();
             foreach (var val in values)
             {
-                boolQuery.Add(BuildCollectionElementEqualityQuery(luceneFieldName, elementType, val.Trim()), Occur.SHOULD);
+                boolQuery.Add(BuildCollectionElementEqualityQuery(luceneFieldName, elementType, val.Trim(), normalizerName, normalizers, charFilters), Occur.SHOULD);
             }
             return boolQuery;
         }
@@ -971,7 +1035,13 @@ public class SearchService : ISearchService
         };
     }
 
-    private Query BuildCollectionElementEqualityQuery(string luceneFieldName, string elementType, string value)
+    private Query BuildCollectionElementEqualityQuery(
+        string luceneFieldName,
+        string elementType,
+        string value,
+        string? normalizerName = null,
+        IEnumerable<CustomNormalizer>? normalizers = null,
+        IEnumerable<CustomCharFilter>? charFilters = null)
     {
         if (IsNumericType(elementType))
         {
@@ -992,7 +1062,14 @@ public class SearchService : ISearchService
             }
         }
 
-        return new TermQuery(new Term(luceneFieldName, value));
+        // String elements are indexed post-normalization (CreateCollectionStringFields), so the
+        // literal must be normalized the same way here, or a normalizer that changes casing/accents
+        // (e.g. "lowercase") would make an otherwise-matching literal never match.
+        var normalizedValue = !string.IsNullOrEmpty(normalizerName)
+            ? NormalizerFactory.Normalize(value, normalizerName, normalizers, charFilters)
+            : value;
+
+        return new TermQuery(new Term(luceneFieldName, normalizedValue));
     }
 
     /// <summary>
@@ -1050,11 +1127,14 @@ public class SearchService : ISearchService
         {
             if (int.TryParse(value, out var intValue))
             {
+                // "gt int.MaxValue"/"lt int.MinValue" have no answer within Int32's range, and
+                // intValue +/- 1 would otherwise wrap around and produce a full-range (match-all)
+                // query instead - match nothing for these exclusive out-of-range bounds.
                 return op switch
                 {
-                    "gt" => NumericRangeQuery.NewInt32Range(fieldName, intValue + 1, int.MaxValue, true, true),
+                    "gt" => intValue == int.MaxValue ? NoMatchQuery() : NumericRangeQuery.NewInt32Range(fieldName, intValue + 1, int.MaxValue, true, true),
                     "ge" => NumericRangeQuery.NewInt32Range(fieldName, intValue, int.MaxValue, true, true),
-                    "lt" => NumericRangeQuery.NewInt32Range(fieldName, int.MinValue, intValue - 1, true, true),
+                    "lt" => intValue == int.MinValue ? NoMatchQuery() : NumericRangeQuery.NewInt32Range(fieldName, int.MinValue, intValue - 1, true, true),
                     "le" => NumericRangeQuery.NewInt32Range(fieldName, int.MinValue, intValue, true, true),
                     _ => new MatchAllDocsQuery()
                 };
@@ -1078,11 +1158,12 @@ public class SearchService : ISearchService
         // Handle Edm.Int64 — stored with Int64Field
         if (long.TryParse(value, out var longValue))
         {
+            // Same overflow guard as the Int32 case above.
             return op switch
             {
-                "gt" => NumericRangeQuery.NewInt64Range(fieldName, longValue + 1, long.MaxValue, true, true),
+                "gt" => longValue == long.MaxValue ? NoMatchQuery() : NumericRangeQuery.NewInt64Range(fieldName, longValue + 1, long.MaxValue, true, true),
                 "ge" => NumericRangeQuery.NewInt64Range(fieldName, longValue, long.MaxValue, true, true),
-                "lt" => NumericRangeQuery.NewInt64Range(fieldName, long.MinValue, longValue - 1, true, true),
+                "lt" => longValue == long.MinValue ? NoMatchQuery() : NumericRangeQuery.NewInt64Range(fieldName, long.MinValue, longValue - 1, true, true),
                 "le" => NumericRangeQuery.NewInt64Range(fieldName, long.MinValue, longValue, true, true),
                 _ => new MatchAllDocsQuery()
             };
@@ -1102,7 +1183,10 @@ public class SearchService : ISearchService
             };
         }
 
-        return new MatchAllDocsQuery();
+        // Every parse attempt above failed - the operand isn't a valid number/date at all
+        // (e.g. "roomNumbers/any(c: c gt invalid)"). Match nothing rather than everything:
+        // an unparseable range bound is not the same as an unbounded range.
+        return NoMatchQuery();
     }
 
     private Sort? BuildSort(string? orderBy, SearchIndex index)

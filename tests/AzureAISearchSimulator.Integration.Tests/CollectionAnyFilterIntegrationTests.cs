@@ -83,7 +83,10 @@ public class CollectionAnyFilterIntegrationTests : IDisposable
                 new() { Name = "id", Type = "Edm.String", Key = true },
                 new() { Name = "hotelName", Type = "Edm.String", Searchable = true, Filterable = true },
                 new() { Name = "tags", Type = "Collection(Edm.String)", Searchable = true, Filterable = true },
-                new() { Name = "roomNumbers", Type = "Collection(Edm.Int32)", Filterable = true }
+                new() { Name = "tagsCi", Type = "Collection(Edm.String)", Filterable = true, Normalizer = "lowercase" },
+                new() { Name = "roomNumbers", Type = "Collection(Edm.Int32)", Filterable = true },
+                new() { Name = "bookingIds", Type = "Collection(Edm.Int64)", Filterable = true },
+                new() { Name = "floorAreas", Type = "Collection(Edm.Double)", Filterable = true }
             }
         };
     }
@@ -99,14 +102,20 @@ public class CollectionAnyFilterIntegrationTests : IDisposable
                 ["id"] = "1",
                 ["hotelName"] = "Grand Azure Hotel",
                 ["tags"] = new[] { "luxury", "spa", "pool", "wifi" },
-                ["roomNumbers"] = new[] { 101, 102, 205 }
+                ["tagsCi"] = new[] { "WiFi", "Pool" },
+                ["roomNumbers"] = new[] { 101, 102, 205 },
+                ["bookingIds"] = new[] { 9000000000001, 9000000000002 },
+                ["floorAreas"] = new[] { 120.5, 85.25 }
             },
             new Dictionary<string, object?>
             {
                 ["id"] = "2",
                 ["hotelName"] = "Budget Inn Express",
-                ["tags"] = new[] { "budget", "breakfast", "wifi" },
-                ["roomNumbers"] = new[] { 301, 302 }
+                ["tags"] = new[] { "budget", "breakfast", "wifi", "bed and breakfast" },
+                ["tagsCi"] = new[] { "Breakfast" },
+                ["roomNumbers"] = new[] { 301, 302 },
+                ["bookingIds"] = new[] { 9000000000101 },
+                ["floorAreas"] = new[] { 45.75 }
             });
 
         return 2;
@@ -160,6 +169,24 @@ public class CollectionAnyFilterIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task Filter_AnyGt_WithUnparsableOperand_ReturnsNoDocumentsRatherThanEveryDocument()
+    {
+        var indexName = $"any-int-gt-invalid-{Guid.NewGuid():N}";
+        await SeedHotels(indexName);
+
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Filter = "roomNumbers/any(c: c gt invalid)"
+        });
+
+        // BuildNumericRangeQuery's operand parsing fails for "invalid" on every numeric/date
+        // type it tries. The important regression to guard against: this must NOT fall back
+        // to matching every document (see SearchService.BuildNumericRangeQuery).
+        Assert.Empty(response.Value);
+    }
+
+    [Fact]
     public async Task Filter_AnyEq_OnStringCollection_ReturnsOnlyMatchingDocument()
     {
         var indexName = $"any-string-eq-{Guid.NewGuid():N}";
@@ -188,6 +215,128 @@ public class CollectionAnyFilterIntegrationTests : IDisposable
         });
 
         Assert.Equal(2, response.Value.Count);
+    }
+
+    [Fact]
+    public async Task Filter_AnyEq_OnInt64Collection_ReturnsOnlyMatchingDocument()
+    {
+        var indexName = $"any-int64-eq-{Guid.NewGuid():N}";
+        await SeedHotels(indexName);
+
+        // 9000000000002 is well outside Int32's range - this only matches if Collection(Edm.Int64)
+        // is indexed/queried through the Int64 (not Int32) Lucene field encoding.
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Filter = "bookingIds/any(b: b eq 9000000000002)"
+        });
+
+        var doc = Assert.Single(response.Value);
+        Assert.Equal("1", doc["id"]?.ToString());
+    }
+
+    [Fact]
+    public async Task Filter_AnyGt_OnInt64Collection_ReturnsMatchingDocument()
+    {
+        var indexName = $"any-int64-gt-{Guid.NewGuid():N}";
+        await SeedHotels(indexName);
+
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Filter = "bookingIds/any(b: b gt 9000000000050)"
+        });
+
+        var doc = Assert.Single(response.Value);
+        Assert.Equal("2", doc["id"]?.ToString());
+    }
+
+    [Fact]
+    public async Task Filter_AnyEq_OnDoubleCollection_ReturnsOnlyMatchingDocument()
+    {
+        var indexName = $"any-double-eq-{Guid.NewGuid():N}";
+        await SeedHotels(indexName);
+
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Filter = "floorAreas/any(a: a eq 85.25)"
+        });
+
+        var doc = Assert.Single(response.Value);
+        Assert.Equal("1", doc["id"]?.ToString());
+    }
+
+    [Fact]
+    public async Task Filter_AnyGt_OnDoubleCollection_ReturnsMatchingDocument()
+    {
+        var indexName = $"any-double-gt-{Guid.NewGuid():N}";
+        await SeedHotels(indexName);
+
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Filter = "floorAreas/any(a: a gt 100)"
+        });
+
+        var doc = Assert.Single(response.Value);
+        Assert.Equal("1", doc["id"]?.ToString());
+    }
+
+    [Fact]
+    public async Task Filter_AnyEq_OnNormalizedStringCollection_MatchesLiteralNormalizedLikeIndexedValue()
+    {
+        var indexName = $"any-normalized-eq-{Guid.NewGuid():N}";
+        await SeedHotels(indexName);
+
+        // "tagsCi" has a "lowercase" normalizer, so "WiFi" is indexed as "wifi". The query
+        // literal "WIFI" must go through the same normalization to match (see
+        // SearchService.BuildCollectionElementEqualityQuery).
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Filter = "tagsCi/any(t: t eq 'WIFI')"
+        });
+
+        var doc = Assert.Single(response.Value);
+        Assert.Equal("1", doc["id"]?.ToString());
+    }
+
+    [Fact]
+    public async Task Filter_AnyGt_AtInt32MaxValue_ReturnsNoDocumentsRatherThanEveryDocument()
+    {
+        var indexName = $"any-int-gt-maxvalue-{Guid.NewGuid():N}";
+        await SeedHotels(indexName);
+
+        // No Int32 value is greater than int.MaxValue. BuildNumericRangeQuery used to compute
+        // this bound as `intValue + 1`, which overflows to int.MinValue and produces a full-range
+        // (match-everything) query instead - see SearchService.BuildNumericRangeQuery.
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Filter = $"roomNumbers/any(c: c gt {int.MaxValue})"
+        });
+
+        Assert.Empty(response.Value);
+    }
+
+    [Fact]
+    public async Task Filter_AnyEq_StringLiteralContainingAndKeyword_IsNotSplitAtTopLevel()
+    {
+        var indexName = $"any-string-eq-and-literal-{Guid.NewGuid():N}";
+        await SeedHotels(indexName);
+
+        // BuildFilterQuery used to split the whole filter string on " and ", including inside a
+        // quoted literal, breaking this into two unparseable fragments - see
+        // SearchService.SplitTopLevelAndClauses.
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Filter = "tags/any(t: t eq 'bed and breakfast')"
+        });
+
+        var doc = Assert.Single(response.Value);
+        Assert.Equal("2", doc["id"]?.ToString());
     }
 
     [Fact]

@@ -36,7 +36,7 @@ api-key: {{adminKey}}
     { "name": "parkingIncluded", "type": "Edm.Boolean", "filterable": true },
     { "name": "lastRenovationDate", "type": "Edm.DateTimeOffset", "filterable": true, "sortable": true },
     { "name": "tags", "type": "Collection(Edm.String)", "searchable": true, "filterable": true },
-    { "name": "roomNumbers", "type": "Collection(Edm.Int32)", "filterable": true, "facetable": true }
+    { "name": "roomNumbers", "type": "Collection(Edm.Int32)", "filterable": true }
   ]
 }
 
