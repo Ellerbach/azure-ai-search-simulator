@@ -754,7 +754,7 @@ public class SearchService : ISearchService
     /// separator. OData escapes a literal quote inside a string as '' (doubled), which this
     /// tracks so it doesn't get misread as the string ending.
     /// </summary>
-    private static List<string> SplitTopLevelAndClauses(string filter)
+    internal static List<string> SplitTopLevelAndClauses(string filter)
     {
         const string lowerAnd = " and ";
         const string upperAnd = " AND ";
