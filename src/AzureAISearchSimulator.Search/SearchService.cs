@@ -725,10 +725,9 @@ public class SearchService : ISearchService
         try
         {
             var boolQuery = new BooleanQuery();
-            
-            // Split by 'and' (case insensitive)
-            var parts = filter.Split(new[] { " and ", " AND " }, StringSplitOptions.RemoveEmptyEntries);
-            
+
+            var parts = SplitTopLevelAndClauses(filter);
+
             foreach (var part in parts)
             {
                 var trimmed = part.Trim();
@@ -748,8 +747,79 @@ public class SearchService : ISearchService
         }
     }
 
+    /// <summary>
+    /// Splits a filter string into top-level "and"-conjoined clauses, the same way
+    /// `filter.Split(" and ")` used to, except a " and "/" AND " occurring inside a single-quoted
+    /// OData string literal (e.g. "tags/any(t: t eq 'bed and breakfast')") is not treated as a
+    /// separator. OData escapes a literal quote inside a string as '' (doubled), which this
+    /// tracks so it doesn't get misread as the string ending.
+    /// </summary>
+    internal static List<string> SplitTopLevelAndClauses(string filter)
+    {
+        const string lowerAnd = " and ";
+        const string upperAnd = " AND ";
+
+        var parts = new List<string>();
+        var current = new System.Text.StringBuilder();
+        var inQuotes = false;
+        var i = 0;
+
+        while (i < filter.Length)
+        {
+            var c = filter[i];
+
+            if (c == '\'')
+            {
+                if (inQuotes && i + 1 < filter.Length && filter[i + 1] == '\'')
+                {
+                    // Escaped quote ('') inside a string literal - not the end of the string.
+                    current.Append("''");
+                    i += 2;
+                    continue;
+                }
+
+                inQuotes = !inQuotes;
+                current.Append(c);
+                i++;
+                continue;
+            }
+
+            if (!inQuotes && i + lowerAnd.Length <= filter.Length)
+            {
+                var slice = filter.Substring(i, lowerAnd.Length);
+                if (slice == lowerAnd || slice == upperAnd)
+                {
+                    parts.Add(current.ToString());
+                    current.Clear();
+                    i += lowerAnd.Length;
+                    continue;
+                }
+            }
+
+            current.Append(c);
+            i++;
+        }
+
+        parts.Add(current.ToString());
+
+        return parts.Where(p => !string.IsNullOrWhiteSpace(p)).ToList();
+    }
+
     private Query? ParseFilterExpression(SearchIndex schema, string expression)
     {
+        // Handle OData collection-filter lambda syntax: field/any(x: predicate) and field/all(x: predicate).
+        // Must run before the eq/ne/range regexes below, since those are unanchored and would
+        // otherwise misfire on the lambda's inner predicate (e.g. matching "c eq 101" inside
+        // "roomNumbers/any(c: c eq 101)" and resolving "c" as a bogus field name).
+        var lambdaMatch = System.Text.RegularExpressions.Regex.Match(
+            expression, @"^(\w+)/(any|all)\(\s*(\w+)\s*:\s*(.+)\)$",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        if (lambdaMatch.Success)
+        {
+            return ParseCollectionLambdaFilter(schema, lambdaMatch);
+        }
+
         // Handle eq expressions: field eq 'value' or field eq value
         var eqMatch = System.Text.RegularExpressions.Regex.Match(
             expression, @"(\w+)\s+eq\s+(?:'([^']*)'|(\S+))", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
@@ -858,6 +928,155 @@ public class SearchService : ISearchService
     }
 
     /// <summary>
+    /// Handles a parsed "field/any(x: predicate)" or "field/all(x: predicate)" filter clause.
+    /// Each element of a collection field is indexed as its own Lucene value under the same
+    /// field name, so a plain term/range query against that field name already matches if ANY
+    /// element satisfies it - "any()" is just that same query, resolved against the element type.
+    /// "all()" would require confirming every indexed element satisfies the predicate, which
+    /// isn't expressible with a single term/range query over a multi-valued field, so it's
+    /// intentionally left unsupported. Unsupported cases return a query that matches nothing
+    /// rather than null: <see cref="BuildFilterQuery"/> silently drops a null clause (which
+    /// would make the whole filter match every document instead), and a wrongly-permissive
+    /// filter is a worse failure mode than an empty, clearly-wrong result set.
+    /// </summary>
+    private Query? ParseCollectionLambdaFilter(SearchIndex schema, System.Text.RegularExpressions.Match lambdaMatch)
+    {
+        var fieldName = lambdaMatch.Groups[1].Value;
+        var mode = lambdaMatch.Groups[2].Value.ToLowerInvariant();
+        var lambdaVar = lambdaMatch.Groups[3].Value;
+        var predicate = lambdaMatch.Groups[4].Value.Trim();
+
+        var field = schema.Fields.FirstOrDefault(f => f.Name.Equals(fieldName, StringComparison.OrdinalIgnoreCase));
+        if (field == null || !field.IsCollection)
+        {
+            _logger.LogWarning("'{FieldName}/{Mode}(...)' references a field that is not a collection", fieldName, mode);
+            return NoMatchQuery();
+        }
+
+        if (mode == "all")
+        {
+            _logger.LogWarning("'{FieldName}/all(...)' filters are not supported", fieldName);
+            return NoMatchQuery();
+        }
+
+        var elementTypeMatch = System.Text.RegularExpressions.Regex.Match(field.Type, @"^Collection\((.+)\)$");
+        var elementType = elementTypeMatch.Success ? elementTypeMatch.Groups[1].Value : field.Type;
+        var luceneFieldName = ResolveFilterFieldName(schema, fieldName);
+
+        return ParseCollectionElementPredicate(luceneFieldName, elementType, lambdaVar, predicate, field.Normalizer, schema.Normalizers, schema.CharFilters);
+    }
+
+    /// <summary>
+    /// Parses the predicate inside a collection lambda (e.g. "c eq 101") against the collection's
+    /// element type, reusing the same eq/range/search.in query shapes as the top-level filter
+    /// clauses. Only equality-style predicates are supported here (eq, gt/lt/ge/le, search.in) -
+    /// see <see cref="ParseCollectionLambdaFilter"/> for why "ne" and "all()" are out of scope.
+    /// </summary>
+    private Query? ParseCollectionElementPredicate(
+        string luceneFieldName,
+        string elementType,
+        string lambdaVar,
+        string predicate,
+        string? normalizerName,
+        IEnumerable<CustomNormalizer>? normalizers,
+        IEnumerable<CustomCharFilter>? charFilters)
+    {
+        var escapedVar = System.Text.RegularExpressions.Regex.Escape(lambdaVar);
+
+        // The quoted-literal group accepts doubled quotes ('') so a literal quote inside the
+        // value (OData's escape for it, e.g. 'O''Brien') isn't mistaken for the closing quote.
+        var eqMatch = System.Text.RegularExpressions.Regex.Match(
+            predicate, $@"^{escapedVar}\s+eq\s+(?:'((?:[^']|'')*)'|(\S+))$",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (eqMatch.Success)
+        {
+            var value = eqMatch.Groups[1].Success
+                ? eqMatch.Groups[1].Value.Replace("''", "'")
+                : eqMatch.Groups[2].Value;
+            return BuildCollectionElementEqualityQuery(luceneFieldName, elementType, value, normalizerName, normalizers, charFilters);
+        }
+
+        var rangeMatch = System.Text.RegularExpressions.Regex.Match(
+            predicate, $@"^{escapedVar}\s+(gt|lt|ge|le)\s+(\S+)$",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (rangeMatch.Success && IsNumericType(elementType))
+        {
+            return BuildNumericRangeQuery(luceneFieldName, rangeMatch.Groups[1].Value.ToLowerInvariant(), rangeMatch.Groups[2].Value, elementType);
+        }
+
+        var searchInMatch = System.Text.RegularExpressions.Regex.Match(
+            predicate, $@"^search\.in\(\s*{escapedVar}\s*,\s*'([^']*)'(?:\s*,\s*'([^']*)')?\s*\)$",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (searchInMatch.Success)
+        {
+            var valueList = searchInMatch.Groups[1].Value;
+            var delimiter = searchInMatch.Groups[2].Success ? searchInMatch.Groups[2].Value : ",";
+            var values = delimiter.Length == 0
+                ? new[] { valueList }
+                : valueList.Split(delimiter.ToCharArray(), StringSplitOptions.RemoveEmptyEntries);
+
+            var boolQuery = new BooleanQuery();
+            foreach (var val in values)
+            {
+                boolQuery.Add(BuildCollectionElementEqualityQuery(luceneFieldName, elementType, val.Trim(), normalizerName, normalizers, charFilters), Occur.SHOULD);
+            }
+            return boolQuery;
+        }
+
+        _logger.LogWarning("Unrecognized collection filter predicate: {Predicate}", predicate);
+        return NoMatchQuery();
+    }
+
+    /// <summary>
+    /// A query that matches zero documents, used as the safe fallback for a recognized-but-
+    /// unsupported filter clause (see <see cref="ParseCollectionLambdaFilter"/>).
+    /// </summary>
+    private static Query NoMatchQuery()
+    {
+        return new BooleanQuery
+        {
+            { new MatchAllDocsQuery(), Occur.MUST_NOT }
+        };
+    }
+
+    private Query BuildCollectionElementEqualityQuery(
+        string luceneFieldName,
+        string elementType,
+        string value,
+        string? normalizerName = null,
+        IEnumerable<CustomNormalizer>? normalizers = null,
+        IEnumerable<CustomCharFilter>? charFilters = null)
+    {
+        if (IsNumericType(elementType))
+        {
+            if (elementType.Equals("Edm.Double", StringComparison.OrdinalIgnoreCase) ||
+                elementType.Equals("Edm.Single", StringComparison.OrdinalIgnoreCase))
+            {
+                if (double.TryParse(value, System.Globalization.CultureInfo.InvariantCulture, out var dblVal))
+                    return NumericRangeQuery.NewDoubleRange(luceneFieldName, dblVal, dblVal, true, true);
+            }
+            else if (elementType.Equals("Edm.Int32", StringComparison.OrdinalIgnoreCase))
+            {
+                if (int.TryParse(value, out var intVal))
+                    return NumericRangeQuery.NewInt32Range(luceneFieldName, intVal, intVal, true, true);
+            }
+            else if (long.TryParse(value, out var longVal))
+            {
+                return NumericRangeQuery.NewInt64Range(luceneFieldName, longVal, longVal, true, true);
+            }
+        }
+
+        // String elements are indexed post-normalization (CreateCollectionStringFields), so the
+        // literal must be normalized the same way here, or a normalizer that changes casing/accents
+        // (e.g. "lowercase") would make an otherwise-matching literal never match.
+        var normalizedValue = !string.IsNullOrEmpty(normalizerName)
+            ? NormalizerFactory.Normalize(value, normalizerName, normalizers, charFilters)
+            : value;
+
+        return new TermQuery(new Term(luceneFieldName, normalizedValue));
+    }
+
+    /// <summary>
     /// Resolves the Lucene field name for filter queries.
     /// For fields that are both searchable (TextField) and filterable (StringField),
     /// the filter index is stored under a suffixed field name to avoid corrupting
@@ -912,11 +1131,14 @@ public class SearchService : ISearchService
         {
             if (int.TryParse(value, out var intValue))
             {
+                // "gt int.MaxValue"/"lt int.MinValue" have no answer within Int32's range, and
+                // intValue +/- 1 would otherwise wrap around and produce a full-range (match-all)
+                // query instead - match nothing for these exclusive out-of-range bounds.
                 return op switch
                 {
-                    "gt" => NumericRangeQuery.NewInt32Range(fieldName, intValue + 1, int.MaxValue, true, true),
+                    "gt" => intValue == int.MaxValue ? NoMatchQuery() : NumericRangeQuery.NewInt32Range(fieldName, intValue + 1, int.MaxValue, true, true),
                     "ge" => NumericRangeQuery.NewInt32Range(fieldName, intValue, int.MaxValue, true, true),
-                    "lt" => NumericRangeQuery.NewInt32Range(fieldName, int.MinValue, intValue - 1, true, true),
+                    "lt" => intValue == int.MinValue ? NoMatchQuery() : NumericRangeQuery.NewInt32Range(fieldName, int.MinValue, intValue - 1, true, true),
                     "le" => NumericRangeQuery.NewInt32Range(fieldName, int.MinValue, intValue, true, true),
                     _ => new MatchAllDocsQuery()
                 };
@@ -940,11 +1162,12 @@ public class SearchService : ISearchService
         // Handle Edm.Int64 — stored with Int64Field
         if (long.TryParse(value, out var longValue))
         {
+            // Same overflow guard as the Int32 case above.
             return op switch
             {
-                "gt" => NumericRangeQuery.NewInt64Range(fieldName, longValue + 1, long.MaxValue, true, true),
+                "gt" => longValue == long.MaxValue ? NoMatchQuery() : NumericRangeQuery.NewInt64Range(fieldName, longValue + 1, long.MaxValue, true, true),
                 "ge" => NumericRangeQuery.NewInt64Range(fieldName, longValue, long.MaxValue, true, true),
-                "lt" => NumericRangeQuery.NewInt64Range(fieldName, long.MinValue, longValue - 1, true, true),
+                "lt" => longValue == long.MinValue ? NoMatchQuery() : NumericRangeQuery.NewInt64Range(fieldName, long.MinValue, longValue - 1, true, true),
                 "le" => NumericRangeQuery.NewInt64Range(fieldName, long.MinValue, longValue, true, true),
                 _ => new MatchAllDocsQuery()
             };
@@ -964,7 +1187,10 @@ public class SearchService : ISearchService
             };
         }
 
-        return new MatchAllDocsQuery();
+        // Every parse attempt above failed - the operand isn't a valid number/date at all
+        // (e.g. "roomNumbers/any(c: c gt invalid)"). Match nothing rather than everything:
+        // an unparseable range bound is not the same as an unbounded range.
+        return NoMatchQuery();
     }
 
     private Sort? BuildSort(string? orderBy, SearchIndex index)

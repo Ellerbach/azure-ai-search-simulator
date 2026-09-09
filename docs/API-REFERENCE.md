@@ -1624,7 +1624,7 @@ When a search query matches a term in the synonym map on a field with `synonymMa
 | Function | Example |
 | -------- | ------- |
 | `any()` | `tags/any(t: t eq 'wifi')` |
-| `all()` | `tags/all(t: t ne 'casino')` |
+| `all()` | `tags/all(t: t ne 'casino')` (not supported - see [Limitations](LIMITATIONS.md#odata-filter-limitations)) |
 
 ---
 
