@@ -153,6 +153,18 @@ public static class LuceneDocumentMapper
                 fields.AddRange(CreateCollectionStringFields(field, value, normalizers, charFilters));
                 break;
 
+            case "collection(edm.int32)":
+                fields.AddRange(CreateCollectionInt32Fields(field, value));
+                break;
+
+            case "collection(edm.int64)":
+                fields.AddRange(CreateCollectionInt64Fields(field, value));
+                break;
+
+            case "collection(edm.double)":
+                fields.AddRange(CreateCollectionDoubleFields(field, value));
+                break;
+
             case "collection(edm.single)":
                 // Vector field - stored for retrieval, not indexed in Lucene
                 fields.Add(new StoredField(field.Name, JsonSerializer.Serialize(value)));
@@ -537,6 +549,105 @@ public static class LuceneDocumentMapper
         }
 
         return fields;
+    }
+
+    /// <summary>
+    /// Indexes a Collection(Edm.Int32) field. Each element is indexed as its own Int32Field
+    /// under the same field name (Lucene's standard way of representing a multi-valued field),
+    /// so a plain numeric range/equality query against that field name matches if ANY element
+    /// satisfies it - this is what makes "field/any(x: x eq N)" filters work.
+    /// Not doc-valued for sort/facet: this library has no multi-valued numeric doc-values field
+    /// type (no SortedNumericDocValuesField), so sorting/faceting on this field is unsupported,
+    /// matching the existing precedent for other not-fully-indexed collection types.
+    /// </summary>
+    private static IEnumerable<IIndexableField> CreateCollectionInt32Fields(SearchField field, object value)
+    {
+        var fields = new List<IIndexableField>();
+        var values = ExtractCollectionValues(value, ConvertToInt32);
+
+        if (field.Filterable == true)
+        {
+            foreach (var intValue in values)
+            {
+                fields.Add(new Int32Field(field.Name, intValue, Field.Store.NO));
+            }
+        }
+
+        if (field.Retrievable != false)
+        {
+            fields.Add(new StoredField(field.Name, JsonSerializer.Serialize(values)));
+        }
+
+        return fields;
+    }
+
+    /// <summary>
+    /// Indexes a Collection(Edm.Int64) field. See <see cref="CreateCollectionInt32Fields"/>.
+    /// </summary>
+    private static IEnumerable<IIndexableField> CreateCollectionInt64Fields(SearchField field, object value)
+    {
+        var fields = new List<IIndexableField>();
+        var values = ExtractCollectionValues(value, ConvertToInt64);
+
+        if (field.Filterable == true)
+        {
+            foreach (var longValue in values)
+            {
+                fields.Add(new Int64Field(field.Name, longValue, Field.Store.NO));
+            }
+        }
+
+        if (field.Retrievable != false)
+        {
+            fields.Add(new StoredField(field.Name, JsonSerializer.Serialize(values)));
+        }
+
+        return fields;
+    }
+
+    /// <summary>
+    /// Indexes a Collection(Edm.Double) field. See <see cref="CreateCollectionInt32Fields"/>.
+    /// </summary>
+    private static IEnumerable<IIndexableField> CreateCollectionDoubleFields(SearchField field, object value)
+    {
+        var fields = new List<IIndexableField>();
+        var values = ExtractCollectionValues(value, ConvertToDouble);
+
+        if (field.Filterable == true)
+        {
+            foreach (var doubleValue in values)
+            {
+                fields.Add(new DoubleField(field.Name, doubleValue, Field.Store.NO));
+            }
+        }
+
+        if (field.Retrievable != false)
+        {
+            fields.Add(new StoredField(field.Name, JsonSerializer.Serialize(values)));
+        }
+
+        return fields;
+    }
+
+    /// <summary>
+    /// Normalizes a collection field's raw value (a JsonElement array, any non-string
+    /// IEnumerable - including value-type collections like int[]/List&lt;int&gt;, which don't
+    /// satisfy IEnumerable&lt;object&gt; because generic variance requires a reference-typed
+    /// element - or a lone scalar) to a list of converted elements.
+    /// </summary>
+    private static List<T> ExtractCollectionValues<T>(object value, Func<object?, T> convert)
+    {
+        if (value is JsonElement je && je.ValueKind == JsonValueKind.Array)
+        {
+            return je.EnumerateArray().Select(e => convert((object?)e)).ToList();
+        }
+
+        if (value is System.Collections.IEnumerable enumerable && value is not string)
+        {
+            return enumerable.Cast<object?>().Select(convert).ToList();
+        }
+
+        return new List<T> { convert(value) };
     }
 
     private static string ConvertToString(object? value)

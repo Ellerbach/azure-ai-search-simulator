@@ -1,0 +1,163 @@
+### Azure AI Search Simulator - Collection Filter Sample
+### Demonstrates Collection(Edm.Int32) fields and OData collection-filter lambda
+### syntax ("field/any(x: predicate)") over both string and int collections.
+### Use with REST Client extension in VS Code or similar tools
+### Base URL: https://localhost:7250 (HTTPS) or http://localhost:5250 (HTTP)
+
+# Variables loaded from .env file (copy .env.example to .env in the workspace root)
+
+# BASE_URL=https://localhost:7250
+# API_VERSION=2024-07-01
+# ADMIN_KEY=admin-key-12345
+# QUERY_KEY=query-key-67890
+
+@baseUrl = http://localhost:5250
+@apiVersion = 2024-07-01
+@adminKey = admin-key-12345
+@queryKey = query-key-67890
+
+# ============================================
+# INDEX MANAGEMENT
+# ============================================
+
+### Create the index (hotels + roomNumbers: Collection(Edm.Int32))
+POST {{baseUrl}}/indexes?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "name": "hotels-int-collection",
+  "fields": [
+    { "name": "hotelId", "type": "Edm.String", "key": true, "filterable": true },
+    { "name": "hotelName", "type": "Edm.String", "searchable": true, "filterable": true, "sortable": true },
+    { "name": "description", "type": "Edm.String", "searchable": true },
+    { "name": "category", "type": "Edm.String", "searchable": false, "filterable": false, "facetable": true },
+    { "name": "rating", "type": "Edm.Double", "filterable": true, "sortable": true },
+    { "name": "parkingIncluded", "type": "Edm.Boolean", "filterable": true },
+    { "name": "lastRenovationDate", "type": "Edm.DateTimeOffset", "filterable": true, "sortable": true },
+    { "name": "tags", "type": "Collection(Edm.String)", "searchable": true, "filterable": true },
+    { "name": "roomNumbers", "type": "Collection(Edm.Int32)", "filterable": true, "facetable": true }
+  ]
+}
+
+### Get the index
+GET {{baseUrl}}/indexes/hotels-int-collection?api-version={{apiVersion}}
+api-key: {{adminKey}}
+
+
+### Delete the index
+DELETE {{baseUrl}}/indexes/hotels-int-collection?api-version={{apiVersion}}
+api-key: {{adminKey}}
+
+# ============================================
+# DOCUMENT OPERATIONS (Push Model)
+# ============================================
+
+### Upload documents (each hotel has a list of available room numbers)
+POST {{baseUrl}}/indexes/hotels-int-collection/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "value": [
+    {
+      "@search.action": "upload",
+      "hotelId": "1",
+      "hotelName": "Grand Azure Hotel",
+      "description": "A luxurious hotel in the heart of downtown with stunning views and world-class amenities.",
+      "category": "Luxury",
+      "rating": 4.8,
+      "parkingIncluded": true,
+      "lastRenovationDate": "2023-06-15T00:00:00Z",
+      "tags": ["luxury", "spa", "pool", "wifi"],
+      "roomNumbers": [101, 102, 205]
+    },
+    {
+      "@search.action": "upload",
+      "hotelId": "2",
+      "hotelName": "Budget Inn Express",
+      "description": "Affordable accommodation for business travelers with free breakfast and parking.",
+      "category": "Budget",
+      "rating": 3.5,
+      "parkingIncluded": true,
+      "lastRenovationDate": "2020-01-10T00:00:00Z",
+      "tags": ["budget", "breakfast", "wifi"],
+      "roomNumbers": [301, 302]
+    }
+  ]
+}
+
+# ============================================
+# FILTER QUERIES
+# ============================================
+
+### baseline: no filter
+POST {{baseUrl}}/indexes/hotels-int-collection/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "*",
+  "facets": ["category"]
+}
+
+### existing scalar filter (known-good, for comparison)
+POST {{baseUrl}}/indexes/hotels-int-collection/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "*",
+  "filter": "lastRenovationDate gt 2020-01-11"
+}
+
+### any() filter over the string collection "tags" (should match hotel 1 only)
+POST {{baseUrl}}/indexes/hotels-int-collection/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "*",
+  "filter": "tags/any(t: t eq 'luxury')"
+}
+
+### any() filter over the int collection "roomNumbers" (should match hotel 1 only)
+POST {{baseUrl}}/indexes/hotels-int-collection/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "*",
+  "filter": "roomNumbers/any(c: c eq 101)"
+}
+
+### any() with a numeric range predicate (should match hotel 2 only: rooms 301, 302)
+POST {{baseUrl}}/indexes/hotels-int-collection/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "*",
+  "filter": "roomNumbers/any(c: c gt 300)"
+}
+
+### any() with nested search.in() over the string collection (should match both hotels)
+POST {{baseUrl}}/indexes/hotels-int-collection/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "*",
+  "filter": "tags/any(t: search.in(t, 'spa,breakfast', ','))"
+}
+
+### all() is recognized but not supported - returns zero documents rather than
+### silently matching every document. See docs/LIMITATIONS.md.
+POST {{baseUrl}}/indexes/hotels-int-collection/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "*",
+  "filter": "roomNumbers/all(c: c eq 101)"
+}
