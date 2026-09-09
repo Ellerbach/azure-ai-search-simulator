@@ -2,19 +2,12 @@
 ### Demonstrates Collection(Edm.Int32) fields and OData collection-filter lambda
 ### syntax ("field/any(x: predicate)") over both string and int collections.
 ### Use with REST Client extension in VS Code or similar tools
-### Base URL: https://localhost:7250 (HTTPS) or http://localhost:5250 (HTTP)
 
 # Variables loaded from .env file (copy .env.example to .env in the workspace root)
-
-# BASE_URL=https://localhost:7250
-# API_VERSION=2024-07-01
-# ADMIN_KEY=admin-key-12345
-# QUERY_KEY=query-key-67890
-
-@baseUrl = http://localhost:5250
-@apiVersion = 2024-07-01
-@adminKey = admin-key-12345
-@queryKey = query-key-67890
+@baseUrl = {{$dotenv BASE_URL}}
+@apiVersion = {{$dotenv API_VERSION}}
+@adminKey = {{$dotenv ADMIN_KEY}}
+@queryKey = {{$dotenv QUERY_KEY}}
 
 # ============================================
 # INDEX MANAGEMENT
