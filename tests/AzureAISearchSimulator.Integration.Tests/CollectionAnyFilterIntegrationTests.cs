@@ -101,7 +101,7 @@ public class CollectionAnyFilterIntegrationTests : IDisposable
             {
                 ["id"] = "1",
                 ["hotelName"] = "Grand Azure Hotel",
-                ["tags"] = new[] { "luxury", "spa", "pool", "wifi" },
+                ["tags"] = new[] { "luxury", "spa", "pool", "wifi", "O'Brien" },
                 ["tagsCi"] = new[] { "WiFi", "Pool" },
                 ["roomNumbers"] = new[] { 101, 102, 205 },
                 ["bookingIds"] = new[] { 9000000000001, 9000000000002 },
@@ -318,6 +318,25 @@ public class CollectionAnyFilterIntegrationTests : IDisposable
         });
 
         Assert.Empty(response.Value);
+    }
+
+    [Fact]
+    public async Task Filter_AnyEq_StringLiteralWithEscapedQuote_MatchesDecodedValue()
+    {
+        var indexName = $"any-string-eq-escaped-quote-{Guid.NewGuid():N}";
+        await SeedHotels(indexName);
+
+        // OData escapes a literal single quote inside a string literal as '' (doubled). The eq
+        // regex used to require an unescaped '([^']*)' literal, so it couldn't match a value
+        // containing a quote at all - see SearchService.ParseCollectionElementPredicate.
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Filter = "tags/any(t: t eq 'O''Brien')"
+        });
+
+        var doc = Assert.Single(response.Value);
+        Assert.Equal("1", doc["id"]?.ToString());
     }
 
     [Fact]

@@ -983,12 +983,16 @@ public class SearchService : ISearchService
     {
         var escapedVar = System.Text.RegularExpressions.Regex.Escape(lambdaVar);
 
+        // The quoted-literal group accepts doubled quotes ('') so a literal quote inside the
+        // value (OData's escape for it, e.g. 'O''Brien') isn't mistaken for the closing quote.
         var eqMatch = System.Text.RegularExpressions.Regex.Match(
-            predicate, $@"^{escapedVar}\s+eq\s+(?:'([^']*)'|(\S+))$",
+            predicate, $@"^{escapedVar}\s+eq\s+(?:'((?:[^']|'')*)'|(\S+))$",
             System.Text.RegularExpressions.RegexOptions.IgnoreCase);
         if (eqMatch.Success)
         {
-            var value = !string.IsNullOrEmpty(eqMatch.Groups[1].Value) ? eqMatch.Groups[1].Value : eqMatch.Groups[2].Value;
+            var value = eqMatch.Groups[1].Success
+                ? eqMatch.Groups[1].Value.Replace("''", "'")
+                : eqMatch.Groups[2].Value;
             return BuildCollectionElementEqualityQuery(luceneFieldName, elementType, value, normalizerName, normalizers, charFilters);
         }
 
