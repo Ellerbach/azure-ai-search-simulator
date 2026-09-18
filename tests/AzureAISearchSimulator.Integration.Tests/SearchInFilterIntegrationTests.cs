@@ -175,6 +175,39 @@ public class SearchInFilterIntegrationTests : IDisposable
         Assert.Contains("3", ids);
     }
 
+    [Fact]
+    public async Task Filter_NotParenthesizedComparison_ExcludesMatchingDocuments()
+    {
+        var indexName = $"searchin-not-paren-{Guid.NewGuid():N}";
+        var index = new SearchIndex
+        {
+            Name = indexName,
+            Fields = new List<SearchField>
+            {
+                new() { Name = "id", Type = "Edm.String", Key = true },
+                new() { Name = "hotelName", Type = "Edm.String", Searchable = true },
+                new() { Name = "rating", Type = "Edm.Double", Filterable = true }
+            }
+        };
+        RegisterIndex(index);
+
+        await UploadDocuments(indexName,
+            new Dictionary<string, object?> { ["id"] = "1", ["hotelName"] = "Budget Inn", ["rating"] = 3.0 },
+            new Dictionary<string, object?> { ["id"] = "2", ["hotelName"] = "Mid Stay", ["rating"] = 4.0 },
+            new Dictionary<string, object?> { ["id"] = "3", ["hotelName"] = "Grand Palace", ["rating"] = 4.8 });
+
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Filter = "not (rating lt 4)"
+        });
+
+        var ids = response.Value.Select(d => d["id"]?.ToString()).ToList();
+        Assert.Equal(2, ids.Count);
+        Assert.Contains("2", ids);
+        Assert.Contains("3", ids);
+    }
+
     public void Dispose()
     {
         _luceneManager?.Dispose();
