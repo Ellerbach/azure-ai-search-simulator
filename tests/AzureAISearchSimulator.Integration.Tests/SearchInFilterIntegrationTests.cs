@@ -152,6 +152,62 @@ public class SearchInFilterIntegrationTests : IDisposable
         Assert.Equal(3, response.Value.Count);
     }
 
+    [Fact]
+    public async Task Filter_NotSearchIn_ExcludesMatchingDocuments()
+    {
+        var indexName = $"searchin-negated-{Guid.NewGuid():N}";
+        var index = CreateCategoryIndex(indexName);
+        RegisterIndex(index);
+
+        await UploadDocuments(indexName,
+            new Dictionary<string, object?> { ["id"] = "1", ["hotelName"] = "Grand Palace", ["category"] = "Luxury" },
+            new Dictionary<string, object?> { ["id"] = "2", ["hotelName"] = "Ocean View", ["category"] = "Resort" },
+            new Dictionary<string, object?> { ["id"] = "3", ["hotelName"] = "Town Stay", ["category"] = "Budget" });
+
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Filter = "not search.in(category, 'Luxury,Resort')"
+        });
+
+        var ids = response.Value.Select(d => d["id"]?.ToString()).ToList();
+        Assert.Single(ids);
+        Assert.Contains("3", ids);
+    }
+
+    [Fact]
+    public async Task Filter_NotParenthesizedComparison_ExcludesMatchingDocuments()
+    {
+        var indexName = $"searchin-not-paren-{Guid.NewGuid():N}";
+        var index = new SearchIndex
+        {
+            Name = indexName,
+            Fields = new List<SearchField>
+            {
+                new() { Name = "id", Type = "Edm.String", Key = true },
+                new() { Name = "hotelName", Type = "Edm.String", Searchable = true },
+                new() { Name = "rating", Type = "Edm.Double", Filterable = true }
+            }
+        };
+        RegisterIndex(index);
+
+        await UploadDocuments(indexName,
+            new Dictionary<string, object?> { ["id"] = "1", ["hotelName"] = "Budget Inn", ["rating"] = 3.0 },
+            new Dictionary<string, object?> { ["id"] = "2", ["hotelName"] = "Mid Stay", ["rating"] = 4.0 },
+            new Dictionary<string, object?> { ["id"] = "3", ["hotelName"] = "Grand Palace", ["rating"] = 4.8 });
+
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Filter = "not (rating lt 4)"
+        });
+
+        var ids = response.Value.Select(d => d["id"]?.ToString()).ToList();
+        Assert.Equal(2, ids.Count);
+        Assert.Contains("2", ids);
+        Assert.Contains("3", ids);
+    }
+
     public void Dispose()
     {
         _luceneManager?.Dispose();

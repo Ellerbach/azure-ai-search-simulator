@@ -28,7 +28,7 @@ Use the Azure AI Search simulator to:
 - **Index Management**: Create, update, delete, and list search indexes
 - **Document Operations**: Upload, merge, mergeOrUpload, and delete documents (Push model)
 - **Full-Text Search**: Simple and Lucene query syntax
-- **Filtering**: Basic OData filter expressions (eq, ne, gt, lt, ge, le, search.in)
+- **Filtering**: Basic OData filter expressions (eq, ne, gt, lt, ge, le, not, search.in)
 - **Sorting & Paging**: OrderBy, top, skip support
 - **Field Selection**: $select parameter support
 - **Highlighting**: Search result highlighting
