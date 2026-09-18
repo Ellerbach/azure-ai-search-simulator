@@ -361,6 +361,28 @@ api-key: {{queryKey}}
   "top": 10
 }
 
+### Search using a negated search.in filter (excludes matching categories)
+POST {{baseUrl}}/indexes/hotels/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "*",
+  "filter": "not search.in(category, 'Luxury,Resort,Boutique')",
+  "top": 10
+}
+
+### Search using a negated comparison filter
+POST {{baseUrl}}/indexes/hotels/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "*",
+  "filter": "not (rating lt 4)",
+  "top": 10
+}
+
 ### GET search (alternative to POST)
 GET {{baseUrl}}/indexes/hotels/docs?api-version={{apiVersion}}&search=luxury&$filter=rating ge 4&$top=5&$orderby=rating desc
 api-key: {{queryKey}}

@@ -807,6 +807,35 @@ public class SearchService : ISearchService
 
     private Query? ParseFilterExpression(SearchIndex schema, string expression)
     {
+        // Handle logical negation: "not <expr>" or "not (<expr>)". Must run first since it can
+        // prefix any other clause shape below (search.in, eq, lambda, ...) and none of those
+        // regexes are anchored, so without this they'd silently match past a leading "not " and
+        // return the un-negated query instead.
+        var notMatch = System.Text.RegularExpressions.Regex.Match(
+            expression, @"^not\s+(.+)$",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Singleline);
+
+        if (notMatch.Success)
+        {
+            var inner = notMatch.Groups[1].Value.Trim();
+            if (IsFullyParenthesized(inner))
+            {
+                inner = inner.Substring(1, inner.Length - 2).Trim();
+            }
+
+            var innerQuery = ParseFilterExpression(schema, inner);
+            if (innerQuery == null)
+            {
+                return null;
+            }
+
+            return new BooleanQuery
+            {
+                { new MatchAllDocsQuery(), Occur.MUST },
+                { innerQuery, Occur.MUST_NOT }
+            };
+        }
+
         // Handle OData collection-filter lambda syntax: field/any(x: predicate) and field/all(x: predicate).
         // Must run before the eq/ne/range regexes below, since those are unanchored and would
         // otherwise misfire on the lambda's inner predicate (e.g. matching "c eq 101" inside
@@ -925,6 +954,38 @@ public class SearchService : ISearchService
 
         _logger.LogWarning("Unrecognized filter expression: {Expression}", expression);
         return null;
+    }
+
+    /// <summary>
+    /// True when <paramref name="s"/> is wrapped in one matching pair of parentheses spanning the
+    /// whole string (e.g. "(rating lt 4)"), as opposed to parens that merely start and end it
+    /// without wrapping it, such as "(a) and (b)".
+    /// </summary>
+    private static bool IsFullyParenthesized(string s)
+    {
+        if (s.Length < 2 || s[0] != '(' || s[^1] != ')')
+        {
+            return false;
+        }
+
+        var depth = 0;
+        for (var i = 0; i < s.Length; i++)
+        {
+            if (s[i] == '(')
+            {
+                depth++;
+            }
+            else if (s[i] == ')')
+            {
+                depth--;
+                if (depth == 0)
+                {
+                    return i == s.Length - 1;
+                }
+            }
+        }
+
+        return false;
     }
 
     /// <summary>

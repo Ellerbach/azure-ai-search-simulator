@@ -152,6 +152,29 @@ public class SearchInFilterIntegrationTests : IDisposable
         Assert.Equal(3, response.Value.Count);
     }
 
+    [Fact]
+    public async Task Filter_NotSearchIn_ExcludesMatchingDocuments()
+    {
+        var indexName = $"searchin-negated-{Guid.NewGuid():N}";
+        var index = CreateCategoryIndex(indexName);
+        RegisterIndex(index);
+
+        await UploadDocuments(indexName,
+            new Dictionary<string, object?> { ["id"] = "1", ["hotelName"] = "Grand Palace", ["category"] = "Luxury" },
+            new Dictionary<string, object?> { ["id"] = "2", ["hotelName"] = "Ocean View", ["category"] = "Resort" },
+            new Dictionary<string, object?> { ["id"] = "3", ["hotelName"] = "Town Stay", ["category"] = "Budget" });
+
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Filter = "not search.in(category, 'Luxury,Resort')"
+        });
+
+        var ids = response.Value.Select(d => d["id"]?.ToString()).ToList();
+        Assert.Single(ids);
+        Assert.Contains("3", ids);
+    }
+
     public void Dispose()
     {
         _luceneManager?.Dispose();
