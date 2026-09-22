@@ -22,7 +22,7 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.12" />
     <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.12" />
     <!-- Vector Search (HNSW) -->
-    <PackageReference Include="HNSW" Version="26.6.1848" />
+    <PackageReference Include="HNSW" Version="26.9.5494" />
     <!-- Pinned: HNSW brings in a vulnerable transitive MessagePack (CVE-2026-48502, fixed in 3.1.7) -->
     <PackageReference Include="MessagePack" Version="3.1.8" />
     <!-- Local Embedding Models (ONNX) -->
