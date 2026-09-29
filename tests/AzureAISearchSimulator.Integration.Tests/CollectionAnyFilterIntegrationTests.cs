@@ -95,7 +95,9 @@ public class CollectionAnyFilterIntegrationTests : IDisposable
                     {
                         new() { Name = "accountNumber", Type = "Edm.String", Filterable = true, Facetable = true },
                         new() { Name = "currency", Type = "Edm.String", Filterable = true, Facetable = true },
-                        new() { Name = "balance", Type = "Edm.Double", Filterable = true, Facetable = true }
+                        new() { Name = "balance", Type = "Edm.Double", Filterable = true, Facetable = true },
+                        new() { Name = "created", Type = "Edm.DateTimeOffset", Filterable = true },
+                        new() { Name = "notes", Type = "Edm.String", Searchable = true, Filterable = false }
                     }
                 }
             }
@@ -123,13 +125,17 @@ public class CollectionAnyFilterIntegrationTests : IDisposable
                     {
                         ["accountNumber"] = "12345",
                         ["currency"] = "EUR",
-                        ["balance"] = 100.0
+                        ["balance"] = 100.0,
+                        ["created"] = "2025-06-01T00:00:00Z",
+                        ["notes"] = "Premium savings account"
                     },
                     new Dictionary<string, object?>
                     {
                         ["accountNumber"] = "54321",
                         ["currency"] = "CHF",
-                        ["balance"] = 250.0
+                        ["balance"] = 250.0,
+                        ["created"] = "2026-01-01T01:00:00+01:00",
+                        ["notes"] = "Investment account"
                     }
                 }
             },
@@ -148,7 +154,9 @@ public class CollectionAnyFilterIntegrationTests : IDisposable
                     {
                         ["accountNumber"] = "67890",
                         ["currency"] = "USD",
-                        ["balance"] = 75.0
+                        ["balance"] = 75.0,
+                        ["created"] = "2024-01-01T00:00:00Z",
+                        ["notes"] = "Basic checking account"
                     }
                 }
             });
@@ -267,6 +275,37 @@ public class CollectionAnyFilterIntegrationTests : IDisposable
 
         var doc = Assert.Single(response.Value);
         Assert.Equal("1", doc["id"]?.ToString());
+    }
+
+    [Fact]
+    public async Task Filter_AnyEq_OnComplexCollectionDateTimeSubField_MatchesUtcTicks()
+    {
+        var indexName = $"any-complex-datetime-eq-{Guid.NewGuid():N}";
+        await SeedHotels(indexName);
+
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Filter = "accounts/any(acc: acc/created eq 2026-01-01T00:00:00Z)"
+        });
+
+        var doc = Assert.Single(response.Value);
+        Assert.Equal("1", doc["id"]?.ToString());
+    }
+
+    [Fact]
+    public async Task Filter_AnyEq_OnNonFilterableComplexSubField_ReturnsNoDocuments()
+    {
+        var indexName = $"any-complex-nonfilterable-{Guid.NewGuid():N}";
+        await SeedHotels(indexName);
+
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Filter = "accounts/any(acc: acc/notes eq 'premium')"
+        });
+
+        Assert.Empty(response.Value);
     }
 
     [Fact]

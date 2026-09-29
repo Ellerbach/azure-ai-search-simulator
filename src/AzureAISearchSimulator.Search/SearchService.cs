@@ -1079,6 +1079,12 @@ public class SearchService : ISearchService
             _logger.LogWarning("Complex collection field '{FieldName}/{SubFieldName}' is a complex type and cannot be filtered", collectionField.Name, subFieldPath);
             return NoMatchQuery();
         }
+
+        if (subField.Filterable != true)
+        {
+            _logger.LogWarning("Complex collection field '{FieldName}/{SubFieldName}' is not filterable", collectionField.Name, subFieldPath);
+            return NoMatchQuery();
+        }
         
         var qualifiedField = new SearchField
         {
@@ -1182,6 +1188,17 @@ public class SearchService : ISearchService
         IEnumerable<CustomNormalizer>? normalizers = null,
         IEnumerable<CustomCharFilter>? charFilters = null)
     {
+        if (elementType.Equals("Edm.DateTimeOffset", StringComparison.OrdinalIgnoreCase) &&
+            DateTimeOffset.TryParse(
+                value,
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.AssumeUniversal,
+                out var dateTimeOffsetValue))
+        {
+            var ticks = dateTimeOffsetValue.UtcTicks;
+            return NumericRangeQuery.NewInt64Range(luceneFieldName, ticks, ticks, true, true);
+        }
+
         if (IsNumericType(elementType))
         {
             if (elementType.Equals("Edm.Double", StringComparison.OrdinalIgnoreCase) ||
