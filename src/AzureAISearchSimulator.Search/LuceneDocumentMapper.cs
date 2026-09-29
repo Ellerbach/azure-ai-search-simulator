@@ -421,7 +421,8 @@ public static class LuceneDocumentMapper
         SearchField field,
         object value,
         IEnumerable<CustomNormalizer>? normalizers,
-        IEnumerable<CustomCharFilter>? charFilters)
+        IEnumerable<CustomCharFilter>? charFilters,
+        bool includeDocValues = true)
     {
         var fields = new List<IIndexableField>();
 
@@ -443,7 +444,10 @@ public static class LuceneDocumentMapper
                 continue;
             }
 
-            var qualifiedField = WithQualifiedName(subField, field.Name + "/" + subField.Name);
+            var qualifiedField = WithQualifiedName(
+                subField,
+                field.Name + "/" + subField.Name,
+                includeDocValues);
             fields.AddRange(CreateLuceneFields(qualifiedField, subValue, normalizers, charFilters));
         }
 
@@ -460,7 +464,12 @@ public static class LuceneDocumentMapper
             ? json.EnumerateArray().Select(item => (object)item)
             : value as IEnumerable<object> ?? Enumerable.Empty<object>();
 
-        return values.SelectMany(item => CreateComplexFields(field, item, normalizers, charFilters));
+        return values.SelectMany(item => CreateComplexFields(
+            field,
+            item,
+            normalizers,
+            charFilters,
+            includeDocValues: false));
     }
 
     /// <summary>
@@ -469,10 +478,13 @@ public static class LuceneDocumentMapper
     /// sortable/facetable, retrievable, normalizer, nested sub-fields for multi-level complex
     /// types). Retrievable is kept (rather than forced off) because the metric aggregation facets
     /// (sum/min/max/avg) read their per-document value from the field's *stored* Lucene value,
-    /// not from doc values - dropping it would silently zero out those aggregations. The
-    /// resulting duplicate storage (also present in the parent's "_raw_json") is otherwise unused.
+    /// not from doc values. Complex collections omit sort/facet doc values because Lucene's
+    /// corresponding field types are single-valued per document.
     /// </summary>
-    private static SearchField WithQualifiedName(SearchField field, string qualifiedName)
+    private static SearchField WithQualifiedName(
+        SearchField field,
+        string qualifiedName,
+        bool includeDocValues = true)
     {
         return new SearchField
         {
@@ -481,12 +493,19 @@ public static class LuceneDocumentMapper
             Key = false,
             Searchable = field.Searchable,
             Filterable = field.Filterable,
-            Sortable = field.Sortable,
-            Facetable = field.Facetable,
+            Sortable = includeDocValues && field.Sortable == true,
+            Facetable = includeDocValues && field.Facetable == true,
             Retrievable = field.Retrievable,
             Normalizer = field.Normalizer,
-            Fields = field.Fields
+            Fields = includeDocValues
+                ? field.Fields
+                : field.Fields?.Select(WithoutDocValues).ToList()
         };
+    }
+
+    private static SearchField WithoutDocValues(SearchField field)
+    {
+        return WithQualifiedName(field, field.Name, includeDocValues: false);
     }
 
     /// <summary>

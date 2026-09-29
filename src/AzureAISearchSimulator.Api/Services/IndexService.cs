@@ -202,7 +202,7 @@ public partial class IndexService : IIndexService
         field.Sortable ??= !withinComplexCollection && SearchFieldDataType.SupportsSortable(type);
 
         // facetable: defaults to true for supported types
-        field.Facetable ??= !withinComplexCollection && SearchFieldDataType.SupportsFacetable(type);
+        field.Facetable ??= SearchFieldDataType.SupportsFacetable(type);
 
         // synonymMaps: defaults to empty array
         field.SynonymMaps ??= new List<string>();
@@ -733,11 +733,6 @@ public partial class IndexService : IIndexService
         if (withinComplexCollection && field.Sortable == true)
         {
             errors.Add($"Field '{fullName}' cannot be sortable because it is nested in a complex collection");
-        }
-
-        if (withinComplexCollection && field.Facetable == true)
-        {
-            errors.Add($"Field '{fullName}' cannot be facetable because it is nested in a complex collection");
         }
 
         return errors;

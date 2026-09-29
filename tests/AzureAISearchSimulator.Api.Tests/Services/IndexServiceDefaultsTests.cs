@@ -154,7 +154,7 @@ public class IndexServiceDefaultsTests
     }
 
     [Fact]
-    public async Task CreateIndex_ComplexCollectionSubFields_DefaultToNotSortableOrFacetable()
+    public async Task CreateIndex_ComplexCollectionSubFields_DefaultToNotSortableButFacetable()
     {
         var index = CreateMinimalIndex();
         index.Fields.Add(new SearchField
@@ -172,16 +172,11 @@ public class IndexServiceDefaultsTests
         var subFields = result.Fields.Single(field => field.Name == "accounts").Fields!;
 
         Assert.All(subFields, field => Assert.False(field.Sortable));
-        Assert.All(subFields, field => Assert.False(field.Facetable));
+        Assert.All(subFields, field => Assert.True(field.Facetable));
     }
 
-    [Theory]
-    [InlineData(true, false, "sortable")]
-    [InlineData(false, true, "facetable")]
-    public async Task CreateIndex_ComplexCollectionSubFieldWithDocValuesAttribute_IsRejected(
-        bool sortable,
-        bool facetable,
-        string attribute)
+    [Fact]
+    public async Task CreateIndex_SortableComplexCollectionSubField_IsRejected()
     {
         var index = CreateMinimalIndex();
         index.Fields.Add(new SearchField
@@ -195,15 +190,15 @@ public class IndexServiceDefaultsTests
                     Name = "balance",
                     Type = SearchFieldDataType.Double,
                     Filterable = true,
-                    Sortable = sortable,
-                    Facetable = facetable
+                    Sortable = true,
+                    Facetable = true
                 }
             }
         });
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => _sut.CreateIndexAsync(index));
 
-        Assert.Contains($"cannot be {attribute} because it is nested in a complex collection", exception.Message);
+        Assert.Contains("cannot be sortable because it is nested in a complex collection", exception.Message);
     }
 
     [Fact]

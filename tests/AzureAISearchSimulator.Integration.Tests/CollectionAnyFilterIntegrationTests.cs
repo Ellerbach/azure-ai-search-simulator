@@ -93,8 +93,9 @@ public class CollectionAnyFilterIntegrationTests : IDisposable
                     Type = "Collection(Edm.ComplexType)",
                     Fields = new List<SearchField>
                     {
-                        new() { Name = "accountNumber", Type = "Edm.String", Filterable = true },
-                        new() { Name = "currency", Type = "Edm.String", Filterable = true }
+                        new() { Name = "accountNumber", Type = "Edm.String", Filterable = true, Facetable = true },
+                        new() { Name = "currency", Type = "Edm.String", Filterable = true, Facetable = true },
+                        new() { Name = "balance", Type = "Edm.Double", Filterable = true, Facetable = true }
                     }
                 }
             }
@@ -121,12 +122,14 @@ public class CollectionAnyFilterIntegrationTests : IDisposable
                     new Dictionary<string, object?>
                     {
                         ["accountNumber"] = "12345",
-                        ["currency"] = "EUR"
+                        ["currency"] = "EUR",
+                        ["balance"] = 100.0
                     },
                     new Dictionary<string, object?>
                     {
                         ["accountNumber"] = "54321",
-                        ["currency"] = "CHF"
+                        ["currency"] = "CHF",
+                        ["balance"] = 250.0
                     }
                 }
             },
@@ -144,7 +147,8 @@ public class CollectionAnyFilterIntegrationTests : IDisposable
                     new Dictionary<string, object?>
                     {
                         ["accountNumber"] = "67890",
-                        ["currency"] = "USD"
+                        ["currency"] = "USD",
+                        ["balance"] = 75.0
                     }
                 }
             });
