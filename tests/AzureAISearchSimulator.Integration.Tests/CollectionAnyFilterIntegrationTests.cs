@@ -86,7 +86,17 @@ public class CollectionAnyFilterIntegrationTests : IDisposable
                 new() { Name = "tagsCi", Type = "Collection(Edm.String)", Filterable = true, Normalizer = "lowercase" },
                 new() { Name = "roomNumbers", Type = "Collection(Edm.Int32)", Filterable = true },
                 new() { Name = "bookingIds", Type = "Collection(Edm.Int64)", Filterable = true },
-                new() { Name = "floorAreas", Type = "Collection(Edm.Double)", Filterable = true }
+                new() { Name = "floorAreas", Type = "Collection(Edm.Double)", Filterable = true },
+                new()
+                {
+                    Name = "accounts",
+                    Type = "Collection(Edm.ComplexType)",
+                    Fields = new List<SearchField>
+                    {
+                        new() { Name = "accountNumber", Type = "Edm.String", Filterable = true },
+                        new() { Name = "currency", Type = "Edm.String", Filterable = true }
+                    }
+                }
             }
         };
     }
@@ -105,7 +115,15 @@ public class CollectionAnyFilterIntegrationTests : IDisposable
                 ["tagsCi"] = new[] { "WiFi", "Pool" },
                 ["roomNumbers"] = new[] { 101, 102, 205 },
                 ["bookingIds"] = new[] { 9000000000001, 9000000000002 },
-                ["floorAreas"] = new[] { 120.5, 85.25 }
+                ["floorAreas"] = new[] { 120.5, 85.25 },
+                ["accounts"] = new[]
+                {
+                    new Dictionary<string, object?>
+                    {
+                        ["accountNumber"] = "12345",
+                        ["currency"] = "EUR"
+                    }
+                }
             },
             new Dictionary<string, object?>
             {
@@ -115,7 +133,15 @@ public class CollectionAnyFilterIntegrationTests : IDisposable
                 ["tagsCi"] = new[] { "Breakfast" },
                 ["roomNumbers"] = new[] { 301, 302 },
                 ["bookingIds"] = new[] { 9000000000101 },
-                ["floorAreas"] = new[] { 45.75 }
+                ["floorAreas"] = new[] { 45.75 },
+                ["accounts"] = new[]
+                {
+                    new Dictionary<string, object?>
+                    {
+                        ["accountNumber"] = "67890",
+                        ["currency"] = "USD"
+                    }
+                }
             });
 
         return 2;
@@ -196,6 +222,22 @@ public class CollectionAnyFilterIntegrationTests : IDisposable
         {
             Search = "*",
             Filter = "tags/any(t: t eq 'luxury')"
+        });
+
+        var doc = Assert.Single(response.Value);
+        Assert.Equal("1", doc["id"]?.ToString());
+    }
+
+    [Fact]
+    public async Task Filter_AnyEq_OnComplexCollectionSubField_ReturnsOnlyMatchingDocument()
+    {
+        var indexName = $"any-complex-string-eq-{Guid.NewGuid():N}";
+        await SeedHotels(indexName);
+
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Filter = "accounts/any(acc: acc/currency eq 'EUR')"
         });
 
         var doc = Assert.Single(response.Value);

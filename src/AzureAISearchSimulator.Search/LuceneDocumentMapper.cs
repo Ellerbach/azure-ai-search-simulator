@@ -178,6 +178,10 @@ public static class LuceneDocumentMapper
                 fields.AddRange(CreateComplexFields(field, value, normalizers, charFilters));
                 break;
 
+            case "collection(edm.complextype)":
+                fields.AddRange(CreateComplexCollectionFields(field, value, normalizers, charFilters));
+                break;
+
             default:
                 // Unknown type - store as JSON string
                 fields.Add(new StoredField(field.Name, JsonSerializer.Serialize(value)));
@@ -444,6 +448,19 @@ public static class LuceneDocumentMapper
         }
 
         return fields;
+    }
+
+    private static IEnumerable<IIndexableField> CreateComplexCollectionFields(
+        SearchField field,
+        object value,
+        IEnumerable<CustomNormalizer>? normalizers,
+        IEnumerable<CustomCharFilter>? charFilters)
+    {
+        var values = value is JsonElement json && json.ValueKind == JsonValueKind.Array
+            ? json.EnumerateArray().Select(item => (object)item)
+            : value as IEnumerable<object> ?? Enumerable.Empty<object>();
+
+        return values.SelectMany(item => CreateComplexFields(field, item, normalizers, charFilters));
     }
 
     /// <summary>

@@ -330,13 +330,14 @@ Supported functions:
 - `search.ismatch()` - Basic support
 - `search.in()` - Full support
 - `geo.distance()` - Basic support
-- `any()` - Supports `eq`, `gt`/`lt`/`ge`/`le`, and nested `search.in(...)` predicates over `Collection(Edm.String)`, `Collection(Edm.Int32)`, `Collection(Edm.Int64)`, and `Collection(Edm.Double)` fields (e.g. `tags/any(t: t eq 'wifi')`, `roomNumbers/any(c: c gt 100)`)
+- `any()` - Supports `eq`, `gt`/`lt`/`ge`/`le`, and nested `search.in(...)` predicates over primitive collections, plus single-sub-field `eq` predicates over `Collection(Edm.ComplexType)` (e.g. `Accounts/any(acc: acc/Currency eq 'EUR')`)
 
 Not supported:
 
 - `search.ismatchscoring()`
 - Complex geo-spatial functions
 - `all()` - recognized but always matches zero documents; would require confirming every indexed element satisfies the predicate, which isn't expressible as a single term/range query over a multi-valued field
+- Compound predicates inside complex collection lambdas (e.g. `Accounts/any(acc: acc/Currency eq 'EUR' and acc/AccountNumber eq '12345')`)
 - `ne` inside `any()`/`all()` (e.g. `tags/any(t: t ne 'casino')`) - "any element differs" isn't a simple term/range query either
 - Sorting or faceting on numeric collection fields (`Collection(Edm.Int32)`/`Int64`/`Double`) - no multi-valued numeric doc-values field type is available in this Lucene.Net version
 
@@ -361,8 +362,8 @@ Not supported:
 - The `cardinality` aggregation metric (and its `precisionThreshold` parameter)
 - `sort`, `values`, and `timeoffset` facet parameters
 - Facet hierarchies (`>` and `;` operators) and facet filters (`includeTermFilter` / `excludeTermFilter`)
-- Facets on `Collection(Edm.ComplexType)` sub-fields (e.g. `Rooms/BaseRate` where `Rooms` is a collection) — only non-collection complex types are indexed field-by-field
-- `$filter`/`$orderby` on complex-type sub-fields — only facets resolve field paths today
+- Facets on `Collection(Edm.ComplexType)` sub-fields (e.g. `Rooms/BaseRate` where `Rooms` is a collection)
+- General `$filter`/`$orderby` expressions on complex-type sub-fields; only the complex collection `any()` equality form documented above is supported
 
 ## Security Limitations
 
