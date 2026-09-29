@@ -122,6 +122,11 @@ public class CollectionAnyFilterIntegrationTests : IDisposable
                     {
                         ["accountNumber"] = "12345",
                         ["currency"] = "EUR"
+                    },
+                    new Dictionary<string, object?>
+                    {
+                        ["accountNumber"] = "54321",
+                        ["currency"] = "CHF"
                     }
                 }
             },
@@ -238,6 +243,22 @@ public class CollectionAnyFilterIntegrationTests : IDisposable
         {
             Search = "*",
             Filter = "accounts/any(acc: acc/currency eq 'EUR')"
+        });
+
+        var doc = Assert.Single(response.Value);
+        Assert.Equal("1", doc["id"]?.ToString());
+    }
+
+    [Fact]
+    public async Task Filter_AnyEq_OnSecondComplexCollectionElement_ReturnsMatchingDocument()
+    {
+        var indexName = $"any-complex-second-element-{Guid.NewGuid():N}";
+        await SeedHotels(indexName);
+
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Filter = "accounts/any(acc: acc/accountNumber eq '54321')"
         });
 
         var doc = Assert.Single(response.Value);

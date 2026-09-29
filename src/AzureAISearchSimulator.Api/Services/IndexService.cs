@@ -182,7 +182,7 @@ public partial class IndexService : IIndexService
     /// Azure always returns all field attributes explicitly, applying defaults
     /// based on the field's data type when not specified in the request.
     /// </summary>
-    private static void ApplyFieldDefaults(SearchField field)
+    private static void ApplyFieldDefaults(SearchField field, bool withinComplexCollection = false)
     {
         var type = field.Type;
 
@@ -199,10 +199,10 @@ public partial class IndexService : IIndexService
         field.Stored ??= true;
 
         // sortable: defaults to true for non-collection, non-complex types
-        field.Sortable ??= SearchFieldDataType.SupportsSortable(type);
+        field.Sortable ??= !withinComplexCollection && SearchFieldDataType.SupportsSortable(type);
 
         // facetable: defaults to true for supported types
-        field.Facetable ??= SearchFieldDataType.SupportsFacetable(type);
+        field.Facetable ??= !withinComplexCollection && SearchFieldDataType.SupportsFacetable(type);
 
         // synonymMaps: defaults to empty array
         field.SynonymMaps ??= new List<string>();
@@ -210,9 +210,11 @@ public partial class IndexService : IIndexService
         // Apply defaults recursively for complex type sub-fields
         if (field.Fields != null)
         {
+            var descendantsWithinComplexCollection = withinComplexCollection ||
+                field.Type == SearchFieldDataType.CollectionComplex;
             foreach (var subField in field.Fields)
             {
-                ApplyFieldDefaults(subField);
+                ApplyFieldDefaults(subField, descendantsWithinComplexCollection);
             }
         }
     }
@@ -657,7 +659,11 @@ public partial class IndexService : IIndexService
         }
     }
 
-    private static List<string> ValidateField(SearchField field, HashSet<string> fieldNames, string prefix = "")
+    private static List<string> ValidateField(
+        SearchField field,
+        HashSet<string> fieldNames,
+        string prefix = "",
+        bool withinComplexCollection = false)
     {
         var errors = new List<string>();
         var fullName = string.IsNullOrEmpty(prefix) ? field.Name : $"{prefix}.{field.Name}";
@@ -700,9 +706,11 @@ public partial class IndexService : IIndexService
         // Validate complex type fields
         if (field.IsComplex && field.Fields != null)
         {
+            var descendantsWithinComplexCollection = withinComplexCollection ||
+                field.Type == SearchFieldDataType.CollectionComplex;
             foreach (var subField in field.Fields)
             {
-                errors.AddRange(ValidateField(subField, fieldNames, fullName));
+                errors.AddRange(ValidateField(subField, fieldNames, fullName, descendantsWithinComplexCollection));
             }
         }
 
@@ -720,6 +728,16 @@ public partial class IndexService : IIndexService
         if (field.Facetable == true && !SearchFieldDataType.SupportsFacetable(field.Type))
         {
             errors.Add($"Field '{fullName}' of type '{field.Type}' cannot be facetable");
+        }
+
+        if (withinComplexCollection && field.Sortable == true)
+        {
+            errors.Add($"Field '{fullName}' cannot be sortable because it is nested in a complex collection");
+        }
+
+        if (withinComplexCollection && field.Facetable == true)
+        {
+            errors.Add($"Field '{fullName}' cannot be facetable because it is nested in a complex collection");
         }
 
         return errors;

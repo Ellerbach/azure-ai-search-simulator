@@ -154,6 +154,59 @@ public class IndexServiceDefaultsTests
     }
 
     [Fact]
+    public async Task CreateIndex_ComplexCollectionSubFields_DefaultToNotSortableOrFacetable()
+    {
+        var index = CreateMinimalIndex();
+        index.Fields.Add(new SearchField
+        {
+            Name = "accounts",
+            Type = SearchFieldDataType.CollectionComplex,
+            Fields = new List<SearchField>
+            {
+                new() { Name = "currency", Type = SearchFieldDataType.String, Filterable = true },
+                new() { Name = "balance", Type = SearchFieldDataType.Double, Filterable = true }
+            }
+        });
+
+        var result = await _sut.CreateIndexAsync(index);
+        var subFields = result.Fields.Single(field => field.Name == "accounts").Fields!;
+
+        Assert.All(subFields, field => Assert.False(field.Sortable));
+        Assert.All(subFields, field => Assert.False(field.Facetable));
+    }
+
+    [Theory]
+    [InlineData(true, false, "sortable")]
+    [InlineData(false, true, "facetable")]
+    public async Task CreateIndex_ComplexCollectionSubFieldWithDocValuesAttribute_IsRejected(
+        bool sortable,
+        bool facetable,
+        string attribute)
+    {
+        var index = CreateMinimalIndex();
+        index.Fields.Add(new SearchField
+        {
+            Name = "accounts",
+            Type = SearchFieldDataType.CollectionComplex,
+            Fields = new List<SearchField>
+            {
+                new()
+                {
+                    Name = "balance",
+                    Type = SearchFieldDataType.Double,
+                    Filterable = true,
+                    Sortable = sortable,
+                    Facetable = facetable
+                }
+            }
+        });
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => _sut.CreateIndexAsync(index));
+
+        Assert.Contains($"cannot be {attribute} because it is nested in a complex collection", exception.Message);
+    }
+
+    [Fact]
     public async Task CreateIndex_AllFields_HaveNonNullBooleanAttributes()
     {
         var result = await _sut.CreateIndexAsync(CreateMinimalIndex());
