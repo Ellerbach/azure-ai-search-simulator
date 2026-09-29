@@ -1042,26 +1042,47 @@ public class SearchService : ISearchService
     {
         var match = System.Text.RegularExpressions.Regex.Match(
             predicate,
-            $@"^{System.Text.RegularExpressions.Regex.Escape(lambdaVar)}/(\w+)\s+eq\s+(?:'((?:[^']|'')*)'|(\S+))$",
+            $@"^{System.Text.RegularExpressions.Regex.Escape(lambdaVar)}/(\w+(?:/\w+)*)\s+eq\s+(?:'((?:[^']|'')*)'|(\S+))$",
             System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-
+        
         if (!match.Success)
         {
             _logger.LogWarning("Unrecognized complex collection filter predicate: {Predicate}", predicate);
             return NoMatchQuery();
         }
-
-        var subField = collectionField.Fields?.FirstOrDefault(field =>
-            field.Name.Equals(match.Groups[1].Value, StringComparison.OrdinalIgnoreCase));
+        
+        var subFieldPath = match.Groups[1].Value;        
+        SearchField? current = collectionField;
+        var qualifiedFieldName = collectionField.Name;
+        var segments = subFieldPath.Split('/');
+        
+        foreach (var segment in segments)
+        {
+            current = current?.Fields?.FirstOrDefault(field =>
+                field.Name.Equals(segment, StringComparison.OrdinalIgnoreCase));
+        
+            if (current is not null)
+            {
+                qualifiedFieldName += $"/{current.Name}";
+            }            
+        }
+        var subField = current;
+        
         if (subField == null)
         {
-            _logger.LogWarning("Complex collection field '{FieldName}' has no sub-field '{SubFieldName}'", collectionField.Name, match.Groups[1].Value);
+            _logger.LogWarning("Complex collection field '{FieldName}' has no sub-field '{SubFieldName}'", collectionField.Name, subFieldPath);
             return NoMatchQuery();
         }
-
+        
+        if (subField.IsComplex) 
+        {
+            _logger.LogWarning("Complex collection field '{FieldName}/{SubFieldName}' is a complex type and cannot be filtered", collectionField.Name, subFieldPath);
+            return NoMatchQuery();
+        }
+        
         var qualifiedField = new SearchField
         {
-            Name = collectionField.Name + "/" + subField.Name,
+            Name = qualifiedFieldName,
             Type = subField.Type,
             Searchable = subField.Searchable,
             Filterable = subField.Filterable,
