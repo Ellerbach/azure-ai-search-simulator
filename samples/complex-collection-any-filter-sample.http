@@ -1,0 +1,118 @@
+### Azure AI Search Simulator - Complex Collection Filter Sample
+### Use with the REST Client extension in VS Code or a compatible HTTP client
+
+# Variables loaded from .env file (copy .env.example to .env in the workspace root)
+@baseUrl = {{$dotenv BASE_URL}}
+@apiVersion = {{$dotenv API_VERSION}}
+@adminKey = {{$dotenv ADMIN_KEY}}
+@queryKey = {{$dotenv QUERY_KEY}}
+
+# ============================================
+# INDEX MANAGEMENT
+# ============================================
+
+### Create an index with a complex collection
+POST {{baseUrl}}/indexes?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "name": "customers-complex-collection",
+  "fields": [
+    { "name": "Id", "type": "Edm.String", "key": true, "filterable": true },
+    { "name": "Name", "type": "Edm.String", "searchable": true, "filterable": true },
+    {
+      "name": "Accounts",
+      "type": "Collection(Edm.ComplexType)",
+      "fields": [
+        { "name": "AccountNumber", "type": "Edm.String", "filterable": true },
+        { "name": "Currency", "type": "Edm.String", "filterable": true }
+      ]
+    }
+  ]
+}
+
+### Get the index
+GET {{baseUrl}}/indexes/customers-complex-collection?api-version={{apiVersion}}
+api-key: {{adminKey}}
+
+# ============================================
+# DOCUMENT OPERATIONS
+# ============================================
+
+### Upload customers with complex account collections
+POST {{baseUrl}}/indexes/customers-complex-collection/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "value": [
+    {
+      "@search.action": "upload",
+      "Id": "1",
+      "Name": "John",
+      "Accounts": [
+        {
+          "AccountNumber": "12345",
+          "Currency": "EUR"
+        }
+      ]
+    },
+    {
+      "@search.action": "upload",
+      "Id": "2",
+      "Name": "Jane",
+      "Accounts": [
+        {
+          "AccountNumber": "67890",
+          "Currency": "USD"
+        }
+      ]
+    }
+  ]
+}
+
+# ============================================
+# FILTER QUERIES
+# ============================================
+
+### Match John by account currency
+POST {{baseUrl}}/indexes/customers-complex-collection/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "*",
+  "filter": "Accounts/any(acc: acc/Currency eq 'EUR')",
+  "select": "Id,Name,Accounts"
+}
+
+### Match Jane by account number
+POST {{baseUrl}}/indexes/customers-complex-collection/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "*",
+  "filter": "Accounts/any(acc: acc/AccountNumber eq '67890')",
+  "select": "Id,Name,Accounts"
+}
+
+### No matching account currency - should return an empty value array
+POST {{baseUrl}}/indexes/customers-complex-collection/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "*",
+  "filter": "Accounts/any(acc: acc/Currency eq 'GBP')",
+  "select": "Id,Name,Accounts"
+}
+
+# ============================================
+# CLEANUP
+# ============================================
+
+### Delete the sample index
+DELETE {{baseUrl}}/indexes/customers-complex-collection?api-version={{apiVersion}}
+api-key: {{adminKey}}

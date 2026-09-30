@@ -1022,9 +1022,89 @@ public class SearchService : ISearchService
 
         var elementTypeMatch = System.Text.RegularExpressions.Regex.Match(field.Type, @"^Collection\((.+)\)$");
         var elementType = elementTypeMatch.Success ? elementTypeMatch.Groups[1].Value : field.Type;
+
+        if (elementType.Equals("Edm.ComplexType", StringComparison.OrdinalIgnoreCase))
+        {
+            return ParseComplexCollectionElementPredicate(field, lambdaVar, predicate, schema.Normalizers, schema.CharFilters);
+        }
+
         var luceneFieldName = ResolveFilterFieldName(schema, fieldName);
 
         return ParseCollectionElementPredicate(luceneFieldName, elementType, lambdaVar, predicate, field.Normalizer, schema.Normalizers, schema.CharFilters);
+    }
+
+    private Query ParseComplexCollectionElementPredicate(
+        SearchField collectionField,
+        string lambdaVar,
+        string predicate,
+        IEnumerable<CustomNormalizer>? normalizers,
+        IEnumerable<CustomCharFilter>? charFilters)
+    {
+        var match = System.Text.RegularExpressions.Regex.Match(
+            predicate,
+            $@"^{System.Text.RegularExpressions.Regex.Escape(lambdaVar)}/(\w+(?:/\w+)*)\s+eq\s+(?:'((?:[^']|'')*)'|(\S+))$",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        
+        if (!match.Success)
+        {
+            _logger.LogWarning("Unrecognized complex collection filter predicate: {Predicate}", predicate);
+            return NoMatchQuery();
+        }
+        
+        var subFieldPath = match.Groups[1].Value;        
+        SearchField? current = collectionField;
+        var qualifiedFieldName = collectionField.Name;
+        var segments = subFieldPath.Split('/');
+        
+        foreach (var segment in segments)
+        {
+            current = current?.Fields?.FirstOrDefault(field =>
+                field.Name.Equals(segment, StringComparison.OrdinalIgnoreCase));
+        
+            if (current is not null)
+            {
+                qualifiedFieldName += $"/{current.Name}";
+            }            
+        }
+        var subField = current;
+        
+        if (subField == null)
+        {
+            _logger.LogWarning("Complex collection field '{FieldName}' has no sub-field '{SubFieldName}'", collectionField.Name, subFieldPath);
+            return NoMatchQuery();
+        }
+        
+        if (subField.IsComplex) 
+        {
+            _logger.LogWarning("Complex collection field '{FieldName}/{SubFieldName}' is a complex type and cannot be filtered", collectionField.Name, subFieldPath);
+            return NoMatchQuery();
+        }
+
+        if (subField.Filterable != true)
+        {
+            _logger.LogWarning("Complex collection field '{FieldName}/{SubFieldName}' is not filterable", collectionField.Name, subFieldPath);
+            return NoMatchQuery();
+        }
+        
+        var qualifiedField = new SearchField
+        {
+            Name = qualifiedFieldName,
+            Type = subField.Type,
+            Searchable = subField.Searchable,
+            Filterable = subField.Filterable,
+            Normalizer = subField.Normalizer
+        };
+        var value = match.Groups[2].Success
+            ? match.Groups[2].Value.Replace("''", "'")
+            : match.Groups[3].Value;
+
+        return BuildCollectionElementEqualityQuery(
+            LuceneDocumentMapper.GetFilterFieldName(qualifiedField),
+            subField.Type,
+            value,
+            subField.Normalizer,
+            normalizers,
+            charFilters);
     }
 
     /// <summary>
@@ -1108,6 +1188,17 @@ public class SearchService : ISearchService
         IEnumerable<CustomNormalizer>? normalizers = null,
         IEnumerable<CustomCharFilter>? charFilters = null)
     {
+        if (elementType.Equals("Edm.DateTimeOffset", StringComparison.OrdinalIgnoreCase) &&
+            DateTimeOffset.TryParse(
+                value,
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.AssumeUniversal,
+                out var dateTimeOffsetValue))
+        {
+            var ticks = dateTimeOffsetValue.UtcTicks;
+            return NumericRangeQuery.NewInt64Range(luceneFieldName, ticks, ticks, true, true);
+        }
+
         if (IsNumericType(elementType))
         {
             if (elementType.Equals("Edm.Double", StringComparison.OrdinalIgnoreCase) ||

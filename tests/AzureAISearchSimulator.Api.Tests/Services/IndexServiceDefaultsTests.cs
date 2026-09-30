@@ -154,6 +154,54 @@ public class IndexServiceDefaultsTests
     }
 
     [Fact]
+    public async Task CreateIndex_ComplexCollectionSubFields_DefaultToNotSortableButFacetable()
+    {
+        var index = CreateMinimalIndex();
+        index.Fields.Add(new SearchField
+        {
+            Name = "accounts",
+            Type = SearchFieldDataType.CollectionComplex,
+            Fields = new List<SearchField>
+            {
+                new() { Name = "currency", Type = SearchFieldDataType.String, Filterable = true },
+                new() { Name = "balance", Type = SearchFieldDataType.Double, Filterable = true }
+            }
+        });
+
+        var result = await _sut.CreateIndexAsync(index);
+        var subFields = result.Fields.Single(field => field.Name == "accounts").Fields!;
+
+        Assert.All(subFields, field => Assert.False(field.Sortable));
+        Assert.All(subFields, field => Assert.True(field.Facetable));
+    }
+
+    [Fact]
+    public async Task CreateIndex_SortableComplexCollectionSubField_IsRejected()
+    {
+        var index = CreateMinimalIndex();
+        index.Fields.Add(new SearchField
+        {
+            Name = "accounts",
+            Type = SearchFieldDataType.CollectionComplex,
+            Fields = new List<SearchField>
+            {
+                new()
+                {
+                    Name = "balance",
+                    Type = SearchFieldDataType.Double,
+                    Filterable = true,
+                    Sortable = true,
+                    Facetable = true
+                }
+            }
+        });
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => _sut.CreateIndexAsync(index));
+
+        Assert.Contains("cannot be sortable because it is nested in a complex collection", exception.Message);
+    }
+
+    [Fact]
     public async Task CreateIndex_AllFields_HaveNonNullBooleanAttributes()
     {
         var result = await _sut.CreateIndexAsync(CreateMinimalIndex());
