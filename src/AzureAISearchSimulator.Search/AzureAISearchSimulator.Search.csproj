@@ -26,7 +26,7 @@
     <!-- Pinned: HNSW brings in a vulnerable transitive MessagePack (CVE-2026-48502, fixed in 3.1.7) -->
     <PackageReference Include="MessagePack" Version="3.1.12" />
     <!-- Local Embedding Models (ONNX) -->
-    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.30.0" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.31.0" />
     <PackageReference Include="Microsoft.ML.Tokenizers" Version="2.0.0" />
     <!-- Document Cracking -->
     <PackageReference Include="PdfPig" Version="0.1.16" />
