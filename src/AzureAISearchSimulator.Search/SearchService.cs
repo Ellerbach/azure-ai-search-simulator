@@ -1536,54 +1536,188 @@ public class SearchService : ISearchService
             Value = new List<SuggestResult>()
         };
 
-        // Simple prefix-based suggestion using Lucene
-        var searcher = _indexManager.GetSearcher(indexName);
-        var searchableFields = index.Fields
-            .Where(f => f.Searchable == true)
-            .Select(f => f.Name)
-            .ToArray();
+        var sourceFields = ResolveSuggesterSourceFields(index, request.SuggesterName);
+        var terms = TokenizeSuggestSearch(request.Search);
 
-        if (!searchableFields.Any() || string.IsNullOrWhiteSpace(request.Search))
+        if (sourceFields.Count == 0 || terms.Count == 0)
         {
             return response;
         }
 
-        // Build prefix query
-        var boolQuery = new BooleanQuery();
-        foreach (var field in searchableFields)
+        // analyzingInfixMatching: every query term must prefix-match a token in one of the source fields
+        var textQuery = new BooleanQuery();
+        foreach (var term in terms)
         {
-            boolQuery.Add(new PrefixQuery(new Term(field, request.Search.ToLowerInvariant())), Occur.SHOULD);
+            var termQuery = new BooleanQuery();
+            foreach (var field in sourceFields)
+            {
+                termQuery.Add(new PrefixQuery(new Term(field, term)), Occur.SHOULD);
+            }
+            textQuery.Add(termQuery, Occur.MUST);
         }
 
-        var topDocs = searcher.Search(boolQuery, request.Top ?? 5);
+        var filterQuery = !string.IsNullOrWhiteSpace(request.Filter)
+            ? BuildFilterQuery(index, request.Filter)
+            : null;
+        var query = BuildEffectiveQuery(textQuery, filterQuery);
+
+        var searcher = _indexManager.GetSearcher(indexName);
+        var top = request.Top ?? 5;
+        var sort = BuildSort(request.OrderBy, index);
+        var topDocs = sort != null
+            ? searcher.Search(query, top, sort)
+            : searcher.Search(query, top);
+
+        // Azure returns only the key field unless select is given
+        var keyField = index.Fields.FirstOrDefault(f => f.Key == true)?.Name;
         var selectedFields = ParseSelect(request.Select);
+        if (selectedFields == null && keyField != null)
+        {
+            selectedFields = new[] { keyField };
+        }
+        else if (selectedFields != null && selectedFields.Contains("*"))
+        {
+            selectedFields = null;
+        }
+
+        var highlight = request.HighlightPreTag != null && request.HighlightPostTag != null;
 
         foreach (var scoreDoc in topDocs.ScoreDocs)
         {
             var doc = searcher.Doc(scoreDoc.Doc);
-            var result = new SuggestResult();
-            
+            var allFields = LuceneDocumentMapper.FromLuceneDocument(doc);
+
+            var text = FindSuggestionText(allFields, sourceFields, terms);
+            if (text != null && highlight)
+            {
+                text = HighlightSuggestionText(text, terms, request.HighlightPreTag!, request.HighlightPostTag!);
+            }
+
+            // @search.text comes first to match Azure property ordering
+            var result = new SuggestResult { Text = text };
+
             var docFields = LuceneDocumentMapper.FromLuceneDocument(doc, selectedFields);
             foreach (var kvp in docFields)
             {
                 result[kvp.Key] = kvp.Value;
             }
 
-            // Find the matching text for @search.text
-            foreach (var field in searchableFields)
-            {
-                var text = doc.Get(field);
-                if (text != null && text.ToLowerInvariant().Contains(request.Search.ToLowerInvariant()))
-                {
-                    result.Text = text;
-                    break;
-                }
-            }
-
             response.Value.Add(result);
         }
 
         return response;
+    }
+
+    /// <summary>
+    /// Returns the fields a suggest/autocomplete request matches against: the named suggester's
+    /// source fields, or every searchable field when no suggester name is given.
+    /// Throws <see cref="ArgumentException"/> for a suggester name the index doesn't define, as Azure does.
+    /// </summary>
+    private static List<string> ResolveSuggesterSourceFields(SearchIndex index, string? suggesterName)
+    {
+        if (string.IsNullOrWhiteSpace(suggesterName))
+        {
+            return index.Fields
+                .Where(f => f.Searchable == true)
+                .Select(f => f.Name)
+                .ToList();
+        }
+
+        var suggester = index.Suggesters?.FirstOrDefault(s => s.Name == suggesterName)
+            ?? throw new ArgumentException(
+                $"The specified suggester name '{suggesterName}' does not exist in this index definition.");
+
+        return suggester.SourceFields
+            .Select(sourceField => ResolveFieldByPath(index.Fields, sourceField, out var canonicalName) != null
+                ? canonicalName
+                : sourceField)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Splits suggest search text into lowercase terms on anything that isn't a letter or digit.
+    /// </summary>
+    internal static List<string> TokenizeSuggestSearch(string? search)
+    {
+        if (string.IsNullOrWhiteSpace(search))
+        {
+            return new List<string>();
+        }
+
+        return System.Text.RegularExpressions.Regex.Split(search, @"[^\p{L}\p{N}]+")
+            .Where(t => t.Length > 0)
+            .Select(t => t.ToLowerInvariant())
+            .Distinct()
+            .ToList();
+    }
+
+    /// <summary>
+    /// Picks the source field value to return as @search.text: the first value in which every term
+    /// prefix-matches a word, else the first value matching any term, else the first non-empty value.
+    /// </summary>
+    private static string? FindSuggestionText(
+        Dictionary<string, object?> document,
+        List<string> sourceFields,
+        List<string> terms)
+    {
+        var candidates = sourceFields
+            .SelectMany(field => GetStringValuesAtPath(document, field))
+            .Where(v => !string.IsNullOrEmpty(v))
+            .ToList();
+
+        return candidates.FirstOrDefault(v => terms.All(t => BuildWordPrefixRegex(new[] { t }).IsMatch(v)))
+            ?? candidates.FirstOrDefault(v => BuildWordPrefixRegex(terms).IsMatch(v))
+            ?? candidates.FirstOrDefault();
+    }
+
+    /// <summary>
+    /// Wraps the part of each word that a query term prefix-matches in the highlight tags,
+    /// e.g. "smi" against "Smithson" gives "&lt;b&gt;Smi&lt;/b&gt;thson".
+    /// </summary>
+    internal static string HighlightSuggestionText(string text, IEnumerable<string> terms, string preTag, string postTag)
+    {
+        return BuildWordPrefixRegex(terms).Replace(text, m => preTag + m.Value + postTag);
+    }
+
+    private static System.Text.RegularExpressions.Regex BuildWordPrefixRegex(IEnumerable<string> terms)
+    {
+        // Longest term first so "smith" wins over "smi" when both are in the query
+        var alternation = string.Join("|", terms
+            .OrderByDescending(t => t.Length)
+            .Select(System.Text.RegularExpressions.Regex.Escape));
+        return new System.Text.RegularExpressions.Regex(
+            $@"(?<![\p{{L}}\p{{N}}])(?:{alternation})",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+    }
+
+    /// <summary>
+    /// Reads the string value(s) at a "/"-separated field path from a document deserialized from
+    /// its raw JSON, flattening string collections and collections of complex types along the way.
+    /// </summary>
+    private static IEnumerable<string> GetStringValuesAtPath(Dictionary<string, object?> document, string path)
+    {
+        var segments = path.Split('/');
+        var key = document.Keys.FirstOrDefault(k => k.Equals(segments[0], StringComparison.OrdinalIgnoreCase));
+        if (key == null || document[key] is not JsonElement root)
+        {
+            return Enumerable.Empty<string>();
+        }
+
+        var current = new List<JsonElement> { root };
+        foreach (var segment in segments.Skip(1))
+        {
+            current = current
+                .SelectMany(e => e.ValueKind == JsonValueKind.Array ? e.EnumerateArray() : new[] { e }.AsEnumerable())
+                .Where(e => e.ValueKind == JsonValueKind.Object)
+                .SelectMany(e => e.EnumerateObject().Where(p => p.Name.Equals(segment, StringComparison.OrdinalIgnoreCase)))
+                .Select(p => p.Value)
+                .ToList();
+        }
+
+        return current
+            .SelectMany(e => e.ValueKind == JsonValueKind.Array ? e.EnumerateArray() : new[] { e }.AsEnumerable())
+            .Where(e => e.ValueKind == JsonValueKind.String)
+            .Select(e => e.GetString()!);
     }
 
     public async Task<AutocompleteResponse> AutocompleteAsync(string indexName, AutocompleteRequest request)

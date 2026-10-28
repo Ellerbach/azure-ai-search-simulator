@@ -32,6 +32,9 @@ api-key: {{adminKey}}
     { "name": "parkingIncluded", "type": "Edm.Boolean", "filterable": true },
     { "name": "lastRenovationDate", "type": "Edm.DateTimeOffset", "filterable": true, "sortable": true },
     { "name": "tags", "type": "Collection(Edm.String)", "searchable": true, "filterable": true }
+  ],
+  "suggesters": [
+    { "name": "sg", "searchMode": "analyzingInfixMatching", "sourceFields": ["hotelName", "category"] }
   ]
 }
 
@@ -79,6 +82,9 @@ api-key: {{adminKey}}
     { "name": "lastRenovationDate", "type": "Edm.DateTimeOffset", "filterable": true, "sortable": true },
     { "name": "tags", "type": "Collection(Edm.String)", "searchable": true, "filterable": true },
     { "name": "address", "type": "Edm.String", "searchable": true }
+  ],
+  "suggesters": [
+    { "name": "sg", "searchMode": "analyzingInfixMatching", "sourceFields": ["hotelName", "category"] }
   ]
 }
 
@@ -478,6 +484,24 @@ api-key: {{queryKey}}
   "suggesterName": "sg",
   "select": "hotelId,hotelName"
 }
+
+### Suggestions with a filter and highlight tags
+POST {{baseUrl}}/indexes/hotels/docs/suggest?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "gr",
+  "suggesterName": "sg",
+  "filter": "rating ge 4",
+  "highlightPreTag": "<b>",
+  "highlightPostTag": "</b>",
+  "select": "hotelId,hotelName,rating"
+}
+
+### GET suggestions (alternative to POST)
+GET {{baseUrl}}/indexes/hotels/docs/suggest?api-version={{apiVersion}}&search=gr&suggesterName=sg&$filter=rating ge 4&$select=hotelId,hotelName
+api-key: {{queryKey}}
 
 # ============================================
 # VECTOR SEARCH

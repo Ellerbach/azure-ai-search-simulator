@@ -292,7 +292,9 @@ public class DocumentsController : ControllerBase
     /// POST indexes/{indexName}/docs/suggest
     /// </summary>
     [HttpPost("suggest")]
+    [HttpPost("search.post.suggest")] // Azure SDK uses this format
     [ProducesResponseType(typeof(SuggestResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Suggest(
@@ -313,6 +315,10 @@ public class DocumentsController : ControllerBase
         {
             return NotFound(new { error = new { message = $"Index '{indexName}' not found" } });
         }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = new { code = "InvalidRequestParameter", message = ex.Message } });
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error getting suggestions for {IndexName}", indexName);
@@ -321,10 +327,50 @@ public class DocumentsController : ControllerBase
     }
 
     /// <summary>
+    /// Get suggestions using GET (query string parameters).
+    /// GET indexes/{indexName}/docs/suggest
+    /// </summary>
+    [HttpGet("suggest")]
+    [HttpGet("search.suggest")] // Azure SDK uses this format
+    [ProducesResponseType(typeof(SuggestResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public Task<IActionResult> SuggestGet(
+        string indexName,
+        [FromQuery] string? search = null,
+        [FromQuery] string? suggesterName = null,
+        [FromQuery(Name = "$filter")] string? filter = null,
+        [FromQuery(Name = "$select")] string? select = null,
+        [FromQuery(Name = "$orderby")] string? orderby = null,
+        [FromQuery(Name = "$top")] int? top = null,
+        [FromQuery] bool? fuzzy = null,
+        [FromQuery] string? highlightPreTag = null,
+        [FromQuery] string? highlightPostTag = null,
+        [FromQuery(Name = "api-version")] string? apiVersion = null)
+    {
+        var request = new SuggestRequest
+        {
+            Search = search ?? string.Empty,
+            SuggesterName = suggesterName ?? string.Empty,
+            Filter = filter,
+            Select = select,
+            OrderBy = orderby,
+            Top = top,
+            Fuzzy = fuzzy,
+            HighlightPreTag = highlightPreTag,
+            HighlightPostTag = highlightPostTag
+        };
+
+        return Suggest(indexName, request, apiVersion);
+    }
+
+    /// <summary>
     /// Get autocomplete suggestions.
     /// POST indexes/{indexName}/docs/autocomplete
     /// </summary>
     [HttpPost("autocomplete")]
+    [HttpPost("search.post.autocomplete")] // Azure SDK uses this format
     [ProducesResponseType(typeof(AutocompleteResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -351,5 +397,37 @@ public class DocumentsController : ControllerBase
             _logger.LogError(ex, "Error getting autocomplete for {IndexName}", indexName);
             return StatusCode(500, new { error = new { message = ex.Message } });
         }
+    }
+
+    /// <summary>
+    /// Get autocomplete suggestions using GET (query string parameters).
+    /// GET indexes/{indexName}/docs/autocomplete
+    /// </summary>
+    [HttpGet("autocomplete")]
+    [HttpGet("search.autocomplete")] // Azure SDK uses this format
+    [ProducesResponseType(typeof(AutocompleteResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public Task<IActionResult> AutocompleteGet(
+        string indexName,
+        [FromQuery] string? search = null,
+        [FromQuery] string? suggesterName = null,
+        [FromQuery] string? autocompleteMode = null,
+        [FromQuery(Name = "$filter")] string? filter = null,
+        [FromQuery(Name = "$top")] int? top = null,
+        [FromQuery] bool? fuzzy = null,
+        [FromQuery(Name = "api-version")] string? apiVersion = null)
+    {
+        var request = new AutocompleteRequest
+        {
+            Search = search ?? string.Empty,
+            SuggesterName = suggesterName ?? string.Empty,
+            AutocompleteMode = autocompleteMode ?? "oneTerm",
+            Filter = filter,
+            Top = top,
+            Fuzzy = fuzzy
+        };
+
+        return Autocomplete(indexName, request, apiVersion);
     }
 }

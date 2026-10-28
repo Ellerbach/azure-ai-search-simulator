@@ -34,7 +34,7 @@ Use the Azure AI Search simulator to:
 - **Highlighting**: Search result highlighting
 - **Faceted Navigation**: Value facets and interval/range facets
 - **Autocomplete**: Term-based autocomplete
-- **Suggestions**: Prefix-based suggestions
+- **Suggestions**: Prefix-based suggestions with filter, select, orderby and highlight tags
 - **Vector Search**: Cosine similarity with `Collection(Edm.Single)` fields
 - **Hybrid Search**: Combined text and vector search scoring
 - **Authentication**: API keys, simulated JWT tokens, and Entra ID (Azure AD) support

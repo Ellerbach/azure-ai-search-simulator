@@ -47,7 +47,7 @@ The simulator is designed for **development, learning, and testing purposes only
 | Facets | Count, interval, and aggregation (`metric:sum`/`min`/`max`/`avg`) facets |
 | Highlighting | Hit highlighting in search results |
 | Autocomplete | Term completion suggestions |
-| Suggestions | Type-ahead suggestions |
+| Suggestions | Type-ahead suggestions with filter, select, orderby and highlight tags (POST and GET) |
 | Indexers | Automated document ingestion with scheduled runs |
 | Data sources | Local file system, Azure Blob Storage, ADLS Gen2 |
 | Skillsets | Utility skills (see below) |
@@ -346,6 +346,11 @@ Not supported:
 - Maximum query length: 8,000 characters
 - Maximum terms in a query: 100
 - Regular expressions have limited complexity
+
+### Suggest and Autocomplete Limitations
+
+- Suggest matches each search term as a word prefix in the suggester's `sourceFields`; `fuzzy`, `searchFields` and `minimumCoverage` are accepted but ignored
+- Autocomplete ignores `filter`, `fuzzy` and `highlightPreTag`/`highlightPostTag`
 
 ### Facet Limitations
 

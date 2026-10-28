@@ -30,6 +30,9 @@ api-key: {{apiKey}}
       { "name": "city", "type": "Edm.String", "searchable": true, "filterable": true, "facetable": true },
       { "name": "country", "type": "Edm.String", "searchable": true, "filterable": true }
     ]}
+  ],
+  "suggesters": [
+    { "name": "sg", "searchMode": "analyzingInfixMatching", "sourceFields": ["hotelName", "category"] }
   ]
 }
 
