@@ -439,7 +439,11 @@ public static class LuceneDocumentMapper
 
         foreach (var subField in field.Fields)
         {
-            if (!nestedValues.TryGetValue(subField.Name, out var subValue) || subValue == null)
+            // A JSON null sub-value arrives as a JsonElement (not C# null) because
+            // ExtractComplexObjectValue wraps every property value, so skip both forms.
+            // Indexing it would either fail to parse (DateTimeOffset) or index a default (0, false).
+            if (!nestedValues.TryGetValue(subField.Name, out var subValue)
+                || subValue is null or JsonElement { ValueKind: JsonValueKind.Null })
             {
                 continue;
             }
