@@ -350,7 +350,8 @@ Not supported:
 ### Suggest and Autocomplete Limitations
 
 - Suggest matches each search term as a word prefix in the suggester's `sourceFields`; `fuzzy`, `searchFields` and `minimumCoverage` are accepted but ignored
-- Autocomplete ignores `filter`, `fuzzy` and `highlightPreTag`/`highlightPostTag`
+- Suggest returns 400 for an unknown `suggesterName`; when `suggesterName` is omitted (Azure requires it), suggest falls back to all searchable fields
+- Autocomplete ignores `suggesterName`, `filter`, `fuzzy` and `highlightPreTag`/`highlightPostTag`; it matches terms in all searchable fields and doesn't reject an unknown suggester name
 
 ### Facet Limitations
 

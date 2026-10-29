@@ -975,8 +975,10 @@ api-key: <query-key>
 The GET form takes the same options as query parameters (`$filter`, `$select`, `$orderby`, `$top`):
 
 ```http
-GET /indexes/{indexName}/docs/suggest?api-version=2024-07-01&search=sea&suggesterName=sg&$filter=rating ge 4
+GET /indexes/{indexName}/docs/suggest?api-version=2024-07-01&search=sea&suggesterName=sg&$filter=rating%20ge%204
 ```
+
+`/docs/search.suggest` (GET) and `/docs/search.post.suggest` (POST) are aliases used by the Azure SDK.
 
 Each search term prefix-matches words in the suggester's `sourceFields`. Without `select`, only the key field is returned. `fuzzy`, `searchFields` and `minimumCoverage` are accepted but ignored.
 
@@ -1000,6 +1002,15 @@ api-key: <query-key>
   "fuzzy": true
 }
 ```
+
+The GET form takes the same options as query parameters (`search`, `suggesterName`, `autocompleteMode`, `$filter`, `$top`, `fuzzy`):
+
+```http
+GET /indexes/{indexName}/docs/autocomplete?api-version=2024-07-01&search=sea&suggesterName=sg&autocompleteMode=oneTerm&$top=5
+api-key: <query-key>
+```
+
+`/docs/search.autocomplete` (GET) and `/docs/search.post.autocomplete` (POST) are aliases used by the Azure SDK. Autocomplete matches terms in all searchable fields and ignores `suggesterName`, `filter` and `fuzzy`.
 
 ---
 

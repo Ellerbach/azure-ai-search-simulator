@@ -500,7 +500,7 @@ api-key: {{queryKey}}
 }
 
 ### GET suggestions (alternative to POST)
-GET {{baseUrl}}/indexes/hotels/docs/suggest?api-version={{apiVersion}}&search=gr&suggesterName=sg&$filter=rating ge 4&$select=hotelId,hotelName
+GET {{baseUrl}}/indexes/hotels/docs/suggest?api-version={{apiVersion}}&search=gr&suggesterName=sg&$filter=rating%20ge%204&$select=hotelId,hotelName
 api-key: {{queryKey}}
 
 # ============================================
