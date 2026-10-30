@@ -50,6 +50,9 @@ api-key: {{simAdminKey}}
     { "name": "parkingIncluded", "type": "Edm.Boolean", "filterable": true },
     { "name": "lastRenovationDate", "type": "Edm.DateTimeOffset", "filterable": true, "sortable": true },
     { "name": "tags", "type": "Collection(Edm.String)", "searchable": true, "filterable": true }
+  ],
+  "suggesters": [
+    { "name": "sg", "searchMode": "analyzingInfixMatching", "sourceFields": ["hotelName", "category"] }
   ]
 }
 
@@ -69,6 +72,9 @@ api-key: {{azureAdminKey}}
     { "name": "parkingIncluded", "type": "Edm.Boolean", "filterable": true },
     { "name": "lastRenovationDate", "type": "Edm.DateTimeOffset", "filterable": true, "sortable": true },
     { "name": "tags", "type": "Collection(Edm.String)", "searchable": true, "filterable": true }
+  ],
+  "suggesters": [
+    { "name": "sg", "searchMode": "analyzingInfixMatching", "sourceFields": ["hotelName", "category"] }
   ]
 }
 
