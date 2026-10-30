@@ -1530,6 +1530,9 @@ public class SearchService : ISearchService
         // Ensure Lucene uses the correct similarity algorithm from the index definition
         _indexManager.ConfigureSimilarity(indexName, index.Similarity);
 
+        // Ensure Lucene uses per-field analyzers from the index definition
+        _indexManager.ConfigureAnalyzers(indexName, index);
+
         var response = new SuggestResponse
         {
             ODataContext = $"https://localhost/indexes('{indexName}')/$metadata#docs(*)",
@@ -1537,23 +1540,35 @@ public class SearchService : ISearchService
         };
 
         var sourceFields = ResolveSuggesterSourceFields(index, request.SuggesterName);
-        var terms = TokenizeSuggestSearch(request.Search);
+        var analyzer = _indexManager.GetAnalyzer(indexName);
+        var termsByField = sourceFields
+            .Distinct()
+            .ToDictionary(field => field, field => TokenizeSuggestSearch(analyzer, field, request.Search));
+        var terms = termsByField.Values.SelectMany(t => t).Distinct().ToList();
 
-        if (sourceFields.Count == 0 || terms.Count == 0)
+        if (terms.Count == 0)
         {
             return response;
         }
 
-        // analyzingInfixMatching: every query term must prefix-match a token in one of the source fields
+        // analyzingInfixMatching: every query term must prefix-match a token in one of the source fields.
+        // Fields whose analyzers produce the same terms share a clause, so each term can match in any of them.
         var textQuery = new BooleanQuery();
-        foreach (var term in terms)
+        foreach (var group in termsByField
+            .Where(kvp => kvp.Value.Count > 0)
+            .GroupBy(kvp => string.Join("\0", kvp.Value)))
         {
-            var termQuery = new BooleanQuery();
-            foreach (var field in sourceFields)
+            var groupQuery = new BooleanQuery();
+            foreach (var term in group.First().Value)
             {
-                termQuery.Add(new PrefixQuery(new Term(field, term)), Occur.SHOULD);
+                var termQuery = new BooleanQuery();
+                foreach (var field in group.Select(kvp => kvp.Key))
+                {
+                    termQuery.Add(new PrefixQuery(new Term(field, term)), Occur.SHOULD);
+                }
+                groupQuery.Add(termQuery, Occur.MUST);
             }
-            textQuery.Add(termQuery, Occur.MUST);
+            textQuery.Add(groupQuery, Occur.SHOULD);
         }
 
         var filterQuery = !string.IsNullOrWhiteSpace(request.Filter)
@@ -1635,20 +1650,42 @@ public class SearchService : ISearchService
     }
 
     /// <summary>
-    /// Splits suggest search text into lowercase terms on anything that isn't a letter or digit.
+    /// Turns suggest search text into the prefix terms to match in a source field, using that field's
+    /// analyzer so the term boundaries match the indexed tokens (e.g. "o're" stays one term, as
+    /// "O'Reilly" is indexed as "o'reilly"). If the analyzer drops the last word entirely, such as the
+    /// stop word "in" typed on the way to "Inn", that word is kept as a prefix since it may be unfinished.
     /// </summary>
-    internal static List<string> TokenizeSuggestSearch(string? search)
+    internal static List<string> TokenizeSuggestSearch(Lucene.Net.Analysis.Analyzer analyzer, string field, string? search)
     {
         if (string.IsNullOrWhiteSpace(search))
         {
             return new List<string>();
         }
 
-        return System.Text.RegularExpressions.Regex.Split(search, @"[^\p{L}\p{N}]+")
-            .Where(t => t.Length > 0)
-            .Select(t => t.ToLowerInvariant())
-            .Distinct()
-            .ToList();
+        var terms = new List<string>();
+        var lastTokenEnd = 0;
+        using (var stream = analyzer.GetTokenStream(field, new StringReader(search)))
+        {
+            var termAttribute = stream.AddAttribute<Lucene.Net.Analysis.TokenAttributes.ICharTermAttribute>();
+            var offsetAttribute = stream.AddAttribute<Lucene.Net.Analysis.TokenAttributes.IOffsetAttribute>();
+            stream.Reset();
+            while (stream.IncrementToken())
+            {
+                terms.Add(termAttribute.ToString());
+                lastTokenEnd = Math.Max(lastTokenEnd, offsetAttribute.EndOffset);
+            }
+            stream.End();
+        }
+
+        var lastWord = System.Text.RegularExpressions.Regex.Match(search, @"\S+(?=\s*$)");
+        if (lastWord.Success && lastTokenEnd <= lastWord.Index)
+        {
+            terms.AddRange(System.Text.RegularExpressions.Regex.Split(lastWord.Value, @"[^\p{L}\p{N}]+")
+                .Where(t => t.Length > 0)
+                .Select(t => t.ToLowerInvariant()));
+        }
+
+        return terms.Where(t => t.Length > 0).Distinct().ToList();
     }
 
     /// <summary>

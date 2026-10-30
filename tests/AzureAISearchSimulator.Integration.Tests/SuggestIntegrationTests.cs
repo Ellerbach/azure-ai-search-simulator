@@ -327,6 +327,76 @@ public class SuggestIntegrationTests : IDisposable
         Assert.Equal("<em>Smi</em>th <em>Jo</em>nes", result.Text);
     }
 
+    [Fact]
+    public async Task Suggest_WithApostropheInPrefix_MatchesTheIndexedToken()
+    {
+        var indexName = $"suggest-apostrophe-{Guid.NewGuid():N}";
+        RegisterIndex(CreatePurchaserIndex(indexName));
+
+        await UploadDocuments(indexName,
+            new Dictionary<string, object?> { ["Id"] = "1", ["PurchaserLastName"] = "O'Reilly" },
+            new Dictionary<string, object?> { ["Id"] = "2", ["PurchaserLastName"] = "Oregon" });
+
+        var response = await _searchService.SuggestAsync(indexName, new SuggestRequest
+        {
+            Search = "o're",
+            SuggesterName = "sg",
+            HighlightPreTag = "<b>",
+            HighlightPostTag = "</b>"
+        });
+
+        // StandardAnalyzer indexes "O'Reilly" as the single token "o'reilly"
+        var result = Assert.Single(response.Value);
+        Assert.Equal("1", result["Id"]?.ToString());
+        Assert.Equal("<b>O'Re</b>illy", result.Text);
+    }
+
+    [Fact]
+    public async Task Suggest_WithStopWordAsLastWord_StillPrefixMatches()
+    {
+        var indexName = $"suggest-stopword-{Guid.NewGuid():N}";
+        RegisterIndex(CreatePurchaserIndex(indexName));
+
+        await UploadDocuments(indexName,
+            new Dictionary<string, object?> { ["Id"] = "1", ["PurchaserLastName"] = "Inman" },
+            new Dictionary<string, object?> { ["Id"] = "2", ["PurchaserLastName"] = "Jones" });
+
+        // "in" is a stop word the analyzer drops, but while typing it is a prefix of "Inman"
+        var response = await _searchService.SuggestAsync(indexName, new SuggestRequest
+        {
+            Search = "in",
+            SuggesterName = "sg"
+        });
+
+        Assert.Equal(new List<string?> { "1" }, Ids(response));
+    }
+
+    [Fact]
+    public async Task Suggest_WithWhitespaceAnalyzer_KeepsPunctuationInTerms()
+    {
+        var indexName = $"suggest-whitespace-{Guid.NewGuid():N}";
+        var index = CreatePurchaserIndex(indexName);
+        index.Fields.First(f => f.Name == "PurchaserLastName").Analyzer = "whitespace";
+        RegisterIndex(index);
+
+        await UploadDocuments(indexName,
+            new Dictionary<string, object?> { ["Id"] = "1", ["PurchaserLastName"] = "Smith-Jones" },
+            new Dictionary<string, object?> { ["Id"] = "2", ["PurchaserLastName"] = "Smith Brown" });
+
+        // The whitespace analyzer indexes "Smith-Jones" as one case-preserved token
+        var response = await _searchService.SuggestAsync(indexName, new SuggestRequest
+        {
+            Search = "Smith-J",
+            SuggesterName = "sg",
+            HighlightPreTag = "<b>",
+            HighlightPostTag = "</b>"
+        });
+
+        var result = Assert.Single(response.Value);
+        Assert.Equal("1", result["Id"]?.ToString());
+        Assert.Equal("<b>Smith-J</b>ones", result.Text);
+    }
+
     public void Dispose()
     {
         _luceneManager?.Dispose();
