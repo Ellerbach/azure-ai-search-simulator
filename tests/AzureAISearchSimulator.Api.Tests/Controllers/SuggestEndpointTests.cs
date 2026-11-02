@@ -134,6 +134,67 @@ public class SuggestEndpointTests : IClassFixture<SuggestEndpointTests.Simulator
         Assert.Contains("\"value\"", body);
     }
 
+    private async Task<string> CreateHotelsIndexWithDocuments()
+    {
+        var indexName = $"hotels-{Guid.NewGuid():N}";
+
+        var createResponse = await _client.PutAsJsonAsync($"/indexes/{indexName}?api-version={ApiVersion}", new
+        {
+            name = indexName,
+            fields = new object[]
+            {
+                new { name = "hotelId", type = "Edm.String", key = true },
+                new { name = "hotelName", type = "Edm.String", searchable = true },
+                new { name = "rating", type = "Edm.Double", filterable = true }
+            },
+            suggesters = new[]
+            {
+                new { name = "sg", searchMode = "analyzingInfixMatching", sourceFields = new[] { "hotelName" } }
+            }
+        });
+        Assert.True(createResponse.IsSuccessStatusCode, await createResponse.Content.ReadAsStringAsync());
+
+        var uploadResponse = await _client.PostAsJsonAsync($"/indexes/{indexName}/docs/index?api-version={ApiVersion}", new
+        {
+            value = new[]
+            {
+                new Dictionary<string, object> { ["@search.action"] = "upload", ["hotelId"] = "1", ["hotelName"] = "Seaside Hotel", ["rating"] = 4.5 },
+                new Dictionary<string, object> { ["@search.action"] = "upload", ["hotelId"] = "2", ["hotelName"] = "Seaview Resort", ["rating"] = 3.0 }
+            }
+        });
+        Assert.True(uploadResponse.IsSuccessStatusCode, await uploadResponse.Content.ReadAsStringAsync());
+
+        return indexName;
+    }
+
+    [Fact]
+    public async Task GetAutocomplete_WithFilterAndHighlightTags_ReturnsFilteredHighlightedCompletion()
+    {
+        var indexName = await CreateHotelsIndexWithDocuments();
+
+        var response = await _client.GetAsync(
+            $"/indexes/{indexName}/docs/autocomplete?api-version={ApiVersion}&search=sea&suggesterName=sg" +
+            $"&$filter={Uri.EscapeDataString("rating ge 4")}" +
+            $"&highlightPreTag={Uri.EscapeDataString("<b>")}&highlightPostTag={Uri.EscapeDataString("</b>")}");
+
+        var completion = await AssertSingleSuggestion(response);
+        Assert.Equal("seaside", completion.GetProperty("text").GetString());
+        Assert.Equal("<b>seaside</b>", completion.GetProperty("queryPlusText").GetString());
+    }
+
+    [Fact]
+    public async Task PostAutocomplete_WithoutSuggesterName_ReturnsBadRequest()
+    {
+        var indexName = await CreateHotelsIndexWithDocuments();
+
+        var response = await _client.PostAsJsonAsync($"/indexes/{indexName}/docs/autocomplete?api-version={ApiVersion}", new
+        {
+            search = "sea"
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
     [Fact]
     public async Task PostSuggest_WithUnknownSuggester_ReturnsBadRequest()
     {

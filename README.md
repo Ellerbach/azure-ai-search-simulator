@@ -33,7 +33,7 @@ Use the Azure AI Search simulator to:
 - **Field Selection**: $select parameter support
 - **Highlighting**: Search result highlighting
 - **Faceted Navigation**: Value facets and interval/range facets
-- **Autocomplete**: Term-based autocomplete
+- **Autocomplete**: Term completion with filter and highlight tags, ranked like Azure
 - **Suggestions**: Prefix-based suggestions with filter, select, orderby and highlight tags
 - **Vector Search**: Cosine similarity with `Collection(Edm.Single)` fields
 - **Hybrid Search**: Combined text and vector search scoring
