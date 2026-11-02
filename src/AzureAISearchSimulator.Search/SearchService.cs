@@ -553,10 +553,7 @@ public class SearchService : ISearchService
 
     private Query BuildTextQuery(string indexName, SearchIndex schema, SearchRequest request, Dictionary<string, double>? textWeights = null)
     {
-        var searchableFields = schema.Fields
-            .Where(f => f.Searchable == true)
-            .Select(f => f.Name)
-            .ToArray();
+        var searchableFields = ResolveSearchFields(schema, request.SearchFields);
 
         if (!searchableFields.Any())
         {
@@ -615,6 +612,52 @@ public class SearchService : ISearchService
             _logger.LogWarning(ex, "Failed to parse query '{Query}', falling back to match all", request.Search);
             return new MatchAllDocsQuery();
         }
+    }
+
+    /// <summary>
+    /// Returns the fields the text query matches: the request's searchFields, or every top-level
+    /// searchable field when none are given. As in Azure, names are case-sensitive, may be paths
+    /// into complex fields (e.g. "rooms/type"), and must name searchable fields.
+    /// </summary>
+    internal static string[] ResolveSearchFields(SearchIndex schema, string? searchFields)
+    {
+        if (string.IsNullOrWhiteSpace(searchFields))
+        {
+            return schema.Fields
+                .Where(f => f.Searchable == true)
+                .Select(f => f.Name)
+                .ToArray();
+        }
+
+        var resolved = new List<string>();
+        foreach (var path in searchFields.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            SearchField? field = null;
+            List<SearchField>? candidates = schema.Fields;
+            foreach (var segment in path.Split('/'))
+            {
+                field = candidates?.FirstOrDefault(f => f.Name == segment);
+                if (field == null)
+                {
+                    break;
+                }
+                candidates = field.Fields;
+            }
+
+            if (field == null)
+            {
+                throw new ArgumentException($"Unknown field '{path}' in search field list.\r\nParameter name: searchFields");
+            }
+
+            if (field.Searchable != true)
+            {
+                throw new ArgumentException($"The field '{path}' in the search field list is not searchable.\r\nParameter name: searchFields");
+            }
+
+            resolved.Add(path);
+        }
+
+        return resolved.Distinct().ToArray();
     }
 
     /// <summary>

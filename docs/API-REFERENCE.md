@@ -444,7 +444,7 @@ api-key: <query-key>
 | `search` | string | Search text (use `*` for all documents) |
 | `searchMode` | string | `any` (default) or `all` |
 | `queryType` | string | `simple` (default) or `full` |
-| `searchFields` | string | Comma-separated field names |
+| `searchFields` | string | Comma-separated searchable fields the search text matches in (case-sensitive; paths like `rooms/type` allowed). Unknown or non-searchable fields return 400 |
 | `select` | string | Fields to return |
 | `filter` | string | OData filter expression |
 | `orderby` | string | Sort expression |
