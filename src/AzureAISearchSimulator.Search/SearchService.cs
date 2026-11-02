@@ -629,8 +629,20 @@ public class SearchService : ISearchService
                 .ToArray();
         }
 
+        // Like Azure, drop empty entries before trimming, so "," names no fields at all while
+        // " , " names a blank field, which is reported as unknown below
+        var paths = searchFields
+            .Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .Select(p => p.Trim())
+            .ToList();
+        if (paths.Count == 0)
+        {
+            throw new ArgumentException(
+                "If a query contains the search option the target index must contain one or more searchable string fields.\r\nParameter name: search");
+        }
+
         var resolved = new List<string>();
-        foreach (var path in searchFields.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        foreach (var path in paths)
         {
             SearchField? field = null;
             List<SearchField>? candidates = schema.Fields;

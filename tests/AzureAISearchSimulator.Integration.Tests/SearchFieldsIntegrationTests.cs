@@ -177,12 +177,26 @@ public class SearchFieldsIntegrationTests : IDisposable
     [InlineData("rating", "The field 'rating' in the search field list is not searchable.")]
     [InlineData("rooms", "The field 'rooms' in the search field list is not searchable.")]
     [InlineData("rooms/baseRate", "The field 'rooms/baseRate' in the search field list is not searchable.")]
+    [InlineData(" , ", "Unknown field '' in search field list.")]
+    [InlineData(",", "If a query contains the search option the target index must contain one or more searchable string fields.")]
+    [InlineData(",,", "If a query contains the search option the target index must contain one or more searchable string fields.")]
     public async Task Search_WithInvalidSearchField_Throws(string searchFields, string expectedMessage)
     {
         var indexName = await CreateHotelsIndexWithDocuments();
 
         var ex = await Assert.ThrowsAsync<ArgumentException>(() => SearchIds(indexName, "ocean", searchFields));
         Assert.StartsWith(expectedMessage, ex.Message);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(" ")]
+    public async Task Search_WithBlankSearchFields_MatchesAllSearchableFields(string searchFields)
+    {
+        var indexName = await CreateHotelsIndexWithDocuments();
+
+        // Azure treats a blank searchFields like an absent one
+        Assert.Equal(new List<string?> { "1", "2" }, await SearchIds(indexName, "ocean", searchFields));
     }
 
     [Fact]
