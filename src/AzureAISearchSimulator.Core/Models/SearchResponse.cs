@@ -301,6 +301,24 @@ public class AutocompleteRequest
     /// </summary>
     [JsonPropertyName("top")]
     public int? Top { get; set; }
+
+    /// <summary>
+    /// Comma-separated list of suggester source fields to complete from.
+    /// </summary>
+    [JsonPropertyName("searchFields")]
+    public string? SearchFields { get; set; }
+
+    /// <summary>
+    /// HTML tag to insert before the completed term in queryPlusText.
+    /// </summary>
+    [JsonPropertyName("highlightPreTag")]
+    public string? HighlightPreTag { get; set; }
+
+    /// <summary>
+    /// HTML tag to insert after the completed term in queryPlusText.
+    /// </summary>
+    [JsonPropertyName("highlightPostTag")]
+    public string? HighlightPostTag { get; set; }
 }
 
 /// <summary>

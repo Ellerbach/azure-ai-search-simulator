@@ -9,7 +9,7 @@ This document provides a detailed reference for all REST API endpoints supported
 | Index Operations | ✅ Implemented | Full CRUD support, statistics |
 | Document Operations | ✅ Implemented | Upload, merge, mergeOrUpload, delete |
 | Search | ✅ Implemented | Simple & Lucene syntax, vector search, hybrid search |
-| Suggest/Autocomplete | ✅ Implemented | Prefix matching; suggest supports filter, select, orderby and highlight tags |
+| Suggest/Autocomplete | ✅ Implemented | Prefix matching; suggest supports filter, select, orderby and highlight tags; autocomplete supports filter, searchFields and highlight tags |
 | Data Sources | ✅ Implemented | File system connector |
 | Indexers | ✅ Implemented | Full CRUD, run, reset, status, scheduled execution |
 | Document Cracking | ✅ Implemented | PDF, Word, Excel, HTML, JSON, CSV, TXT |
@@ -996,21 +996,35 @@ api-key: <query-key>
 
 ```json
 {
-  "search": "sea",
+  "search": "ocean sea",
   "suggesterName": "sg",
-  "autocompleteMode": "twoTerms",
-  "fuzzy": true
+  "filter": "rating ge 4",
+  "highlightPreTag": "<b>",
+  "highlightPostTag": "</b>",
+  "top": 5
 }
 ```
 
-The GET form takes the same options as query parameters (`search`, `suggesterName`, `autocompleteMode`, `$filter`, `$top`, `fuzzy`):
+**Response:**
+
+```json
+{
+  "value": [
+    { "text": "seaside", "queryPlusText": "ocean <b>seaside</b>" }
+  ]
+}
+```
+
+The GET form takes the same options as query parameters (`search`, `suggesterName`, `autocompleteMode`, `$filter`, `$top`, `fuzzy`, `searchFields`, `highlightPreTag`, `highlightPostTag`):
 
 ```http
-GET /indexes/{indexName}/docs/autocomplete?api-version=2024-07-01&search=sea&suggesterName=sg&autocompleteMode=oneTerm&$top=5
+GET /indexes/{indexName}/docs/autocomplete?api-version=2024-07-01&search=sea&suggesterName=sg&$top=5
 api-key: <query-key>
 ```
 
-`/docs/search.autocomplete` (GET) and `/docs/search.post.autocomplete` (POST) are aliases used by the Azure SDK. Autocomplete matches terms in all searchable fields and ignores `suggesterName`, `filter` and `fuzzy`.
+`/docs/search.autocomplete` (GET) and `/docs/search.post.autocomplete` (POST) are aliases used by the Azure SDK.
+
+Only the last word of `search` is completed, from terms in the suggester's `sourceFields` (narrowed by `searchFields`). Earlier words don't narrow the completions; they are kept in front of the completion in `queryPlusText`. Completions are ranked by how many documents (matching `filter`) contain them, then alphabetically. `suggesterName` is required and must name a suggester in the index. `autocompleteMode` is treated as `oneTerm` and `fuzzy` is ignored.
 
 ---
 

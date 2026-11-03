@@ -1710,7 +1710,8 @@ public class SearchService : ISearchService
 
     /// <summary>
     /// Returns the fields a suggest/autocomplete request matches against: the named suggester's
-    /// source fields, or every searchable field when no suggester name is given.
+    /// source fields, or every searchable field when no suggester name is given (autocomplete
+    /// rejects a missing name before getting here).
     /// Throws <see cref="ArgumentException"/> for a suggester name the index doesn't define, as Azure does.
     /// </summary>
     private static List<string> ResolveSuggesterSourceFields(SearchIndex index, string? suggesterName)
@@ -1850,8 +1851,17 @@ public class SearchService : ISearchService
             throw new KeyNotFoundException($"Index '{indexName}' not found");
         }
 
+        if (string.IsNullOrWhiteSpace(request.SuggesterName))
+        {
+            throw new ArgumentException(
+                "The request is invalid. Details: One or more parameters of the operation 'autocomplete' are missing from the request payload. The missing parameters are: suggesterName.");
+        }
+
         // Ensure Lucene uses the correct similarity algorithm from the index definition
         _indexManager.ConfigureSimilarity(indexName, index.Similarity);
+
+        // Ensure Lucene uses per-field analyzers from the index definition
+        _indexManager.ConfigureAnalyzers(indexName, index);
 
         var response = new AutocompleteResponse
         {
@@ -1859,52 +1869,101 @@ public class SearchService : ISearchService
             Value = new List<AutocompleteItem>()
         };
 
-        if (string.IsNullOrWhiteSpace(request.Search))
+        var sourceFields = ResolveSuggesterSourceFields(index, request.SuggesterName);
+        if (!string.IsNullOrWhiteSpace(request.SearchFields))
+        {
+            var requestedFields = request.SearchFields
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            sourceFields = sourceFields.Where(requestedFields.Contains).ToList();
+        }
+
+        // Only the last word is completed; the text before it is carried into queryPlusText as typed
+        var search = request.Search?.TrimEnd() ?? string.Empty;
+        if (search.Length == 0 || sourceFields.Count == 0)
         {
             return response;
         }
 
-        // Simple term-based autocomplete
-        var reader = _indexManager.GetSearcher(indexName).IndexReader;
-        var searchableFields = index.Fields
-            .Where(f => f.Searchable == true)
-            .Select(f => f.Name)
-            .ToArray();
+        var lastWordStart = search.LastIndexOfAny(new[] { ' ', '\t', '\r', '\n' }) + 1;
+        var context = search[..lastWordStart];
+        var lastWord = search[lastWordStart..];
 
-        var suggestions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var searchLower = request.Search.ToLowerInvariant();
+        var analyzer = _indexManager.GetAnalyzer(indexName);
+        var searcher = _indexManager.GetSearcher(indexName);
+        var reader = searcher.IndexReader;
 
-        foreach (var field in searchableFields)
+        // Completions are counted over the documents matching the filter, or every document without one
+        HashSet<int>? filteredDocs = null;
+        var filterQuery = !string.IsNullOrWhiteSpace(request.Filter)
+            ? BuildFilterQuery(index, request.Filter)
+            : null;
+        if (filterQuery != null)
         {
-            var terms = MultiFields.GetTerms(reader, field);
-            if (terms == null) continue;
+            filteredDocs = searcher.Search(filterQuery, Math.Max(1, reader.MaxDoc)).ScoreDocs
+                .Select(sd => sd.Doc)
+                .ToHashSet();
+        }
+
+        var liveDocs = MultiFields.GetLiveDocs(reader);
+        var docsByTerm = new Dictionary<string, HashSet<int>>(StringComparer.Ordinal);
+        foreach (var field in sourceFields.Distinct())
+        {
+            var prefix = TokenizeSuggestSearch(analyzer, field, lastWord).LastOrDefault();
+            var terms = prefix != null ? MultiFields.GetTerms(reader, field) : null;
+            if (terms == null)
+            {
+                continue;
+            }
 
             var termsEnum = terms.GetEnumerator();
-            while (termsEnum.MoveNext())
+            if (termsEnum.SeekCeil(new Lucene.Net.Util.BytesRef(prefix)) == TermsEnum.SeekStatus.END)
+            {
+                continue;
+            }
+
+            do
             {
                 var termText = termsEnum.Term.Utf8ToString();
-                if (termText.ToLowerInvariant().StartsWith(searchLower))
+                if (!termText.StartsWith(prefix!, StringComparison.Ordinal))
                 {
-                    suggestions.Add(termText);
-                    if (suggestions.Count >= (request.Top ?? 5))
+                    break;
+                }
+
+                if (!docsByTerm.TryGetValue(termText, out var docs))
+                {
+                    docs = new HashSet<int>();
+                    docsByTerm[termText] = docs;
+                }
+
+                var docsEnum = termsEnum.Docs(liveDocs, null, DocsFlags.NONE);
+                int doc;
+                while ((doc = docsEnum.NextDoc()) != DocIdSetIterator.NO_MORE_DOCS)
+                {
+                    if (filteredDocs == null || filteredDocs.Contains(doc))
                     {
-                        break;
+                        docs.Add(doc);
                     }
                 }
             }
-
-            if (suggestions.Count >= (request.Top ?? 5))
-            {
-                break;
-            }
+            while (termsEnum.MoveNext());
         }
 
-        foreach (var suggestion in suggestions.Take(request.Top ?? 5))
+        // Azure ranks completions by how many documents contain them, then alphabetically
+        var highlight = request.HighlightPreTag != null && request.HighlightPostTag != null;
+        foreach (var completion in docsByTerm
+            .Where(kvp => kvp.Value.Count > 0)
+            .OrderByDescending(kvp => kvp.Value.Count)
+            .ThenBy(kvp => kvp.Key, StringComparer.Ordinal)
+            .Take(request.Top ?? 5)
+            .Select(kvp => kvp.Key))
         {
             response.Value.Add(new AutocompleteItem
             {
-                Text = suggestion,
-                QueryPlusText = suggestion
+                Text = completion,
+                QueryPlusText = context + (highlight
+                    ? request.HighlightPreTag + completion + request.HighlightPostTag
+                    : completion)
             });
         }
 
