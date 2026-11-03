@@ -9,6 +9,7 @@ namespace AzureAISearchSimulator.Api.Tests.Controllers;
 /// End-to-end tests for the suggest endpoints, run through the real routing pipeline
 /// so route conflicts (e.g. GET docs/suggest vs. GET docs/{key}) are caught.
 /// </summary>
+[Collection(SimulatorHostCollection.Name)]
 public class SuggestEndpointTests : IClassFixture<SuggestEndpointTests.SimulatorFactory>
 {
     private const string AdminKey = "suggest-tests-admin-key";
