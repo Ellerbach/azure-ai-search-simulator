@@ -199,6 +199,18 @@ public class SearchFieldsIntegrationTests : IDisposable
         Assert.Equal(new List<string?> { "1", "2" }, await SearchIds(indexName, "ocean", searchFields));
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(" ")]
+    public async Task Search_WithoutSearchFields_AlsoMatchesComplexSubFields(string? searchFields)
+    {
+        var indexName = await CreateHotelsIndexWithDocuments();
+
+        // "suite" is only in rooms/type; Azure searches searchable sub-fields by default
+        Assert.Equal(new List<string?> { "1" }, await SearchIds(indexName, "suite", searchFields));
+    }
+
     [Fact]
     public async Task Search_WithWildcardSearch_IgnoresSearchFields()
     {

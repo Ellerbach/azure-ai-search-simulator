@@ -615,18 +615,16 @@ public class SearchService : ISearchService
     }
 
     /// <summary>
-    /// Returns the fields the text query matches: the request's searchFields, or every top-level
-    /// searchable field when none are given. As in Azure, names are case-sensitive, may be paths
-    /// into complex fields (e.g. "rooms/type"), and must name searchable fields.
+    /// Returns the fields the text query matches: the request's searchFields, or every searchable
+    /// field when none are given, including sub-fields of complex fields (e.g. "rooms/type") as
+    /// Azure does. As in Azure, names are case-sensitive, may be paths into complex fields, and
+    /// must name searchable fields.
     /// </summary>
     internal static string[] ResolveSearchFields(SearchIndex schema, string? searchFields)
     {
         if (string.IsNullOrWhiteSpace(searchFields))
         {
-            return schema.Fields
-                .Where(f => f.Searchable == true)
-                .Select(f => f.Name)
-                .ToArray();
+            return GetSearchableFieldPaths(schema.Fields, prefix: "").ToArray();
         }
 
         // Like Azure, drop empty entries before trimming, so "," names no fields at all while
@@ -670,6 +668,30 @@ public class SearchService : ISearchService
         }
 
         return resolved.Distinct().ToArray();
+    }
+
+    /// <summary>
+    /// Lists the "/"-separated paths of every searchable field, descending into complex fields,
+    /// matching the Lucene field names LuceneDocumentMapper indexes sub-fields under.
+    /// </summary>
+    private static IEnumerable<string> GetSearchableFieldPaths(IEnumerable<SearchField> fields, string prefix)
+    {
+        foreach (var field in fields)
+        {
+            var path = prefix + field.Name;
+            if (field.Searchable == true)
+            {
+                yield return path;
+            }
+
+            if (field.Fields is { Count: > 0 })
+            {
+                foreach (var subPath in GetSearchableFieldPaths(field.Fields, path + "/"))
+                {
+                    yield return subPath;
+                }
+            }
+        }
     }
 
     /// <summary>
