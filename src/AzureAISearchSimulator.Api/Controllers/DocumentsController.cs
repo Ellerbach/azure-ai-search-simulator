@@ -124,11 +124,13 @@ public class DocumentsController : ControllerBase
     /// </summary>
     [HttpGet]
     [ProducesResponseType(typeof(SearchResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> SearchGet(
         string indexName,
         [FromQuery] string? search = null,
+        [FromQuery] string? searchFields = null,
         [FromQuery(Name = "$filter")] string? filter = null,
         [FromQuery(Name = "$select")] string? select = null,
         [FromQuery(Name = "$orderby")] string? orderby = null,
@@ -165,6 +167,7 @@ public class DocumentsController : ControllerBase
         var request = new SearchRequest
         {
             Search = search ?? "*",
+            SearchFields = searchFields,
             Filter = filter,
             Select = select,
             OrderBy = orderby,
