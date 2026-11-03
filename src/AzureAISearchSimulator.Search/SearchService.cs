@@ -676,19 +676,27 @@ public class SearchService : ISearchService
     /// </summary>
     private static IEnumerable<string> GetSearchableFieldPaths(IEnumerable<SearchField> fields, string prefix)
     {
+        return GetSearchableFields(fields, prefix).Select(f => f.Path);
+    }
+
+    /// <summary>
+    /// Lists every searchable field with its "/"-separated path, descending into complex fields.
+    /// </summary>
+    private static IEnumerable<(string Path, SearchField Field)> GetSearchableFields(IEnumerable<SearchField> fields, string prefix)
+    {
         foreach (var field in fields)
         {
             var path = prefix + field.Name;
             if (field.Searchable == true)
             {
-                yield return path;
+                yield return (path, field);
             }
 
             if (field.Fields is { Count: > 0 })
             {
-                foreach (var subPath in GetSearchableFieldPaths(field.Fields, path + "/"))
+                foreach (var subField in GetSearchableFields(field.Fields, path + "/"))
                 {
-                    yield return subPath;
+                    yield return subField;
                 }
             }
         }
@@ -705,9 +713,9 @@ public class SearchService : ISearchService
             return null;
         }
 
-        // Find searchable fields that have synonym maps
-        var fieldsWithSynonyms = schema.Fields
-            .Where(f => f.Searchable == true && f.SynonymMaps != null && f.SynonymMaps.Count > 0)
+        // Find searchable fields that have synonym maps, including complex sub-fields (by path)
+        var fieldsWithSynonyms = GetSearchableFields(schema.Fields, prefix: "")
+            .Where(f => f.Field.SynonymMaps != null && f.Field.SynonymMaps.Count > 0)
             .ToList();
 
         if (fieldsWithSynonyms.Count == 0)
@@ -718,11 +726,11 @@ public class SearchService : ISearchService
         // Determine which fields are being searched
         var searchFieldNames = !string.IsNullOrWhiteSpace(request.SearchFields)
             ? request.SearchFields.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(f => f.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase)
-            : schema.Fields.Where(f => f.Searchable == true).Select(f => f.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            : GetSearchableFieldPaths(schema.Fields, prefix: "").ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         // Filter to only fields being searched that have synonyms
         var activeFields = fieldsWithSynonyms
-            .Where(f => searchFieldNames.Contains(f.Name))
+            .Where(f => searchFieldNames.Contains(f.Path))
             .ToList();
 
         if (activeFields.Count == 0)
@@ -747,7 +755,7 @@ public class SearchService : ISearchService
         {
             foreach (var term in searchTerms)
             {
-                var expanded = _synonymMapResolver.ExpandTerms(field.SynonymMaps!, term);
+                var expanded = _synonymMapResolver.ExpandTerms(field.Field.SynonymMaps!, term);
                 if (expanded.Count > 1) // Has actual synonyms (more than just the original term)
                 {
                     hasExpansions = true;
@@ -756,10 +764,10 @@ public class SearchService : ISearchService
                         if (!string.Equals(synonymTerm, term, StringComparison.OrdinalIgnoreCase))
                         {
                             var synonymQuery = new Lucene.Net.Search.TermQuery(
-                                new Lucene.Net.Index.Term(field.Name, synonymTerm.ToLowerInvariant()));
+                                new Lucene.Net.Index.Term(field.Path, synonymTerm.ToLowerInvariant()));
                             expandedQuery.Add(synonymQuery, Occur.SHOULD);
                             _logger.LogDebug("Synonym expansion: '{Original}' -> '{Synonym}' on field '{Field}'",
-                                term, synonymTerm, field.Name);
+                                term, synonymTerm, field.Path);
                         }
                     }
                 }
@@ -2537,15 +2545,13 @@ public class SearchService : ISearchService
     {
         var features = new Dictionary<string, FieldFeatures>();
 
-        // Determine the searchable fields that were actually queried
+        // Determine the searchable fields that were actually queried, including complex sub-fields
+        // (e.g. "rooms/type") when searchFields is omitted, as Azure reports them
         var searchableFields = !string.IsNullOrWhiteSpace(request.SearchFields)
             ? request.SearchFields.Split(',', StringSplitOptions.RemoveEmptyEntries)
                 .Select(f => f.Trim())
                 .ToArray()
-            : schema.Fields
-                .Where(f => f.Searchable == true)
-                .Select(f => f.Name)
-                .ToArray();
+            : ResolveSearchFields(schema, searchFields: null);
 
         if (searchableFields.Length == 0 || string.IsNullOrWhiteSpace(request.Search) || request.Search == "*")
         {

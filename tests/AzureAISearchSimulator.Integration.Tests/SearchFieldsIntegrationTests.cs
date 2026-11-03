@@ -19,6 +19,7 @@ public class SearchFieldsIntegrationTests : IDisposable
     private readonly string _testDir;
     private readonly LuceneIndexManager _luceneManager;
     private readonly Mock<IIndexService> _indexServiceMock;
+    private readonly Mock<ISynonymMapResolver> _synonymMapResolverMock = new();
     private readonly DocumentService _documentService;
     private readonly SearchService _searchService;
 
@@ -48,14 +49,14 @@ public class SearchFieldsIntegrationTests : IDisposable
             _luceneManager,
             Mock.Of<IVectorSearchService>(),
             _indexServiceMock.Object,
-            Mock.Of<ISynonymMapResolver>(),
+            _synonymMapResolverMock.Object,
             scoringProfileService);
     }
 
     /// <summary>
     /// Hotel 1 has "ocean" in its name, hotel 2 only in its description.
     /// </summary>
-    private async Task<string> CreateHotelsIndexWithDocuments()
+    private async Task<string> CreateHotelsIndexWithDocuments(List<string>? roomTypeSynonymMaps = null)
     {
         var indexName = $"searchfields-{Guid.NewGuid():N}";
         var index = new SearchIndex
@@ -73,7 +74,7 @@ public class SearchFieldsIntegrationTests : IDisposable
                     Type = "Collection(Edm.ComplexType)",
                     Fields = new List<SearchField>
                     {
-                        new() { Name = "type", Type = "Edm.String", Searchable = true },
+                        new() { Name = "type", Type = "Edm.String", Searchable = true, SynonymMaps = roomTypeSynonymMaps },
                         new() { Name = "baseRate", Type = "Edm.Double", Filterable = true }
                     }
                 }
@@ -209,6 +210,37 @@ public class SearchFieldsIntegrationTests : IDisposable
 
         // "suite" is only in rooms/type; Azure searches searchable sub-fields by default
         Assert.Equal(new List<string?> { "1" }, await SearchIds(indexName, "suite", searchFields));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("rooms/type")]
+    public async Task Search_ExpandsSynonymsOnComplexSubFields(string? searchFields)
+    {
+        var indexName = await CreateHotelsIndexWithDocuments(roomTypeSynonymMaps: new List<string> { "room-types" });
+        _synonymMapResolverMock
+            .Setup(x => x.ExpandTerms(It.IsAny<IEnumerable<string>>(), "penthouse"))
+            .Returns(new List<string> { "penthouse", "suite" });
+
+        // Only the synonym "suite" is in the index, in rooms/type
+        Assert.Equal(new List<string?> { "1" }, await SearchIds(indexName, "penthouse", searchFields));
+    }
+
+    [Fact]
+    public async Task Search_WithFeaturesMode_ReportsComplexSubFields()
+    {
+        var indexName = await CreateHotelsIndexWithDocuments();
+
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "suite",
+            FeaturesMode = "enabled"
+        });
+
+        // Azure keys @search.features by the sub-field's path
+        var result = Assert.Single(response.Value);
+        Assert.NotNull(result.Features);
+        Assert.Contains("rooms/type", result.Features.Keys);
     }
 
     [Fact]
