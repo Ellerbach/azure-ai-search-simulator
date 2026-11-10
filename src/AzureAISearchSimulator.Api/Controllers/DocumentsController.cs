@@ -375,6 +375,7 @@ public class DocumentsController : ControllerBase
     [HttpPost("autocomplete")]
     [HttpPost("search.post.autocomplete")] // Azure SDK uses this format
     [ProducesResponseType(typeof(AutocompleteResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Autocomplete(
@@ -395,6 +396,10 @@ public class DocumentsController : ControllerBase
         {
             return NotFound(new { error = new { message = $"Index '{indexName}' not found" } });
         }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = new { code = "InvalidRequestParameter", message = ex.Message } });
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error getting autocomplete for {IndexName}", indexName);
@@ -409,6 +414,7 @@ public class DocumentsController : ControllerBase
     [HttpGet("autocomplete")]
     [HttpGet("search.autocomplete")] // Azure SDK uses this format
     [ProducesResponseType(typeof(AutocompleteResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public Task<IActionResult> AutocompleteGet(
@@ -419,6 +425,9 @@ public class DocumentsController : ControllerBase
         [FromQuery(Name = "$filter")] string? filter = null,
         [FromQuery(Name = "$top")] int? top = null,
         [FromQuery] bool? fuzzy = null,
+        [FromQuery] string? searchFields = null,
+        [FromQuery] string? highlightPreTag = null,
+        [FromQuery] string? highlightPostTag = null,
         [FromQuery(Name = "api-version")] string? apiVersion = null)
     {
         var request = new AutocompleteRequest
@@ -428,7 +437,10 @@ public class DocumentsController : ControllerBase
             AutocompleteMode = autocompleteMode ?? "oneTerm",
             Filter = filter,
             Top = top,
-            Fuzzy = fuzzy
+            Fuzzy = fuzzy,
+            SearchFields = searchFields,
+            HighlightPreTag = highlightPreTag,
+            HighlightPostTag = highlightPostTag
         };
 
         return Autocomplete(indexName, request, apiVersion);

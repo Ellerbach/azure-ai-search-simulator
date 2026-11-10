@@ -46,7 +46,7 @@ The simulator is designed for **development, learning, and testing purposes only
 | Paging | Top and skip parameters |
 | Facets | Count, interval, and aggregation (`metric:sum`/`min`/`max`/`avg`) facets |
 | Highlighting | Hit highlighting in search results |
-| Autocomplete | Term completion suggestions |
+| Autocomplete | Term completion with filter, searchFields and highlight tags, ranked by document count (POST and GET) |
 | Suggestions | Type-ahead suggestions with filter, select, orderby and highlight tags (POST and GET) |
 | Indexers | Automated document ingestion with scheduled runs |
 | Data sources | Local file system, Azure Blob Storage, ADLS Gen2 |
@@ -351,7 +351,7 @@ Not supported:
 
 - Suggest matches each search term as a word prefix in the suggester's `sourceFields`; `fuzzy`, `searchFields` and `minimumCoverage` are accepted but ignored
 - Suggest returns 400 for an unknown `suggesterName`; when `suggesterName` is omitted (Azure requires it), suggest falls back to all searchable fields
-- Autocomplete ignores `suggesterName`, `filter`, `fuzzy` and `highlightPreTag`/`highlightPostTag`; it matches terms in all searchable fields and doesn't reject an unknown suggester name
+- Autocomplete treats every `autocompleteMode` as `oneTerm` (`twoTerms` and `oneTermWithContext` don't return multi-word completions) and ignores `fuzzy` and `minimumCoverage`
 
 ### Facet Limitations
 
