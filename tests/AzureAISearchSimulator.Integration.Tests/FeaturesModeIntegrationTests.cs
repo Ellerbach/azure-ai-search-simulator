@@ -17,6 +17,7 @@ namespace AzureAISearchSimulator.Integration.Tests;
 public class FeaturesModeIntegrationTests : IDisposable
 {
     private readonly string _testDir;
+    private readonly List<LuceneIndexManager> _luceneManagers = new();
 
     public FeaturesModeIntegrationTests()
     {
@@ -26,6 +27,11 @@ public class FeaturesModeIntegrationTests : IDisposable
 
     public void Dispose()
     {
+        foreach (var luceneManager in _luceneManagers)
+        {
+            luceneManager.Dispose();
+        }
+
         if (Directory.Exists(_testDir))
         {
             try { Directory.Delete(_testDir, true); } catch { }
@@ -41,6 +47,7 @@ public class FeaturesModeIntegrationTests : IDisposable
         var luceneManager = new LuceneIndexManager(
             Mock.Of<ILogger<LuceneIndexManager>>(),
             luceneSettings);
+        _luceneManagers.Add(luceneManager);
 
         var vectorSearchService = Mock.Of<IVectorSearchService>();
         var indexServiceMock = new Mock<IIndexService>();
