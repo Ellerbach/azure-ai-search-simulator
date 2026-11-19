@@ -83,6 +83,8 @@ public partial class IndexService : IIndexService
         {
             // Enforce similarity immutability on update
             ValidateSimilarityUpdate(existing, index, allowIndexDowntime);
+            ApplyIndexDefaults(existing);
+            IndexUpdateRules.Validate(existing, index, allowIndexDowntime);
 
             _logger.LogInformation("Updating existing index {IndexName}", indexName);
             return await _repository.UpdateAsync(index, cancellationToken);
