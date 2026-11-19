@@ -157,18 +157,22 @@ public class SearchService : ISearchService
         // the true match count regardless of numHits, and results are re-sliced to the
         // requested top/skip below, so clamping numHits to at least 1 is safe here.
         var topN = Math.Max(1, (request.Skip ?? 0) + (request.Top ?? 50));
+        if (textQuery != null && vectorScores != null)
+        {
+            // As in Azure, a hybrid query fuses a fixed window of text matches, so pages don't rerank each other.
+            topN = SearchCompat.MaxTextRecallSize;
+        }
+
+        var effectiveTextQuery = textQuery != null ? BuildEffectiveQuery(textQuery, filterQuery) : null;
         TopDocs? topDocs = null;
         
         textSearchStopwatch.Start();
-        if (textQuery != null)
+        if (effectiveTextQuery != null)
         {
-            // Apply OData filter if present
-            var finalQuery = BuildEffectiveQuery(textQuery, filterQuery);
-
             var sort = BuildSort(request.OrderBy, index);
             topDocs = sort != null
-                ? searcher.Search(finalQuery, topN, sort)
-                : searcher.Search(finalQuery, topN);
+                ? searcher.Search(effectiveTextQuery, topN, sort)
+                : searcher.Search(effectiveTextQuery, topN);
         }
         else if (filterQuery != null && vectorScores == null)
         {
@@ -297,12 +301,17 @@ public class SearchService : ISearchService
             response.Value.Add(searchResult);
         }
 
-        SearchCompat.AddNextPage(response, request, Math.Max(topDocs?.TotalHits ?? 0, combinedResults.Results.Count()), indexName);
+        SearchCompat.AddNextPage(response, request, vectorScores != null ? combinedResults.Results.Count() : Math.Max(topDocs?.TotalHits ?? 0, combinedResults.Results.Count()), indexName);
+
+        // Vector neighbours count towards facets and @odata.count alongside all text matches, as in Azure.
+        var vectorDocs = vectorScores == null
+            ? null
+            : combinedResults.Results.Where(r => r.DocId >= 0 && vectorScores.ContainsKey(r.Key)).Select(r => r.DocId).ToList();
 
         // Calculate facets if requested
         if (request.Facets != null && request.Facets.Any())
         {
-            response.SearchFacets = CalculateFacets(searcher, index, request.Facets, textQuery, filterQuery);
+            response.SearchFacets = CalculateFacets(searcher, index, request.Facets, textQuery, filterQuery, vectorDocs);
         }
 
         // Include count if requested
@@ -310,8 +319,7 @@ public class SearchService : ISearchService
         {
             if (topDocs != null && vectorScores != null)
             {
-                // As in Azure, a hybrid query counts the fused results (text matches plus vector neighbours).
-                response.ODataCount = combinedResults.Results.Count() + Math.Max(0, topDocs.TotalHits - topDocs.ScoreDocs.Length);
+                response.ODataCount = topDocs.TotalHits + SearchCompat.CountNotMatching(searcher, keyField, effectiveTextQuery!, vectorScores.Keys);
             }
             else if (topDocs != null)
             {
@@ -2010,18 +2018,23 @@ public class SearchService : ISearchService
         SearchIndex schema,
         List<string> facetSpecs,
         Query? textQuery,
-        Query? filterQuery)
+        Query? filterQuery,
+        IReadOnlyCollection<int>? vectorDocs = null)
     {
         var facets = new Dictionary<string, List<FacetResult>>();
         var reader = searcher.IndexReader;
 
-        // Build the effective query combining text and filter
-        Query effectiveQuery = BuildEffectiveQuery(textQuery, filterQuery);
-
-        // Collect all matching document IDs
+        // Text matches (or all filter matches) plus any vector neighbours; a vector-only query facets only its neighbours.
         var matchingDocs = new HashSet<int>();
-        var collector = new MatchingDocsCollector(matchingDocs);
-        searcher.Search(effectiveQuery, collector);
+        if (vectorDocs == null || textQuery != null)
+        {
+            searcher.Search(BuildEffectiveQuery(textQuery, filterQuery), new MatchingDocsCollector(matchingDocs));
+        }
+
+        if (vectorDocs != null)
+        {
+            matchingDocs.UnionWith(vectorDocs);
+        }
 
         foreach (var facetSpec in facetSpecs)
         {

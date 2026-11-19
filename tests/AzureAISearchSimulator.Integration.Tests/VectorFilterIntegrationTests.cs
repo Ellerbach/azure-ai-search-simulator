@@ -131,6 +131,80 @@ public class VectorFilterIntegrationTests : IDisposable
         Assert.Equal(8, response.ODataCount);
     }
 
+    [Fact]
+    public async Task SearchAsync_HybridQueryWhoseNeighboursAlsoMatchTheText_CountsThemOnce()
+    {
+        // Arrange: "beta" matches d0..d49, more than the page; the neighbours d0, d1 and d2 are among them.
+        var indexName = await SeedAsync();
+        var request = VectorRequest(k: 3);
+        request.Filter = "ClientIdentifier ne 'nobody_1'";
+        request.Search = "beta";
+        request.Top = 2;
+        request.Count = true;
+
+        // Act
+        var response = await _searchService.SearchAsync(indexName, request);
+
+        // Assert
+        Assert.Equal(50, response.ODataCount);
+    }
+
+    [Fact]
+    public async Task SearchAsync_HybridQueryPagedWithSkip_ReturnsEachResultOnce()
+    {
+        // Arrange
+        var indexName = await SeedAsync();
+        var ids = new List<string>();
+
+        // Act
+        for (var skip = 0; skip < 60; skip += 7)
+        {
+            var request = VectorRequest(k: 5);
+            request.Filter = "ClientIdentifier ne 'nobody_1'";
+            request.Search = "beta";
+            request.Skip = skip;
+            request.Top = 7;
+            ids.AddRange(Ids(await _searchService.SearchAsync(indexName, request)));
+        }
+
+        // Assert: the 50 text matches (which include the 5 neighbours), each once.
+        Assert.Equal(50, ids.Count);
+        Assert.Equal(50, ids.Distinct().Count());
+    }
+
+    [Fact]
+    public async Task SearchAsync_VectorQueryWithFacets_CountsOnlyTheNeighbours()
+    {
+        // Arrange
+        var indexName = await SeedAsync();
+        var request = VectorRequest(k: 3);
+        request.Facets = ["ClientIdentifier"];
+
+        // Act
+        var response = await _searchService.SearchAsync(indexName, request);
+
+        // Assert
+        var facet = Assert.Single(response.SearchFacets!["ClientIdentifier"]);
+        Assert.Equal(Client, facet.Value);
+        Assert.Equal(3, facet.Count);
+    }
+
+    [Fact]
+    public async Task SearchAsync_HybridQueryWithFacets_CountsTextMatchesAndNeighbours()
+    {
+        // Arrange: the text matches d51..d59 (odd), the vector neighbours are d1, d3 and d5.
+        var indexName = await SeedAsync();
+        var request = VectorRequest(k: 3);
+        request.Search = "alpha";
+        request.Facets = ["ClientIdentifier"];
+
+        // Act
+        var response = await _searchService.SearchAsync(indexName, request);
+
+        // Assert
+        Assert.Equal(8, Assert.Single(response.SearchFacets!["ClientIdentifier"]).Count);
+    }
+
     private static SearchRequest VectorRequest(int k) => new()
     {
         Filter = $"ClientIdentifier eq '{Client}'",
@@ -150,7 +224,7 @@ public class VectorFilterIntegrationTests : IDisposable
             Fields =
             [
                 new SearchField { Name = "id", Type = "Edm.String", Key = true, Filterable = true },
-                new SearchField { Name = "ClientIdentifier", Type = "Edm.String", Filterable = true },
+                new SearchField { Name = "ClientIdentifier", Type = "Edm.String", Filterable = true, Facetable = true },
                 new SearchField { Name = "Title", Type = "Edm.String", Searchable = true },
                 new SearchField { Name = "Embedding", Type = "Collection(Edm.Single)", Searchable = true, Dimensions = 2, VectorSearchProfile = "p" },
             ],

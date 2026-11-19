@@ -9,6 +9,13 @@ internal static class SearchCompat
 {
     private const int DefaultPageSize = 50;
 
+    // Azure's default hybridSearch.maxTextRecallSize: how many text matches a hybrid query fuses with its vector neighbours.
+    public const int MaxTextRecallSize = 1000;
+
+    public static int CountNotMatching(IndexSearcher searcher, string keyField, Query query, IEnumerable<string> keys) =>
+        keys.Count(key => searcher.Search(
+            new BooleanQuery { { query, Occur.MUST }, { new TermQuery(new Lucene.Net.Index.Term(keyField, key)), Occur.MUST } }, 1).TotalHits == 0);
+
     // Without top, Azure returns 50 results and the request for the next 50 (followed by the SDKs' paged iterables).
     public static void AddNextPage(SearchResponse response, SearchRequest request, long available, string indexName)
     {
