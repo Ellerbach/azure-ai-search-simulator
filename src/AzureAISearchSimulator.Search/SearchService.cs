@@ -164,12 +164,13 @@ public class SearchService : ISearchService
         }
 
         var effectiveTextQuery = textQuery != null ? BuildEffectiveQuery(textQuery, filterQuery) : null;
+        // Validated for every query, including vector-only ones, whose neighbours keep their similarity order.
+        var sort = BuildSort(request.OrderBy, index);
         TopDocs? topDocs = null;
         
         textSearchStopwatch.Start();
         if (effectiveTextQuery != null)
         {
-            var sort = BuildSort(request.OrderBy, index);
             topDocs = sort != null
                 ? searcher.Search(effectiveTextQuery, topN, sort)
                 : searcher.Search(effectiveTextQuery, topN);
@@ -177,7 +178,6 @@ public class SearchService : ISearchService
         else if (filterQuery != null && vectorScores == null)
         {
             // Filter-only search
-            var sort = BuildSort(request.OrderBy, index);
             topDocs = sort != null
                 ? searcher.Search(filterQuery, topN, sort)
                 : searcher.Search(filterQuery, topN);
@@ -186,7 +186,6 @@ public class SearchService : ISearchService
         {
             // Match all documents (a vector query without text returns only its nearest neighbours, as in Azure)
             var matchAllQuery = new MatchAllDocsQuery();
-            var sort = BuildSort(request.OrderBy, index);
             topDocs = sort != null
                 ? searcher.Search(matchAllQuery, topN, sort)
                 : searcher.Search(matchAllQuery, topN);
@@ -1430,47 +1429,50 @@ public class SearchService : ISearchService
         }
 
         var sortFields = new List<SortField>();
-        var parts = orderBy.Split(',', StringSplitOptions.RemoveEmptyEntries);
+        var parts = orderBy.Split(',');
+        if (parts.Length > 32)
+        {
+            throw new ArgumentException("Invalid expression: $orderby can have at most 32 clauses.\r\nParameter name: $orderby");
+        }
 
         foreach (var part in parts)
         {
-            var trimmed = part.Trim();
-            var tokens = trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            var fieldName = tokens[0];
-            var reverse = tokens.Length > 1 && 
-                tokens[1].Equals("desc", StringComparison.OrdinalIgnoreCase);
-            SearchCompat.ValidateOrderBy(index, fieldName, tokens);
+            var tokens = part.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            var field = SearchCompat.ValidateOrderBy(index, tokens);
+            var reverse = tokens.Length > 1 && tokens[1] == "desc";
 
-            if (fieldName.Equals("search.score()", StringComparison.OrdinalIgnoreCase))
+            if (field is null)
             {
                 sortFields.Add(SortField.FIELD_SCORE);
             }
             else
             {
-                // Determine the correct sort field type based on the index schema
-                var sortFieldType = GetSortFieldType(fieldName, index);
+                var fieldName = tokens[0];
+                var sortFieldType = GetSortFieldType(field);
                 // String fields store DocValues at the plain field name;
                 // numeric/date fields use the "_sort" suffix
                 var sortFieldName = sortFieldType == SortFieldType.STRING
                     ? fieldName
                     : fieldName + "_sort";
-                sortFields.Add(new SortField(sortFieldName, sortFieldType, reverse));
+                // As in Azure, documents without a value sort first ascending and last descending.
+                var sortField = new SortField(sortFieldName, sortFieldType, reverse);
+                sortField.SetMissingValue(sortFieldType switch
+                {
+                    SortFieldType.INT32 => J2N.Numerics.Int32.GetInstance(int.MinValue),
+                    SortFieldType.INT64 => J2N.Numerics.Int64.GetInstance(long.MinValue),
+                    SortFieldType.DOUBLE => J2N.Numerics.Double.GetInstance(double.NegativeInfinity),
+                    SortFieldType.SINGLE => J2N.Numerics.Single.GetInstance(float.NegativeInfinity),
+                    _ => SortField.STRING_FIRST,
+                });
+                sortFields.Add(sortField);
             }
         }
 
         return sortFields.Any() ? new Sort(sortFields.ToArray()) : null;
     }
 
-    private static SortFieldType GetSortFieldType(string fieldName, SearchIndex index)
+    private static SortFieldType GetSortFieldType(SearchField field)
     {
-        var field = index.Fields?.FirstOrDefault(f => 
-            f.Name.Equals(fieldName, StringComparison.OrdinalIgnoreCase));
-        
-        if (field == null)
-        {
-            return SortFieldType.STRING;
-        }
-
         // Map Azure Search field types to Lucene sort field types
         return field.Type?.ToLowerInvariant() switch
         {

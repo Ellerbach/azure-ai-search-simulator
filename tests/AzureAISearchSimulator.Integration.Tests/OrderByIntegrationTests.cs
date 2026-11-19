@@ -175,8 +175,12 @@ public class OrderByIntegrationTests : IDisposable
     [InlineData("tags asc")]
     [InlineData("address asc")]
     [InlineData("address/city asc")]
+    [InlineData("rooms/rate asc")]
     [InlineData("rating ascending")]
     [InlineData("rating asc desc")]
+    [InlineData("rating asc, ")]
+    [InlineData("rating,,id")]
+    [InlineData("Rating asc")]
     public async Task OrderBy_NotASortableFieldOrDirection_Throws(string orderBy)
     {
         // Arrange
@@ -190,23 +194,40 @@ public class OrderByIntegrationTests : IDisposable
         }));
     }
 
-    [Theory]
-    [InlineData("rating desc", "2,1")]
-    [InlineData("rating", "1,2")]
-    [InlineData("search.score() desc, rating desc", "2,1")]
-    public async Task OrderBy_SortableFieldOrScore_ReturnsSortedResults(string orderBy, string expectedIds)
+    [Fact]
+    public async Task OrderBy_MoreThan32Clauses_Throws()
     {
         // Arrange
+        var indexName = await SeedSortValidationIndexAsync();
+
+        // Act & Assert
+        await Assert.ThrowsAsync<ArgumentException>(() => _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            OrderBy = string.Join(",", Enumerable.Repeat("rating", 33))
+        }));
+    }
+
+    [Theory]
+    [InlineData("*", "rating desc", "2,3,1,4")]
+    [InlineData("*", "rating", "4,1,3,2")]
+    [InlineData("*", "address/rank desc", "3,1,2,4")]
+    [InlineData("*", "address/code", "4,2,1,3")]
+    [InlineData("spa", "rating desc", "2,3,1")]
+    [InlineData("spa", "search.score() desc, rating desc", "1,2,3")]
+    public async Task OrderBy_SortableFieldOrScore_ReturnsSortedResults(string search, string orderBy, string expectedIds)
+    {
+        // Arrange: in "spa", document 1 scores highest and documents 2 and 3 tie; document 4 has no values.
         var indexName = await SeedSortValidationIndexAsync();
 
         // Act
         var response = await _searchService.SearchAsync(indexName, new SearchRequest
         {
-            Search = "*",
+            Search = search,
             OrderBy = orderBy
         });
 
-        // Assert
+        // Assert: as in Azure, documents without a value come first ascending and last descending.
         Assert.Equal(expectedIds, string.Join(',', response.Value.Select(r => r["id"]?.ToString())));
     }
 
@@ -226,14 +247,39 @@ public class OrderByIntegrationTests : IDisposable
                 {
                     Name = "address",
                     Type = "Edm.ComplexType",
-                    Fields = new List<SearchField> { new() { Name = "city", Type = "Edm.String", Sortable = false } }
+                    Fields = new List<SearchField>
+                    {
+                        new() { Name = "city", Type = "Edm.String", Sortable = false },
+                        new() { Name = "rank", Type = "Edm.Int32", Sortable = true },
+                        new() { Name = "code", Type = "Edm.String", Sortable = true }
+                    }
+                },
+                new()
+                {
+                    Name = "rooms",
+                    Type = "Collection(Edm.ComplexType)",
+                    Fields = new List<SearchField> { new() { Name = "rate", Type = "Edm.Double", Sortable = true } }
                 }
             }
         });
 
         await UploadDocuments(indexName,
-            new Dictionary<string, object?> { ["id"] = "1", ["hotelName"] = "Hotel A", ["rating"] = 3.5 },
-            new Dictionary<string, object?> { ["id"] = "2", ["hotelName"] = "Hotel B", ["rating"] = 4.5 });
+            new Dictionary<string, object?>
+            {
+                ["id"] = "1", ["hotelName"] = "spa spa spa", ["rating"] = 1.0,
+                ["address"] = new Dictionary<string, object?> { ["rank"] = 2, ["code"] = "B" }
+            },
+            new Dictionary<string, object?>
+            {
+                ["id"] = "2", ["hotelName"] = "spa resort", ["rating"] = 5.0,
+                ["address"] = new Dictionary<string, object?> { ["rank"] = -1, ["code"] = "A" }
+            },
+            new Dictionary<string, object?>
+            {
+                ["id"] = "3", ["hotelName"] = "spa resort", ["rating"] = 4.0,
+                ["address"] = new Dictionary<string, object?> { ["rank"] = 7, ["code"] = "C" }
+            },
+            new Dictionary<string, object?> { ["id"] = "4", ["hotelName"] = "resort" });
 
         return indexName;
     }

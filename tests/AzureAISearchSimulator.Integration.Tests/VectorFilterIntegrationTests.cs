@@ -205,6 +205,18 @@ public class VectorFilterIntegrationTests : IDisposable
         Assert.Equal(8, Assert.Single(response.SearchFacets!["ClientIdentifier"]).Count);
     }
 
+    [Fact]
+    public async Task SearchAsync_VectorQueryWithInvalidOrderBy_Throws()
+    {
+        // Arrange
+        var indexName = await SeedAsync();
+        var request = VectorRequest(k: 3);
+        request.OrderBy = "unknown asc";
+
+        // Act & Assert
+        await Assert.ThrowsAsync<ArgumentException>(() => _searchService.SearchAsync(indexName, request));
+    }
+
     private static SearchRequest VectorRequest(int k) => new()
     {
         Filter = $"ClientIdentifier eq '{Client}'",

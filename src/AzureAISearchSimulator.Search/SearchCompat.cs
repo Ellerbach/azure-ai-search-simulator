@@ -31,22 +31,29 @@ internal static class SearchCompat
         response.ODataNextLink = $"https://localhost/indexes('{indexName}')/docs/search.post.search";
     }
 
-    public static void ValidateOrderBy(SearchIndex index, string fieldName, string[] tokens)
+    // The sortable field a $orderby clause sorts on, or null for search.score().
+    public static SearchField? ValidateOrderBy(SearchIndex index, string[] tokens)
     {
-        if (tokens.Length > 2 || (tokens.Length == 2 && tokens[1] is not ("asc" or "desc")))
+        if (tokens.Length is 0 or > 2 || (tokens.Length == 2 && tokens[1] is not ("asc" or "desc")))
         {
             throw new ArgumentException($"Invalid expression: '{string.Join(' ', tokens)}' isn't a valid $orderby clause.\r\nParameter name: $orderby");
         }
 
+        var fieldName = tokens[0];
         if (fieldName == "search.score()")
         {
-            return;
+            return null;
         }
 
         SearchField? field = null;
         var candidates = index.Fields;
         foreach (var segment in fieldName.Split('/'))
         {
+            if (field?.IsCollection == true)
+            {
+                candidates = null;
+            }
+
             field = candidates?.FirstOrDefault(f => f.Name == segment);
             candidates = field?.Fields;
         }
@@ -55,6 +62,8 @@ internal static class SearchCompat
         {
             throw new ArgumentException($"Invalid expression: '{fieldName}' isn't a sortable field.\r\nParameter name: $orderby");
         }
+
+        return field;
     }
 
     // Value facets from each matching document's source: exact, case-sensitive values (after the field's normalizer), as Azure counts them.
