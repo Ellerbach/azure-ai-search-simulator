@@ -328,10 +328,11 @@ Filters are evaluated exactly against each candidate document. A filter the simu
 
 Supported:
 
-- `eq`, `ne`, `gt`, `lt`, `ge`, `le` on string, numeric, boolean and date fields, including sub-fields of complex fields (e.g. `address/city eq 'Paris'`), and `null` comparisons
+- `eq` and `ne` on string and boolean fields, and `eq`, `ne`, `gt`, `lt`, `ge`, `le` on numeric and date fields, including sub-fields of complex fields (e.g. `address/city eq 'Paris'`), and `null` comparisons
 - `and`, `or`, `not` and parentheses
 - `any()` and `all()` over primitive and complex collections, nested to any depth; conditions inside one lambda hold for the same element
-- `search.in()` and `search.ismatch()`
+- Lambda bodies follow Azure's rules: over strings, `any()` takes `eq`/`search.in` joined with `or` and `all()` takes `ne`/`not search.in` joined with `and`; over Booleans, a single test of the range variable; over numbers and dates, `any()` takes ORs of ANDs and `all()` ANDs of ORs. A lambda can only use its own range variable
+- `search.in()` (any number of values) and `search.ismatch()`
 - Dates compare at millisecond precision, as in Azure
 
 Not supported:
@@ -356,7 +357,7 @@ Not supported:
 
 Supported:
 
-- Value facets with `count:N`, counting exact, case-sensitive values (dates in UTC to the millisecond), as Azure does
+- Value facets with `count:N`, counting exact, case-sensitive values (dates in UTC to the millisecond) after the field's normalizer, as Azure does
 - Interval facets with `interval:N` (numeric fields)
 - Aggregation metrics `sum`, `min`, `max`, `avg` (`Edm.Int32`, `Edm.Int64`, `Edm.Double` fields, including sub-fields of a complex type)
 - `default:` missing-value substitution for the aggregation metrics above (numeric default only)
@@ -368,9 +369,14 @@ Not supported:
 - `sort`, `values`, and `timeoffset` facet parameters
 - Facet hierarchies (`>` and `;` operators) and facet filters (`includeTermFilter` / `excludeTermFilter`)
 - Facets on `Collection(Edm.ComplexType)` sub-fields (e.g. `Rooms/BaseRate` where `Rooms` is a collection)
-- `$orderby` on complex-type sub-fields
 
 A facet on a field that isn't facetable returns 400, as in Azure.
+
+### Vector Query Limitations
+
+- `vectorFilterMode` `preFilter` (the default), `postFilter` and `strictPostFilter` are supported; with a single shard the two post-filter modes behave the same
+- A vector-only query validates `$orderby` but always returns its neighbours by similarity
+- Neighbours are ranked by the vector profile's metric; `cosine` scores are `1 / (1 + distance)` as in Azure, but Azure doesn't document its `dotProduct` and `euclidean` scores, so those scores (not the order) may differ
 
 ## Security Limitations
 

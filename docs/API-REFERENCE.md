@@ -675,6 +675,8 @@ When a search has a `filter`, the simulator pre-filters, as Azure does by defaul
 
 The k nearest neighbours are always taken among the documents that pass the filter, however selective it is. A vector query without search text returns only its k neighbours.
 
+With `vectorFilterMode: postFilter` or `strictPostFilter`, the simulator takes the k nearest neighbours of the whole index and drops those that fail the filter, so fewer than k may be returned.
+
 **Score Calculation:**
 
 Vector search results include both distance and score:
