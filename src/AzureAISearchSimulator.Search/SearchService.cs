@@ -278,7 +278,7 @@ public class SearchService : ISearchService
 
             if (luceneDoc != null)
             {
-                var doc = LuceneDocumentMapper.FromLuceneDocument(luceneDoc, selectedFields);
+                var doc = DocumentCompat.Shape(index, LuceneDocumentMapper.FromLuceneDocument(luceneDoc), selectedFields);
                 foreach (var kvp in doc)
                 {
                     searchResult[kvp.Key] = kvp.Value;

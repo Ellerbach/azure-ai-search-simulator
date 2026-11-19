@@ -375,7 +375,7 @@ public static class LuceneDocumentMapper
             dateValue = DateTimeOffset.Parse(ConvertToString(value));
         }
 
-        var ticks = dateValue.UtcTicks;
+        var ticks = Filtering.ODataFilter.ToAzurePrecision(dateValue).UtcTicks;
 
         if (field.Filterable == true)
         {

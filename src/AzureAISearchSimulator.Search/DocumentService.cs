@@ -357,7 +357,7 @@ public class DocumentService : IDocumentService
         Dictionary<string, object?> document)
     {
         // Get existing document
-        var existing = await GetDocumentAsync(indexName, key);
+        var existing = await LoadDocumentAsync(indexName, key);
         if (existing == null)
         {
             return new IndexingResult
@@ -387,7 +387,7 @@ public class DocumentService : IDocumentService
         Dictionary<string, object?> document)
     {
         // Get existing document
-        var existing = await GetDocumentAsync(indexName, key);
+        var existing = await LoadDocumentAsync(indexName, key);
         if (existing != null)
         {
             // Merge fields
@@ -447,6 +447,15 @@ public class DocumentService : IDocumentService
     }
 
     public async Task<Dictionary<string, object?>?> GetDocumentAsync(
+        string indexName,
+        string key,
+        IEnumerable<string>? selectedFields = null)
+    {
+        var document = await LoadDocumentAsync(indexName, key);
+        return document is null ? null : DocumentCompat.Shape((await _indexService.GetIndexAsync(indexName))!, document, selectedFields);
+    }
+
+    private async Task<Dictionary<string, object?>?> LoadDocumentAsync(
         string indexName,
         string key,
         IEnumerable<string>? selectedFields = null)
