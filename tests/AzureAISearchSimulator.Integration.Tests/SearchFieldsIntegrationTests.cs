@@ -248,6 +248,40 @@ public class SearchFieldsIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task Search_WithMultiWordSynonym_KeepsTheStopwordGap()
+    {
+        // Arrange: en.lucene drops "of" but keeps its position, so "city of lights" isn't "city lights".
+        var indexName = $"searchfields-{Guid.NewGuid():N}";
+        _indexServiceMock.Setup(x => x.GetIndexAsync(indexName, It.IsAny<CancellationToken>())).ReturnsAsync(new SearchIndex
+        {
+            Name = indexName,
+            Fields =
+            [
+                new SearchField { Name = "id", Type = "Edm.String", Key = true },
+                new SearchField { Name = "nickname", Type = "Edm.String", Searchable = true, Analyzer = "en.lucene", SynonymMaps = ["cities"] },
+            ],
+        });
+        _luceneManager.GetWriter(indexName);
+        await _documentService.IndexDocumentsAsync(indexName, new IndexDocumentsRequest
+        {
+            Value =
+            [
+                new IndexAction { ["@search.action"] = "upload", ["id"] = "1", ["nickname"] = "The city of lights" },
+                new IndexAction { ["@search.action"] = "upload", ["id"] = "2", ["nickname"] = "Bright city lights" },
+            ],
+        });
+        _synonymMapResolverMock
+            .Setup(x => x.ExpandTerms(It.IsAny<IEnumerable<string>>(), "lutetia"))
+            .Returns(new List<string> { "lutetia", "city of lights" });
+
+        // Act
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest { Search = "lutetia" });
+
+        // Assert
+        Assert.Equal("1", Assert.Single(response.Value)["id"]?.ToString());
+    }
+
+    [Fact]
     public async Task Search_WithFeaturesMode_ReportsComplexSubFields()
     {
         var indexName = await CreateHotelsIndexWithDocuments();

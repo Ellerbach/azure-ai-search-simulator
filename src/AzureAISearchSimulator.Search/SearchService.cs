@@ -803,17 +803,20 @@ public class SearchService : ISearchService
         return hasExpansions ? expandedQuery : null;
     }
 
-    // A synonym analyzed like the field: one term, or a phrase for a multi-word synonym.
+    // A synonym analyzed like the field: one term, or a phrase for a multi-word synonym (keeping gaps left by stopwords).
     private static Query AnalyzedQuery(string field, string text, Lucene.Net.Analysis.Analyzer analyzer)
     {
-        var terms = new List<string>();
+        var terms = new List<(string Text, int Position)>();
         using (var stream = analyzer.GetTokenStream(field, new StringReader(text)))
         {
             var termAttribute = stream.AddAttribute<Lucene.Net.Analysis.TokenAttributes.ICharTermAttribute>();
+            var incrementAttribute = stream.AddAttribute<Lucene.Net.Analysis.TokenAttributes.IPositionIncrementAttribute>();
+            var position = -1;
             stream.Reset();
             while (stream.IncrementToken())
             {
-                terms.Add(termAttribute.ToString());
+                position += incrementAttribute.PositionIncrement;
+                terms.Add((termAttribute.ToString(), position));
             }
 
             stream.End();
@@ -821,13 +824,13 @@ public class SearchService : ISearchService
 
         if (terms.Count == 1)
         {
-            return new TermQuery(new Lucene.Net.Index.Term(field, terms[0]));
+            return new TermQuery(new Lucene.Net.Index.Term(field, terms[0].Text));
         }
 
         var phrase = new PhraseQuery();
-        foreach (var term in terms)
+        foreach (var (term, position) in terms)
         {
-            phrase.Add(new Lucene.Net.Index.Term(field, term));
+            phrase.Add(new Lucene.Net.Index.Term(field, term), position);
         }
 
         return phrase;
