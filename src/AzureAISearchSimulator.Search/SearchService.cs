@@ -586,16 +586,13 @@ public class SearchService : ISearchService
             ? new MultiFieldQueryParser(LuceneDocumentMapper.AppLuceneVersion, searchableFields, analyzer, fieldBoosts)
             : new MultiFieldQueryParser(LuceneDocumentMapper.AppLuceneVersion, searchableFields, analyzer);
 
-        // Configure query parser based on queryType
+        // As in Azure, searchMode (not queryType) decides whether unqualified terms are OR'ed or AND'ed.
+        parser.DefaultOperator = string.Equals(request.SearchMode, "all", StringComparison.OrdinalIgnoreCase)
+            ? Operator.AND
+            : Operator.OR;
         if (request.QueryType?.ToLowerInvariant() == "full")
         {
-            parser.DefaultOperator = Operator.AND;
             parser.AllowLeadingWildcard = true;
-        }
-        else
-        {
-            // Simple query syntax
-            parser.DefaultOperator = Operator.OR;
         }
 
         try
