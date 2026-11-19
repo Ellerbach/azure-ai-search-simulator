@@ -226,6 +226,27 @@ public class SearchFieldsIntegrationTests : IDisposable
         Assert.Equal(new List<string?> { "1" }, await SearchIds(indexName, "penthouse", searchFields));
     }
 
+    [Theory]
+    [InlineData("penthouse harbor", "1")]
+    [InlineData("penthouse view", "")]
+    public async Task Search_WithSearchModeAllAndSynonyms_StillRequiresEveryTerm(string search, string expected)
+    {
+        // Arrange: hotel 1 has a suite and "harbor" but no "view"; hotel 2 has "harbor" and "view" but no suite.
+        var indexName = await CreateHotelsIndexWithDocuments(roomTypeSynonymMaps: new List<string> { "room-types" });
+        _synonymMapResolverMock
+            .Setup(x => x.ExpandTerms(It.IsAny<IEnumerable<string>>(), It.IsAny<string>()))
+            .Returns((IEnumerable<string> _, string term) => new List<string> { term });
+        _synonymMapResolverMock
+            .Setup(x => x.ExpandTerms(It.IsAny<IEnumerable<string>>(), "penthouse"))
+            .Returns(new List<string> { "penthouse", "suite" });
+
+        // Act
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest { Search = search, SearchMode = "all" });
+
+        // Assert
+        Assert.Equal(expected, string.Join(',', response.Value.Select(r => r["hotelId"]?.ToString()).Order()));
+    }
+
     [Fact]
     public async Task Search_WithFeaturesMode_ReportsComplexSubFields()
     {

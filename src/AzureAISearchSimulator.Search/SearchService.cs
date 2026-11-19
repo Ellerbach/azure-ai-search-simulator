@@ -749,43 +749,81 @@ public class SearchService : ISearchService
             return null;
         }
 
-        // Tokenize the search text into terms
-        var searchTerms = request.Search.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        if (searchTerms.Length == 0)
-        {
-            return null;
-        }
-
-        // Build expanded query: for each field with synonyms, add synonym-expanded terms
-        var expandedQuery = new BooleanQuery();
-        expandedQuery.Add(baseQuery, Occur.SHOULD); // Original query
-
+        // As in Azure, each term is replaced by itself or its synonyms where it appears, so searchMode=all still
+        // requires every term (or one of its synonyms) and a synonym can't stand in for a different term.
+        var synonymMaps = activeFields.ToDictionary(f => f.Path, f => f.Field.SynonymMaps!, StringComparer.Ordinal);
         var hasExpansions = false;
 
-        foreach (var field in activeFields)
+        Query Expand(Query query)
         {
-            foreach (var term in searchTerms)
+            switch (query)
             {
-                var expanded = _synonymMapResolver.ExpandTerms(field.Field.SynonymMaps!, term);
-                if (expanded.Count > 1) // Has actual synonyms (more than just the original term)
-                {
-                    hasExpansions = true;
-                    foreach (var synonymTerm in expanded)
+                case BooleanQuery boolean:
+                    var copy = new BooleanQuery(boolean.CoordDisabled) { Boost = boolean.Boost, MinimumNumberShouldMatch = boolean.MinimumNumberShouldMatch };
+                    foreach (var clause in boolean.Clauses)
                     {
-                        if (!string.Equals(synonymTerm, term, StringComparison.OrdinalIgnoreCase))
-                        {
-                            var synonymQuery = new Lucene.Net.Search.TermQuery(
-                                new Lucene.Net.Index.Term(field.Path, synonymTerm.ToLowerInvariant()));
-                            expandedQuery.Add(synonymQuery, Occur.SHOULD);
-                            _logger.LogDebug("Synonym expansion: '{Original}' -> '{Synonym}' on field '{Field}'",
-                                term, synonymTerm, field.Path);
-                        }
+                        copy.Add(Expand(clause.Query), clause.Occur);
                     }
-                }
+
+                    return copy;
+                case TermQuery termQuery when synonymMaps.TryGetValue(termQuery.Term.Field, out var maps):
+                    var text = termQuery.Term.Text;
+                    var synonyms = _synonymMapResolver.ExpandTerms(maps, text)
+                        .Where(s => !string.Equals(s, text, StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+                    if (synonyms.Count == 0)
+                    {
+                        return query;
+                    }
+
+                    hasExpansions = true;
+                    var alternatives = new BooleanQuery { Boost = termQuery.Boost };
+                    alternatives.Add(new TermQuery(termQuery.Term), Occur.SHOULD);
+                    foreach (var synonym in synonyms)
+                    {
+                        alternatives.Add(AnalyzedQuery(termQuery.Term.Field, synonym, analyzer), Occur.SHOULD);
+                        _logger.LogDebug("Synonym expansion: '{Original}' -> '{Synonym}' on field '{Field}'",
+                            text, synonym, termQuery.Term.Field);
+                    }
+
+                    return alternatives;
+                default:
+                    return query;
             }
         }
 
+        var expandedQuery = Expand(baseQuery);
         return hasExpansions ? expandedQuery : null;
+    }
+
+    // A synonym analyzed like the field: one term, or a phrase for a multi-word synonym.
+    private static Query AnalyzedQuery(string field, string text, Lucene.Net.Analysis.Analyzer analyzer)
+    {
+        var terms = new List<string>();
+        using (var stream = analyzer.GetTokenStream(field, new StringReader(text)))
+        {
+            var termAttribute = stream.AddAttribute<Lucene.Net.Analysis.TokenAttributes.ICharTermAttribute>();
+            stream.Reset();
+            while (stream.IncrementToken())
+            {
+                terms.Add(termAttribute.ToString());
+            }
+
+            stream.End();
+        }
+
+        if (terms.Count == 1)
+        {
+            return new TermQuery(new Lucene.Net.Index.Term(field, terms[0]));
+        }
+
+        var phrase = new PhraseQuery();
+        foreach (var term in terms)
+        {
+            phrase.Add(new Lucene.Net.Index.Term(field, term));
+        }
+
+        return phrase;
     }
 
     private string EscapeForSimpleQuery(string query, string? queryType)
