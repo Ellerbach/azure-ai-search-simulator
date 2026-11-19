@@ -460,17 +460,19 @@ public class CollectionAnyFilterIntegrationTests : IDisposable
     }
 
     [Fact]
-    public async Task Filter_AllEq_OnNumericCollection_IsRejected()
+    public async Task Filter_AllEq_OnNumericCollection_ReturnsDocumentsWhoseEveryValueMatches()
     {
-        var indexName = $"all-eq-rejected-{Guid.NewGuid():N}";
+        var indexName = $"all-eq-{Guid.NewGuid():N}";
         await SeedHotels(indexName);
 
-        // As in Azure, all() over a numeric collection allows ne, lt, le, gt and ge, but not eq.
-        await Assert.ThrowsAsync<ArgumentException>(() => _searchService.SearchAsync(indexName, new SearchRequest
+        // As in Azure, all() over a numeric collection accepts a single eq; no hotel has only room 101.
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
         {
             Search = "*",
             Filter = "roomNumbers/all(c: c eq 101)"
-        }));
+        });
+
+        Assert.Empty(response.Value);
     }
 
     [Fact]
@@ -485,8 +487,7 @@ public class CollectionAnyFilterIntegrationTests : IDisposable
             Filter = "roomNumbers/all(c: c ne 101)"
         });
 
-        Assert.DoesNotContain(response.Value, doc => doc["id"]?.ToString() == "1");
-        Assert.NotEmpty(response.Value);
+        Assert.Equal("2", Assert.Single(response.Value)["id"]?.ToString());
     }
 
     public void Dispose()

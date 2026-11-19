@@ -72,6 +72,7 @@ internal sealed class ODataFilterParser
     private readonly string _filter;
     private readonly List<Token> _tokens;
     private readonly Dictionary<string, FieldRef> _variables = new(StringComparer.Ordinal);
+    private readonly Stack<string> _scopes = new();
     private readonly List<IsMatchNode> _isMatches = [];
     private int _position;
 
@@ -183,7 +184,7 @@ internal sealed class ODataFilterParser
                 return new LiteralOperand(ParseNumber(token));
             case TokenKind.DateTimeOffset:
                 Next();
-                return new LiteralOperand(new Literal(LiteralKind.DateTimeOffset, ODataFilter.ToAzurePrecision(ParseDate(token.Text))));
+                return new LiteralOperand(new Literal(LiteralKind.DateTimeOffset, ODataFilter.ToAzurePrecision(ParseDate(token))));
             case TokenKind.Identifier:
                 switch (token.Text)
                 {
@@ -220,6 +221,12 @@ internal sealed class ODataFilterParser
     private Operand ParsePath()
     {
         var first = Next();
+        if (_scopes.TryPeek(out var scope) && first.Text != scope)
+        {
+            // As in Azure, a lambda body can only use its own range variable, not document fields or outer variables.
+            throw Error($"only fields bound to the range variable '{scope}' can be used inside its lambda, not '{first.Text}'", first);
+        }
+
         FieldRef current;
         if (_variables.TryGetValue(first.Text, out var variable))
         {
@@ -295,6 +302,7 @@ internal sealed class ODataFilterParser
 
         Expect(TokenKind.Colon, "':'");
         _variables[name.Text] = new FieldRef(name.Text, [], name.Text, collection.ElementType, collection.Field, collection.SubFields);
+        _scopes.Push(name.Text);
         FilterNode body;
         try
         {
@@ -302,6 +310,7 @@ internal sealed class ODataFilterParser
         }
         finally
         {
+            _scopes.Pop();
             _variables.Remove(name.Text);
         }
 
@@ -317,39 +326,65 @@ internal sealed class ODataFilterParser
     // Azure's rules for lambdas over primitive collections; anything else is a 400 there.
     private void ValidatePrimitiveLambda(FieldRef collection, bool all, string variable, FilterNode body, Token at)
     {
-        var stringLike = collection.ElementType is SearchFieldDataType.String or SearchFieldDataType.Boolean;
-        string[] allowedOperators = (all, stringLike) switch
-        {
-            (false, true) => ["eq"],
-            (true, true) => ["ne"],
-            (false, false) => ["eq", "lt", "le", "gt", "ge"],
-            (true, false) => ["ne", "lt", "le", "gt", "ge"],
-        };
-
         bool IsRangeVariable(FieldRef field) => field.Variable == variable && field.Segments.Length == 0;
 
-        bool Valid(FilterNode node) => node switch
+        bool IsComparison(FilterNode node, params string[] operators) =>
+            node is ComparisonNode c && IsRangeVariable(c.Field) && operators.Contains(c.Operator);
+
+        // Strings: 'any' tests equality joined by 'or'; 'all' tests inequality joined by 'and'.
+        bool ValidString(FilterNode node) => node switch
         {
-            OrNode either when !all || !stringLike => Valid(either.Left) && Valid(either.Right),
-            AndNode both when all || !stringLike => Valid(both.Left) && Valid(both.Right),
-            ComparisonNode c => IsRangeVariable(c.Field) && allowedOperators.Contains(c.Operator),
+            OrNode either when !all => ValidString(either.Left) && ValidString(either.Right),
+            AndNode both when all => ValidString(both.Left) && ValidString(both.Right),
+            ComparisonNode => IsComparison(node, all ? "ne" : "eq"),
+            NotNode { Operand: var operand } when all => IsComparison(operand, "eq") || operand is SearchInNode s && IsRangeVariable(s.Field),
             SearchInNode s => !all && IsRangeVariable(s.Field),
-            NotNode { Operand: SearchInNode s } => all && IsRangeVariable(s.Field),
             _ => false,
         };
 
-        if (!Valid(body))
+        // Booleans: a single eq/ne test of the range variable, possibly negated.
+        bool ValidBoolean(FilterNode node) => node switch
         {
-            var rule = (all, stringLike) switch
+            BooleanFieldNode b => IsRangeVariable(b.Field),
+            NotNode n => ValidBoolean(n.Operand),
+            _ => IsComparison(node, "eq", "ne"),
+        };
+
+        // Numbers and dates: 'any' takes ORs of ANDs, without 'ne' in an AND; 'all' takes ANDs of ORs, without 'eq' in an OR.
+        bool ValidComparable()
+        {
+            var excluded = all ? "eq" : "ne";
+            return Terms(body, or: !all).All(group =>
             {
-                (false, true) => "'eq' or search.in on the range variable, combined with 'or'",
-                (true, true) => "'ne' or 'not search.in' on the range variable, combined with 'and'",
-                (false, false) => "eq/lt/le/gt/ge on the range variable, combined with 'and'/'or'",
-                (true, false) => "ne/lt/le/gt/ge on the range variable, combined with 'and'/'or'",
-            };
+                var terms = Terms(group, or: all).ToList();
+                return terms.All(t => IsComparison(t, "eq", "ne", "lt", "le", "gt", "ge"))
+                    && (terms.Count == 1 || !terms.Any(t => IsComparison(t, excluded)));
+            });
+        }
+
+        var (valid, rule) = collection.ElementType switch
+        {
+            SearchFieldDataType.String => (ValidString(body), all
+                ? "'ne', 'not (x eq y)' or 'not search.in' on the range variable, combined with 'and'"
+                : "'eq' or search.in on the range variable, combined with 'or'"),
+            SearchFieldDataType.Boolean => (ValidBoolean(body), "a single 'eq' or 'ne' test of the range variable"),
+            _ => (ValidComparable(), all
+                ? "comparisons of the range variable as ANDs of ORs, with no 'eq' in an OR"
+                : "comparisons of the range variable as ORs of ANDs, with no 'ne' in an AND"),
+        };
+
+        if (!valid)
+        {
             throw Error($"{at.Text}() over '{collection.Path}' ({collection.Type}) only allows {rule}", at);
         }
     }
+
+    private static IEnumerable<FilterNode> Terms(FilterNode node, bool or) => node switch
+    {
+        OrNode either when or => Terms(either.Left, or).Concat(Terms(either.Right, or)),
+        AndNode both when !or => Terms(both.Left, or).Concat(Terms(both.Right, or)),
+        _ => [node],
+    };
 
     private SearchInNode ParseSearchIn()
     {
@@ -449,9 +484,9 @@ internal sealed class ODataFilterParser
             throw Error($"'{field.Path}' is {field.Type} but is compared with a {literal.Kind} literal", op);
         }
 
-        if (expected == LiteralKind.Boolean && @operator is not ("eq" or "ne"))
+        if (expected is LiteralKind.Boolean or LiteralKind.String && @operator is not ("eq" or "ne"))
         {
-            throw Error($"'{@operator}' doesn't apply to Edm.Boolean", op);
+            throw Error($"'{@operator}' doesn't apply to {field.Type}; only 'eq' and 'ne' do", op);
         }
 
         return literal.Kind == LiteralKind.String
@@ -477,8 +512,10 @@ internal sealed class ODataFilterParser
             : NormalizerFactory.Normalize(value, field.Field.Normalizer, _schema.Normalizers, _schema.CharFilters);
 
     // .NET parses at most 7 fraction digits; Azure accepts more (e.g. Java's Instant.toString() nanoseconds).
-    private static DateTimeOffset ParseDate(string text) =>
-        DateTimeOffset.Parse(Regex.Replace(text, @"(\.\d{7})\d+", "$1"), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal);
+    private DateTimeOffset ParseDate(Token token) =>
+        DateTimeOffset.TryParse(Regex.Replace(token.Text, @"(\.\d{7})\d+", "$1"), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var date)
+            ? date
+            : throw Error($"'{token.Text}' isn't a valid date", token);
 
     private static string Flip(string op) => op switch
     {

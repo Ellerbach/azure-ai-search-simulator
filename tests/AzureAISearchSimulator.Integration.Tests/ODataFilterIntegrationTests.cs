@@ -73,12 +73,21 @@ public class ODataFilterIntegrationTests : IDisposable
     [InlineData("Rating ge 3 and Rating lt 5", "p2")]
     [InlineData("5 le Rating", "p1")]
     [InlineData("search.in(ClientIdentifier, 'other_1, nobody_2')", "p5")]
-    [InlineData("search.in(ClientIdentifier, 'acme_42!x', '!') and id gt 'p3'", "p4")]
+    [InlineData("search.in(ClientIdentifier, 'acme_42!x', '!') and search.in(id, 'p4|p5', '|')", "p4")]
     [InlineData("not search.ismatch('EmployeeProfile.*', 'TargetObjectType', 'full', 'any') and ClientIdentifier eq 'acme_42'", "p1,p3,p4")]
     [InlineData("search.ismatch('admin', 'Title')", "p1,p5")]
     [InlineData("ClientIdentifier eq 'o''brien'", "")]
     [InlineData("EmployeeStatuses/any(s: s/EffectiveStart eq 2020-01-01T00:00:00.0004999Z)", "p1,p3,p5")]
     [InlineData("EmployeeStatuses/any(s: s/EffectiveStart lt 2019-01-01T00:00:00.001+00:00)", "p2")]
+    [InlineData("HubAudiences/any(a: a ne 45)", "p2")]
+    [InlineData("HubAudiences/all(a: a eq 46)", "p2,p3,p4,p5")]
+    [InlineData("HubAudiences/any(a: (a gt 40 and a lt 46) or a eq 99)", "p1")]
+    [InlineData("HubAudiences/all(a: (a lt 40 or a gt 45) and a ne 99)", "p2,p3,p4,p5")]
+    [InlineData("Roles/all(r: not (r eq '1005'))", "p1,p3,p4,p5")]
+    [InlineData("Flags/any(f: f)", "p1")]
+    [InlineData("Flags/any(f: f ne true)", "p2")]
+    [InlineData("Flags/all(f: not f)", "p2,p3,p4,p5")]
+    [InlineData("Score eq 9007199254740993", "p1")]
     public async Task SearchAsync_WithFilter_ReturnsExactlyTheMatchingDocuments(string filter, string expected)
     {
         // Arrange
@@ -159,6 +168,17 @@ public class ODataFilterIntegrationTests : IDisposable
     [InlineData("search.ismatch('[unclosed', 'Title', 'full')")]
     [InlineData("search.in(Rating, '1,2')")]
     [InlineData("WorkAssignments/any(w: w/PositionManagements/any(w: w/PositionId eq 7))")]
+    [InlineData("ClientIdentifier gt 'a'")]
+    [InlineData("'a' le ClientIdentifier")]
+    [InlineData("EmployeeStatuses/any(s: s/GroupXRefCode eq 'ACTIVE' and ClientIdentifier eq 'acme_42')")]
+    [InlineData("WorkAssignments/any(w: w/PositionManagements/any(p: p/PositionId eq 7 and w/EffectiveEnd eq null))")]
+    [InlineData("HubAudiences/any(a: (a lt 2 or a gt 8) and a lt 10)")]
+    [InlineData("HubAudiences/any(a: a ne 5 and a gt 2)")]
+    [InlineData("HubAudiences/all(a: a eq 5 or a le 2)")]
+    [InlineData("HubAudiences/any(a: not (a eq 5))")]
+    [InlineData("Flags/any(f: f eq true or f eq false)")]
+    [InlineData("Flags/all(f: f and f eq true)")]
+    [InlineData("EmployeeStatuses/any(s: s/EffectiveStart eq 2025-02-30T00:00:00Z)")]
     public async Task SearchAsync_WithFilterItCannotEvaluateExactly_ThrowsArgumentException(string filter)
     {
         // Arrange
@@ -210,6 +230,8 @@ public class ODataFilterIntegrationTests : IDisposable
                 Field("HubAudiences", "Collection(Edm.Int32)"),
                 Field("PageAudiences", "Collection(Edm.Int32)"),
                 Field("IsReleased", "Edm.Boolean"),
+                Field("Flags", "Collection(Edm.Boolean)"),
+                Field("Score", "Edm.Double"),
                 Field("Rating", "Edm.Int32"),
                 Field("EmployeeStatuses", "Collection(Edm.ComplexType)", fields: [Field("GroupXRefCode", "Edm.String"), .. span]),
                 Field("WorkAssignments", "Collection(Edm.ComplexType)", fields:
@@ -228,6 +250,7 @@ public class ODataFilterIntegrationTests : IDisposable
             {
                 ["id"] = "p1", ["ClientIdentifier"] = "acme_42", ["Title"] = "Payroll admin", ["TargetObjectType"] = "Feature",
                 ["Roles"] = new[] { "1004" }, ["HubAudiences"] = new[] { 45 }, ["IsReleased"] = true, ["Rating"] = 5,
+                ["Flags"] = new[] { true }, ["Score"] = 9007199254740992d,
                 ["EmployeeStatuses"] = new[] { Span("2020-01-01T00:00:00Z", null, ("GroupXRefCode", "ACTIVE")) },
                 ["WorkAssignments"] = new[]
                 {
@@ -239,6 +262,7 @@ public class ODataFilterIntegrationTests : IDisposable
                 // ACTIVE has ended and the current status isn't ACTIVE: matches only if elements get mixed up.
                 ["id"] = "p2", ["ClientIdentifier"] = "acme_42", ["Title"] = "Payroll clerk", ["TargetObjectType"] = "EmployeeProfile.Summary",
                 ["Roles"] = new[] { "1005", "1006" }, ["HubAudiences"] = new[] { 46 }, ["PageAudiences"] = new[] { 88 },
+                ["Flags"] = new[] { false },
                 ["IsReleased"] = false, ["Rating"] = 3,
                 ["EmployeeStatuses"] = new[]
                 {

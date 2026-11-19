@@ -225,7 +225,9 @@ internal static class ODataFilter
             case LiteralKind.Boolean when value.ValueKind is JsonValueKind.True or JsonValueKind.False:
                 return value.GetBoolean() == (bool)literal! ? 0 : 1;
             case LiteralKind.Number when value.ValueKind == JsonValueKind.Number:
-                return literal is decimal exact && value.TryGetDecimal(out var number)
+                // Integer fields compare exactly; for Edm.Double, Azure converts the literal to a double first.
+                return comparison.Field.ElementType is SearchFieldDataType.Int32 or SearchFieldDataType.Int64
+                    && literal is decimal exact && value.TryGetDecimal(out var number)
                     ? number.CompareTo(exact)
                     : value.GetDouble().CompareTo(Convert.ToDouble(literal, CultureInfo.InvariantCulture));
             case LiteralKind.DateTimeOffset when value.ValueKind == JsonValueKind.String
