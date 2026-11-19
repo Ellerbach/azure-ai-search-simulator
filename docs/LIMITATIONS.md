@@ -375,6 +375,8 @@ A facet on a field that isn't facetable returns 400, as in Azure.
 ### Vector Query Limitations
 
 - `vectorFilterMode` `preFilter` (the default), `postFilter` and `strictPostFilter` are supported; with a single shard the two post-filter modes behave the same
+- Only `kind: vector` queries are supported (no vectorizers); other kinds return 400
+- Unfiltered queries on HNSW fields with the cosine metric use the approximate HNSW index; filtered queries, `exhaustiveKnn` algorithms, other metrics and `exhaustive: true` are searched exactly
 - A vector-only query validates `$orderby` but always returns its neighbours by similarity
 - Neighbours are ranked by the vector profile's metric; `cosine` scores are `1 / (1 + distance)` as in Azure, but Azure doesn't document its `dotProduct` and `euclidean` scores, so those scores (not the order) may differ
 
