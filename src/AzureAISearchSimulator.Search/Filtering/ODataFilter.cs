@@ -226,10 +226,11 @@ internal static class ODataFilter
                 return value.GetBoolean() == (bool)literal! ? 0 : 1;
             case LiteralKind.Number when value.ValueKind == JsonValueKind.Number:
                 // Integer fields compare exactly; for Edm.Double, Azure converts the literal to a double first.
+                var number = (NumberLiteral)literal!;
                 return comparison.Field.ElementType is SearchFieldDataType.Int32 or SearchFieldDataType.Int64
-                    && literal is decimal exact && value.TryGetDecimal(out var number)
-                    ? number.CompareTo(exact)
-                    : value.GetDouble().CompareTo(Convert.ToDouble(literal, CultureInfo.InvariantCulture));
+                    && number.Exact is { } exact && value.TryGetDecimal(out var stored)
+                    ? stored.CompareTo(exact)
+                    : value.GetDouble().CompareTo(number.Approximate);
             case LiteralKind.DateTimeOffset when value.ValueKind == JsonValueKind.String
                 && DateTimeOffset.TryParse(value.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var date):
                 return ToAzurePrecision(date).UtcTicks.CompareTo(((DateTimeOffset)literal!).UtcTicks);

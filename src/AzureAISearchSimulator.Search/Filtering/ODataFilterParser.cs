@@ -8,6 +8,9 @@ internal enum LiteralKind { Null, Boolean, Number, String, DateTimeOffset }
 
 internal sealed record Literal(LiteralKind Kind, object? Value);
 
+// A number literal: exact for integer fields (null if decimal can't hold it), and parsed directly as a double for Edm.Double.
+internal sealed record NumberLiteral(decimal? Exact, double Approximate);
+
 // A field path from the document root (Variable null) or from a lambda's range variable.
 internal sealed record FieldRef(string? Variable, string[] Segments, string Path, string Type, SearchField? Field, List<SearchField>? SubFields)
 {
@@ -286,6 +289,7 @@ internal sealed class ODataFilterParser
             throw Error($"'{collection.Path}' isn't a collection, so it can't use {kind.Text}()", kind);
         }
 
+        RequireFilterable(collection, kind);
         var all = kind.Text == "all";
         Expect(TokenKind.OpenParen, "'('");
         if (Peek.Kind == TokenKind.CloseParen)
@@ -526,12 +530,19 @@ internal sealed class ODataFilterParser
         _ => op,
     };
 
-    private Literal ParseNumber(Token token) =>
-        decimal.TryParse(token.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out var exact)
-            ? new Literal(LiteralKind.Number, exact)
-            : double.TryParse(token.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out var approximate) && double.IsFinite(approximate)
-                ? new Literal(LiteralKind.Number, approximate)
-                : throw Error($"'{token.Text}' isn't a valid number", token);
+    private Literal ParseNumber(Token token)
+    {
+        if (!double.TryParse(token.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out var approximate) || !double.IsFinite(approximate))
+        {
+            throw Error($"'{token.Text}' isn't a valid number", token);
+        }
+
+        // decimal rounds literals below 1e-28 to zero.
+        decimal? exact = decimal.TryParse(token.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out var value) && (value != 0 || approximate == 0)
+            ? value
+            : null;
+        return new Literal(LiteralKind.Number, new NumberLiteral(exact, approximate));
+    }
 
     private ArgumentException Error(string message, Token at) =>
         new($"Invalid expression: {message} (at position {at.Position} in '{_filter}').\r\nParameter name: $filter");

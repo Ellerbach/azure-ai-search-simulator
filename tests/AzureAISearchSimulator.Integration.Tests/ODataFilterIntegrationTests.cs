@@ -88,6 +88,9 @@ public class ODataFilterIntegrationTests : IDisposable
     [InlineData("Flags/any(f: f ne true)", "p2")]
     [InlineData("Flags/all(f: not f)", "p2,p3,p4,p5")]
     [InlineData("Score eq 9007199254740993", "p1")]
+    [InlineData("Score eq 1e-29", "p2")]
+    [InlineData("Score eq 0", "p3")]
+    [InlineData("Score gt 0 and Score lt 1e-28", "p2")]
     public async Task SearchAsync_WithFilter_ReturnsExactlyTheMatchingDocuments(string filter, string expected)
     {
         // Arrange
@@ -179,6 +182,7 @@ public class ODataFilterIntegrationTests : IDisposable
     [InlineData("Flags/any(f: f eq true or f eq false)")]
     [InlineData("Flags/all(f: f and f eq true)")]
     [InlineData("EmployeeStatuses/any(s: s/EffectiveStart eq 2025-02-30T00:00:00Z)")]
+    [InlineData("Keywords/any()")]
     public async Task SearchAsync_WithFilterItCannotEvaluateExactly_ThrowsArgumentException(string filter)
     {
         // Arrange
@@ -227,6 +231,7 @@ public class ODataFilterIntegrationTests : IDisposable
                 Field("Title", "Edm.String", filterable: false, searchable: true),
                 Field("TargetObjectType", "Edm.String", filterable: true, searchable: true),
                 Field("Roles", "Collection(Edm.String)"),
+                Field("Keywords", "Collection(Edm.String)", filterable: false),
                 Field("HubAudiences", "Collection(Edm.Int32)"),
                 Field("PageAudiences", "Collection(Edm.Int32)"),
                 Field("IsReleased", "Edm.Boolean"),
@@ -262,7 +267,7 @@ public class ODataFilterIntegrationTests : IDisposable
                 // ACTIVE has ended and the current status isn't ACTIVE: matches only if elements get mixed up.
                 ["id"] = "p2", ["ClientIdentifier"] = "acme_42", ["Title"] = "Payroll clerk", ["TargetObjectType"] = "EmployeeProfile.Summary",
                 ["Roles"] = new[] { "1005", "1006" }, ["HubAudiences"] = new[] { 46 }, ["PageAudiences"] = new[] { 88 },
-                ["Flags"] = new[] { false },
+                ["Flags"] = new[] { false }, ["Score"] = 1e-29,
                 ["IsReleased"] = false, ["Rating"] = 3,
                 ["EmployeeStatuses"] = new[]
                 {
@@ -278,7 +283,7 @@ public class ODataFilterIntegrationTests : IDisposable
             new()
             {
                 // Active, but no work assignments or positions at all.
-                ["id"] = "p3", ["ClientIdentifier"] = "acme_42", ["Title"] = "Payroll", ["Roles"] = Array.Empty<string>(),
+                ["id"] = "p3", ["ClientIdentifier"] = "acme_42", ["Title"] = "Payroll", ["Roles"] = Array.Empty<string>(), ["Score"] = 0d,
                 ["EmployeeStatuses"] = new[] { Span("2020-01-01T00:00:00Z", null, ("GroupXRefCode", "ACTIVE")) },
             },
             new()
