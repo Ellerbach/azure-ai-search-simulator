@@ -50,6 +50,12 @@ public class SearchResponse
     /// </summary>
     [JsonPropertyName("@odata.nextLink")]
     public string? ODataNextLink { get; set; }
+
+    /// <summary>
+    /// The request to send for the next page, when the request didn't set top and more results remain.
+    /// </summary>
+    [JsonPropertyName("@search.nextPageParameters")]
+    public SearchRequest? NextPageParameters { get; set; }
 }
 
 /// <summary>

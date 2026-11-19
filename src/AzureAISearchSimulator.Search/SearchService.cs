@@ -297,6 +297,8 @@ public class SearchService : ISearchService
             response.Value.Add(searchResult);
         }
 
+        SearchCompat.AddNextPage(response, request, Math.Max(topDocs?.TotalHits ?? 0, combinedResults.Results.Count()), indexName);
+
         // Calculate facets if requested
         if (request.Facets != null && request.Facets.Any())
         {

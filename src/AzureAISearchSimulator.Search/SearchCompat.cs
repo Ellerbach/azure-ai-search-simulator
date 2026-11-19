@@ -7,6 +7,23 @@ namespace AzureAISearchSimulator.Search;
 // Azure behaviours the simulator adds around upstream's search pipeline.
 internal static class SearchCompat
 {
+    private const int DefaultPageSize = 50;
+
+    // Without top, Azure returns 50 results and the request for the next 50 (followed by the SDKs' paged iterables).
+    public static void AddNextPage(SearchResponse response, SearchRequest request, long available, string indexName)
+    {
+        var skip = request.Skip ?? 0;
+        if (request.Top != null || available <= skip + DefaultPageSize)
+        {
+            return;
+        }
+
+        var next = JsonSerializer.Deserialize<SearchRequest>(JsonSerializer.Serialize(request))!;
+        next.Skip = skip + DefaultPageSize;
+        response.NextPageParameters = next;
+        response.ODataNextLink = $"https://localhost/indexes('{indexName}')/docs/search.post.search";
+    }
+
     // Exact k nearest neighbours among the documents that pass the filter, scored like the simulator's HNSW (1 / (1 + distance)).
     public static Dictionary<string, double> PreFilteredVectorSearch(
         IndexSearcher searcher,
