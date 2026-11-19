@@ -50,6 +50,83 @@ internal static class SearchCompat
         }
     }
 
+    // Value facets from each matching document's source: exact, case-sensitive values, as Azure counts them.
+    public static List<FacetResult> ValueFacet(IndexSearcher searcher, SearchField field, string path, int maxCount, IEnumerable<int> docs)
+    {
+        var counts = new Dictionary<string, (object Value, long Count)>(StringComparer.Ordinal);
+        var sourceOnly = new HashSet<string> { "_raw_json" };
+        foreach (var doc in docs)
+        {
+            var json = searcher.IndexReader.Document(doc, sourceOnly).Get("_raw_json");
+            if (json is null)
+            {
+                continue;
+            }
+
+            using var source = JsonDocument.Parse(json);
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var value in Values(source.RootElement, path.Split('/'), 0))
+            {
+                if (FacetValue(field, value) is not { } facetValue || !seen.Add(facetValue.Key))
+                {
+                    continue;
+                }
+
+                counts[facetValue.Key] = counts.TryGetValue(facetValue.Key, out var existing)
+                    ? (existing.Value, existing.Count + 1)
+                    : (facetValue.Value, 1);
+            }
+        }
+
+        return counts.Values
+            .OrderByDescending(c => c.Count)
+            .ThenBy(c => c.Value is string s ? s : Convert.ToString(c.Value, System.Globalization.CultureInfo.InvariantCulture), StringComparer.Ordinal)
+            .Take(maxCount)
+            .Select(c => new FacetResult { Value = c.Value, Count = c.Count })
+            .ToList();
+    }
+
+    private static IEnumerable<JsonElement> Values(JsonElement element, string[] path, int depth)
+    {
+        if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in element.EnumerateArray().SelectMany(item => Values(item, path, depth)))
+            {
+                yield return item;
+            }
+        }
+        else if (depth == path.Length)
+        {
+            if (element.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined))
+            {
+                yield return element;
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Object && element.TryGetProperty(path[depth], out var child))
+        {
+            foreach (var item in Values(child, path, depth + 1))
+            {
+                yield return item;
+            }
+        }
+    }
+
+    private static (string Key, object Value)? FacetValue(SearchField field, JsonElement value)
+    {
+        var type = field.Type.StartsWith("Collection(", StringComparison.Ordinal) ? field.Type["Collection(".Length..^1] : field.Type;
+        return value.ValueKind switch
+        {
+            JsonValueKind.String when type == SearchFieldDataType.DateTimeOffset
+                && DateTimeOffset.TryParse(value.GetString(), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal, out var date)
+                => ("d" + DocumentCompat.FormatDate(date), DocumentCompat.FormatDate(date)),
+            JsonValueKind.String => ("s" + value.GetString(), value.GetString()!),
+            JsonValueKind.True or JsonValueKind.False => ("b" + value.GetBoolean(), value.GetBoolean()),
+            JsonValueKind.Number when value.TryGetInt64(out var whole) => ("n" + whole, whole),
+            JsonValueKind.Number => ("n" + value.GetDouble().ToString("R", System.Globalization.CultureInfo.InvariantCulture), value.GetDouble()),
+            _ => null,
+        };
+    }
+
     // Exact k nearest neighbours among the documents that pass the filter, scored like the simulator's HNSW (1 / (1 + distance)).
     public static Dictionary<string, double> PreFilteredVectorSearch(
         IndexSearcher searcher,

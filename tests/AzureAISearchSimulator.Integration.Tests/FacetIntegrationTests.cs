@@ -886,7 +886,7 @@ public class FacetIntegrationTests : IDisposable
     }
 
     [Fact]
-    public async Task Facets_OnComplexTypeSubField_NotFacetable_IsSkipped()
+    public async Task Facets_OnComplexTypeSubField_NotFacetable_Throws()
     {
         var indexName = $"facet-complex-notfacetable-{Guid.NewGuid():N}";
         var index = new SearchIndex
@@ -911,13 +911,110 @@ public class FacetIntegrationTests : IDisposable
         await UploadDocuments(indexName,
             new Dictionary<string, object?> { ["id"] = "1", ["Tiles"] = new Dictionary<string, object?> { ["PendingPaymentCount"] = 3 } });
 
-        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        await Assert.ThrowsAsync<ArgumentException>(() => _searchService.SearchAsync(indexName, new SearchRequest
         {
             Search = "*",
             Facets = new List<string> { "Tiles/PendingPaymentCount" }
+        }));
+    }
+
+    [Theory]
+    [InlineData("title")]
+    [InlineData("unknown")]
+    public async Task Facets_OnFieldThatIsNotFacetable_Throws(string facet)
+    {
+        // Arrange
+        var indexName = await SeedValueFacetIndexAsync();
+
+        // Act & Assert
+        await Assert.ThrowsAsync<ArgumentException>(() => _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Facets = new List<string> { facet }
+        }));
+    }
+
+    [Fact]
+    public async Task Facets_OnSearchableField_CountsExactCaseSensitiveValues()
+    {
+        // Arrange
+        var indexName = await SeedValueFacetIndexAsync();
+
+        // Act
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Facets = new List<string> { "city" }
         });
 
-        Assert.True(response.SearchFacets == null || !response.SearchFacets.ContainsKey("Tiles/PendingPaymentCount"));
+        // Assert: whole values, not analyzed terms, and Paris and paris are different values.
+        var facets = response.SearchFacets!["city"];
+        Assert.Equal(new object[] { "New York", "Paris", "paris" }, facets.Select(f => f.Value));
+        Assert.Equal(new long?[] { 2, 1, 1 }, facets.Select(f => f.Count));
+    }
+
+    [Fact]
+    public async Task Facets_OnCollection_CountsEachDocumentOncePerValue()
+    {
+        // Arrange
+        var indexName = await SeedValueFacetIndexAsync();
+
+        // Act
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Facets = new List<string> { "tags" }
+        });
+
+        // Assert
+        var facets = response.SearchFacets!["tags"];
+        Assert.Equal(new object[] { "a", "b" }, facets.Select(f => f.Value));
+        Assert.Equal(new long?[] { 3, 1 }, facets.Select(f => f.Count));
+    }
+
+    [Fact]
+    public async Task Facets_OnDateField_ReturnsUtcValuesToTheMillisecond()
+    {
+        // Arrange
+        var indexName = await SeedValueFacetIndexAsync();
+
+        // Act
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Facets = new List<string> { "opened" }
+        });
+
+        // Assert
+        var facet = Assert.Single(response.SearchFacets!["opened"]);
+        Assert.Equal("2024-03-05T08:20:30.123Z", facet.Value);
+        Assert.Equal(4, facet.Count);
+    }
+
+    private async Task<string> SeedValueFacetIndexAsync()
+    {
+        var indexName = $"facet-values-{Guid.NewGuid():N}";
+        RegisterIndex(new SearchIndex
+        {
+            Name = indexName,
+            Fields = new List<SearchField>
+            {
+                new() { Name = "id", Type = "Edm.String", Key = true },
+                new() { Name = "title", Type = "Edm.String", Searchable = true },
+                new() { Name = "city", Type = "Edm.String", Searchable = true, Facetable = true },
+                new() { Name = "tags", Type = "Collection(Edm.String)", Facetable = true },
+                new() { Name = "opened", Type = "Edm.DateTimeOffset", Facetable = true }
+            }
+        });
+
+        var opened = "2024-03-05T10:20:30.1234567+02:00";
+        await UploadDocuments(indexName,
+            new Dictionary<string, object?> { ["id"] = "1", ["city"] = "Paris", ["tags"] = new[] { "a", "a", "b" }, ["opened"] = opened },
+            new Dictionary<string, object?> { ["id"] = "2", ["city"] = "paris", ["tags"] = new[] { "a" }, ["opened"] = opened },
+            new Dictionary<string, object?> { ["id"] = "3", ["city"] = "New York", ["tags"] = new[] { "a" }, ["opened"] = opened },
+            new Dictionary<string, object?> { ["id"] = "4", ["city"] = "New York", ["opened"] = opened });
+
+        return indexName;
     }
 
     public void Dispose()

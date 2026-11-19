@@ -2038,8 +2038,7 @@ public class SearchService : ISearchService
 
             if (field == null || field.Facetable != true)
             {
-                _logger.LogWarning("Field '{FieldName}' is not facetable, skipping", fieldName);
-                continue;
+                throw new ArgumentException($"Invalid facet expression: '{fieldName}' isn't a facetable field.\r\nParameter name: facets");
             }
 
             List<FacetResult>? results;
@@ -2062,7 +2061,7 @@ public class SearchService : ISearchService
             else
             {
                 // Value facet
-                results = CalculateValueFacet(searcher, reader, canonicalFieldName, count, matchingDocs);
+                results = SearchCompat.ValueFacet(searcher, field, canonicalFieldName, count, matchingDocs);
             }
 
             // The same field may appear in multiple facet expressions
