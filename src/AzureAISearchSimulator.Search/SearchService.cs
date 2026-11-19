@@ -1503,15 +1503,16 @@ public class SearchService : ISearchService
                     ? fieldName
                     : fieldName + "_sort";
                 // As in Azure, documents without a value sort first ascending and last descending.
-                var sortField = new SortField(sortFieldName, sortFieldType, reverse);
-                sortField.SetMissingValue(sortFieldType switch
+                var sortField = sortFieldType is SortFieldType.INT32 or SortFieldType.INT64 or SortFieldType.DOUBLE
+                    ? new SortField(sortFieldName, new MissingFirstComparerSource(sortFieldType == SortFieldType.DOUBLE), reverse)
+                    : new SortField(sortFieldName, sortFieldType, reverse);
+                if (sortField.Type != SortFieldType.CUSTOM)
                 {
-                    SortFieldType.INT32 => J2N.Numerics.Int32.GetInstance(int.MinValue),
-                    SortFieldType.INT64 => J2N.Numerics.Int64.GetInstance(long.MinValue),
-                    SortFieldType.DOUBLE => J2N.Numerics.Double.GetInstance(double.NegativeInfinity),
-                    SortFieldType.SINGLE => J2N.Numerics.Single.GetInstance(float.NegativeInfinity),
-                    _ => SortField.STRING_FIRST,
-                });
+                    sortField.SetMissingValue(sortFieldType == SortFieldType.SINGLE
+                        ? J2N.Numerics.Single.GetInstance(float.NegativeInfinity)
+                        : SortField.STRING_FIRST);
+                }
+
                 sortFields.Add(sortField);
             }
         }

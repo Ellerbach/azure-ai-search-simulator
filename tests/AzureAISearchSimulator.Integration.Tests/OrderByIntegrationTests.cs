@@ -212,12 +212,15 @@ public class OrderByIntegrationTests : IDisposable
     [InlineData("*", "rating desc", "2,3,1,4")]
     [InlineData("*", "rating", "4,1,3,2")]
     [InlineData("*", "address/rank desc", "3,1,2,4")]
+    [InlineData("*", "address/rank, address/code desc", "4,2,1,3")]
+    [InlineData("*", "address/rank desc, address/code", "3,1,2,4")]
     [InlineData("*", "address/code", "4,2,1,3")]
     [InlineData("spa", "rating desc", "2,3,1")]
     [InlineData("spa", "search.score() desc, rating desc", "1,2,3")]
     public async Task OrderBy_SortableFieldOrScore_ReturnsSortedResults(string search, string orderBy, string expectedIds)
     {
-        // Arrange: in "spa", document 1 scores highest and documents 2 and 3 tie; document 4 has no values.
+        // Arrange: in "spa", document 1 scores highest and documents 2 and 3 tie; document 4 has no values, and
+        // document 2's rank is int.MinValue, which still sorts after a missing rank.
         var indexName = await SeedSortValidationIndexAsync();
 
         // Act
@@ -272,7 +275,7 @@ public class OrderByIntegrationTests : IDisposable
             new Dictionary<string, object?>
             {
                 ["id"] = "2", ["hotelName"] = "spa resort", ["rating"] = 5.0,
-                ["address"] = new Dictionary<string, object?> { ["rank"] = -1, ["code"] = "A" }
+                ["address"] = new Dictionary<string, object?> { ["rank"] = int.MinValue, ["code"] = "A" }
             },
             new Dictionary<string, object?>
             {
