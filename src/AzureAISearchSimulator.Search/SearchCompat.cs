@@ -144,7 +144,7 @@ internal static class SearchCompat
         };
     }
 
-    // Azure rejects vector queries on fields that aren't vector fields, vectors of the wrong length and unknown filter modes.
+    // Azure rejects vector queries without a vector or fields, on fields that aren't vector fields, vectors of the wrong length and unknown filter modes.
     public static void ValidateVectorQueries(SearchIndex index, SearchRequest request)
     {
         if (request.VectorFilterMode is not (null or "preFilter" or "postFilter" or "strictPostFilter"))
@@ -152,8 +152,18 @@ internal static class SearchCompat
             throw new ArgumentException($"Invalid vectorFilterMode '{request.VectorFilterMode}'. Use 'preFilter', 'postFilter' or 'strictPostFilter'.");
         }
 
-        foreach (var query in request.VectorQueries!.Where(q => q.Vector is { Length: > 0 }))
+        foreach (var query in request.VectorQueries!)
         {
+            if (query.Kind != "vector")
+            {
+                throw new ArgumentException($"Vector queries of kind '{query.Kind}' aren't supported; only 'vector', with the vector given.");
+            }
+
+            if (query.Vector is not { Length: > 0 } || !VectorFields(query).Any())
+            {
+                throw new ArgumentException("A vector query needs a 'vector' and the 'fields' to search.");
+            }
+
             foreach (var name in VectorFields(query))
             {
                 var field = index.Fields.FirstOrDefault(f => f.Name == name)
@@ -172,20 +182,32 @@ internal static class SearchCompat
         }
     }
 
-    // Exact k nearest neighbours. preFilter (Azure's default) takes them among the documents that pass the filter;
-    // postFilter and strictPostFilter (the same on one shard) take them among all documents, then drop those that don't pass.
-    public static Dictionary<string, double> FilteredVectorSearch(
+    // Whether an unfiltered vector query must be searched exactly: the HNSW index is approximate and cosine by default.
+    public static bool NeedsExactSearch(SearchIndex index, VectorQuery query) =>
+        query.Exhaustive == true
+        || VectorFields(query).Select(field => AlgorithmFor(index, field)).Any(a => a?.Kind == "exhaustiveKnn" || MetricOf(a) != "cosine");
+
+    // Exact k nearest neighbours, over all documents or, with a filter, by its mode. preFilter (Azure's default) takes
+    // them among the documents that pass the filter; postFilter and strictPostFilter (the same on one shard) take them
+    // among all documents, then drop those that don't pass.
+    public static Dictionary<string, double> ExactVectorSearch(
         IndexSearcher searcher,
         SearchIndex index,
         string keyField,
-        Query filterQuery,
+        Query? filterQuery,
         string? filterMode,
         List<VectorQuery> queries)
     {
+        var result = new Dictionary<string, double>(StringComparer.Ordinal);
+        if (queries.Count == 0)
+        {
+            return result;
+        }
+
         var preFilter = filterMode is null or "preFilter";
         var sourceAndKey = new HashSet<string> { "_raw_json", keyField };
         var candidates = new List<(string Key, JsonElement Source)>();
-        foreach (var hit in searcher.Search(preFilter ? filterQuery : new MatchAllDocsQuery(), Math.Max(1, searcher.IndexReader.MaxDoc)).ScoreDocs)
+        foreach (var hit in searcher.Search(preFilter ? filterQuery ?? new MatchAllDocsQuery() : new MatchAllDocsQuery(), Math.Max(1, searcher.IndexReader.MaxDoc)).ScoreDocs)
         {
             var doc = searcher.IndexReader.Document(hit.Doc, sourceAndKey);
             if (doc.Get(keyField) is { } key && doc.Get("_raw_json") is { } json)
@@ -195,18 +217,17 @@ internal static class SearchCompat
             }
         }
 
-        var passing = preFilter
+        var passing = preFilter || filterQuery is null
             ? null
             : searcher.Search(filterQuery, Math.Max(1, searcher.IndexReader.MaxDoc)).ScoreDocs
                 .Select(hit => searcher.IndexReader.Document(hit.Doc, sourceAndKey).Get(keyField))
                 .ToHashSet(StringComparer.Ordinal);
 
-        var result = new Dictionary<string, double>(StringComparer.Ordinal);
-        foreach (var query in queries.Where(q => q.Vector is { Length: > 0 }))
+        foreach (var query in queries)
         {
             foreach (var field in VectorFields(query))
             {
-                var metric = MetricFor(index, field);
+                var metric = MetricOf(AlgorithmFor(index, field));
                 var nearest = candidates
                     .Select(c => (c.Key, Vector: c.Source.TryGetProperty(field, out var v) && v.ValueKind == JsonValueKind.Array ? v.EnumerateArray().Select(x => x.GetSingle()).ToArray() : null))
                     .Where(c => c.Vector is not null && c.Vector.Length == query.Vector!.Length)
@@ -225,16 +246,18 @@ internal static class SearchCompat
         return result;
     }
 
-    private static IEnumerable<string> VectorFields(VectorQuery query) =>
+    public static IEnumerable<string> VectorFields(VectorQuery query) =>
         (query.Fields ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-    private static string MetricFor(SearchIndex index, string fieldName)
+    private static VectorSearchAlgorithm? AlgorithmFor(SearchIndex index, string fieldName)
     {
         var profile = index.Fields.FirstOrDefault(f => f.Name == fieldName)?.VectorSearchProfile;
         var algorithm = index.VectorSearch?.Profiles?.FirstOrDefault(p => p.Name == profile)?.Algorithm;
-        var definition = index.VectorSearch?.Algorithms?.FirstOrDefault(a => a.Name == algorithm);
-        return (definition?.Kind == "exhaustiveKnn" ? definition.ExhaustiveKnnParameters?.Metric : definition?.HnswParameters?.Metric) ?? "cosine";
+        return index.VectorSearch?.Algorithms?.FirstOrDefault(a => a.Name == algorithm);
     }
+
+    private static string MetricOf(VectorSearchAlgorithm? definition) =>
+        (definition?.Kind == "exhaustiveKnn" ? definition.ExhaustiveKnnParameters?.Metric : definition?.HnswParameters?.Metric) ?? "cosine";
 
     // Ranked by distance (lower is nearer); scored 1 / (1 + distance) like the simulator's HNSW search.
     private static (double Distance, double Score) Measure(string metric, float[] a, float[] b)

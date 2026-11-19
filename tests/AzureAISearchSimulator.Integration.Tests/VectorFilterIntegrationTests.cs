@@ -11,9 +11,9 @@ using AzureAISearchSimulator.Search.Hnsw;
 namespace AzureAISearchSimulator.Integration.Tests;
 
 /// <summary>
-/// Integration tests for vector queries with a <c>$filter</c>: as in Azure (pre-filtering), the k nearest neighbours
-/// are taken among the documents that pass the filter, a vector query without search text returns only them, and a
-/// hybrid query counts both its text matches and its neighbours.
+/// Integration tests for vector queries: as in Azure, with a <c>$filter</c> the k nearest neighbours are taken among the
+/// documents that pass it (pre-filtering), neighbours are ranked by the field's metric with or without a filter, a vector
+/// query without search text returns only them, and a hybrid query counts both its text matches and its neighbours.
 /// </summary>
 public class VectorFilterIntegrationTests : IDisposable
 {
@@ -105,6 +105,8 @@ public class VectorFilterIntegrationTests : IDisposable
     [InlineData("Missing", 2, null)]
     [InlineData("ClientIdentifier", 2, null)]
     [InlineData("Embedding", 3, null)]
+    [InlineData("Embedding", 0, null)]
+    [InlineData("", 2, null)]
     public async Task SearchAsync_InvalidVectorQuery_Throws(string field, int dimensions, string? mode)
     {
         // Arrange
@@ -119,10 +121,73 @@ public class VectorFilterIntegrationTests : IDisposable
     }
 
     [Theory]
-    [InlineData("hnsw", "dotProduct", "a")]
-    [InlineData("exhaustiveKnn", "euclidean", "c")]
-    [InlineData("exhaustiveKnn", "cosine", "a")]
-    public async Task SearchAsync_VectorQueryWithFilter_RanksByTheAlgorithmMetric(string kind, string metric, string expected)
+    [InlineData("vector", false)]
+    [InlineData("text", false)]
+    [InlineData("text", true)]
+    public async Task SearchAsync_VectorQueryWithoutAVectorOrOfAnotherKind_Throws(string kind, bool withVector)
+    {
+        // Arrange
+        var indexName = await SeedAsync();
+        var request = VectorRequest(k: 1);
+        request.VectorQueries![0].Kind = kind;
+        request.VectorQueries[0].Vector = withVector ? [1f, 0f] : null;
+
+        // Act & Assert
+        await Assert.ThrowsAsync<ArgumentException>(() => _searchService.SearchAsync(indexName, request));
+    }
+
+    [Fact]
+    public async Task SearchAsync_ExhaustiveVectorQueryWithoutFilter_ReturnsTheExactNeighbours()
+    {
+        // Arrange: the approximate (HNSW) search is mocked to find nothing.
+        var indexName = await SeedAsync();
+        var request = VectorRequest(k: 3);
+        request.Filter = null;
+        request.VectorQueries![0].Exhaustive = true;
+
+        // Act
+        var response = await _searchService.SearchAsync(indexName, request);
+
+        // Assert
+        Assert.Equal(["d0", "d1", "d2"], Ids(response));
+    }
+
+    [Fact]
+    public async Task SearchAsync_VectorQueryOverSeveralFieldsWithoutFilter_SearchesEachField()
+    {
+        // Arrange
+        var indexName = await SeedAsync();
+        var index = await _indexServiceMock.Object.GetIndexAsync(indexName);
+        index!.Fields.Add(new SearchField { Name = "Other", Type = "Collection(Edm.Single)", Searchable = true, Dimensions = 2, VectorSearchProfile = "p" });
+        var vectors = new Mock<IVectorSearchService>();
+        vectors.Setup(x => x.Search(indexName, "Embedding", It.IsAny<float[]>(), 1)).Returns([new VectorSearchResult { DocumentId = "d3", Score = 0.5 }]);
+        vectors.Setup(x => x.Search(indexName, "Other", It.IsAny<float[]>(), 1)).Returns([new VectorSearchResult { DocumentId = "d5", Score = 0.9 }]);
+        var searchService = new SearchService(
+            Mock.Of<ILogger<SearchService>>(),
+            _luceneManager,
+            vectors.Object,
+            _indexServiceMock.Object,
+            Mock.Of<ISynonymMapResolver>(),
+            new ScoringProfileService(Mock.Of<ILogger<ScoringProfileService>>()));
+        var request = VectorRequest(k: 1);
+        request.Filter = null;
+        request.VectorQueries![0].Fields = "Embedding, Other";
+
+        // Act
+        var response = await searchService.SearchAsync(indexName, request);
+
+        // Assert
+        Assert.Equal(["d5", "d3"], Ids(response));
+    }
+
+    [Theory]
+    [InlineData("hnsw", "dotProduct", "a", true)]
+    [InlineData("hnsw", "dotProduct", "a", false)]
+    [InlineData("exhaustiveKnn", "euclidean", "c", true)]
+    [InlineData("exhaustiveKnn", "euclidean", "c", false)]
+    [InlineData("exhaustiveKnn", "cosine", "a", true)]
+    [InlineData("exhaustiveKnn", "cosine", "a", false)]
+    public async Task SearchAsync_VectorQuery_RanksByTheAlgorithmMetric(string kind, string metric, string expected, bool filtered)
     {
         // Arrange: for [1, 0], dot product prefers a = [3, 0], euclidean prefers c = [1, 1], cosine prefers a (then b).
         var indexName = $"vector-metric-{Guid.NewGuid():N}";
@@ -165,7 +230,7 @@ public class VectorFilterIntegrationTests : IDisposable
         // Act
         var response = await _searchService.SearchAsync(indexName, new SearchRequest
         {
-            Filter = "id ne 'none'",
+            Filter = filtered ? "id ne 'none'" : null,
             VectorQueries = [new VectorQuery { Kind = "vector", Vector = [1f, 0f], Fields = "Embedding", K = 1 }],
         });
 

@@ -130,9 +130,16 @@ public class SearchService : ISearchService
         {
             SearchCompat.ValidateVectorQueries(index, request);
             vectorSearchStopwatch.Start();
-            vectorScores = filterQuery == null
-                ? ExecuteVectorSearch(indexName, request.VectorQueries)
-                : SearchCompat.FilteredVectorSearch(searcher, index, keyField, filterQuery, request.VectorFilterMode, request.VectorQueries);
+            // The HNSW index is approximate and cosine by default; filters, exhaustive queries and other metrics need the exact search.
+            var exactQueries = filterQuery == null
+                ? request.VectorQueries.Where(q => SearchCompat.NeedsExactSearch(index, q)).ToList()
+                : request.VectorQueries;
+            vectorScores = SearchCompat.ExactVectorSearch(searcher, index, keyField, filterQuery, request.VectorFilterMode, exactQueries);
+            foreach (var (key, score) in ExecuteVectorSearch(indexName, request.VectorQueries.Except(exactQueries).ToList()))
+            {
+                vectorScores[key] = vectorScores.TryGetValue(key, out var existing) ? Math.Max(existing, score) : score;
+            }
+
             vectorSearchStopwatch.Stop();
             
             if (debugMode && debugInfo != null)
@@ -1534,11 +1541,11 @@ public class SearchService : ISearchService
                 continue;
             }
 
-            var results = _vectorSearchService.Search(
+            var results = SearchCompat.VectorFields(vectorQuery).SelectMany(field => _vectorSearchService.Search(
                 indexName,
-                vectorQuery.Fields ?? string.Empty,
+                field,
                 vectorQuery.Vector.ToArray(),
-                vectorQuery.K > 0 ? vectorQuery.K : 50);
+                vectorQuery.K > 0 ? vectorQuery.K : 50));
 
             foreach (var result in results)
             {

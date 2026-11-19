@@ -176,6 +176,12 @@ public class VectorQuery
     public int K { get; set; } = 10;
 
     /// <summary>
+    /// When true, searches all vectors exactly instead of the approximate index.
+    /// </summary>
+    [JsonPropertyName("exhaustive")]
+    public bool? Exhaustive { get; set; }
+
+    /// <summary>
     /// Weight for this vector query in hybrid search.
     /// </summary>
     [JsonPropertyName("weight")]
