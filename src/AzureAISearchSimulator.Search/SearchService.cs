@@ -300,7 +300,7 @@ public class SearchService : ISearchService
             response.Value.Add(searchResult);
         }
 
-        SearchCompat.AddNextPage(response, request, vectorScores != null ? combinedResults.Results.Count() : Math.Max(topDocs?.TotalHits ?? 0, combinedResults.Results.Count()), indexName);
+        SearchCompat.AddNextPage(response, request, vectorScores != null ? combinedResults.Results.Count() : Math.Max(topDocs?.TotalHits ?? 0, combinedResults.Results.Count()));
 
         // Vector neighbours count towards facets and @odata.count alongside all text matches, as in Azure.
         var vectorDocs = vectorScores == null

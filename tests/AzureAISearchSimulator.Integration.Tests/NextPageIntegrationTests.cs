@@ -64,7 +64,6 @@ public class NextPageIntegrationTests : IDisposable
         Assert.NotNull(response.NextPageParameters);
         Assert.Equal(50, response.NextPageParameters!.Skip);
         Assert.Equal("Group eq 'a'", response.NextPageParameters.Filter);
-        Assert.NotNull(response.ODataNextLink);
     }
 
     [Fact]

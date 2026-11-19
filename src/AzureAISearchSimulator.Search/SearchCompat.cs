@@ -16,8 +16,9 @@ internal static class SearchCompat
         keys.Count(key => searcher.Search(
             new BooleanQuery { { query, Occur.MUST }, { new TermQuery(new Lucene.Net.Index.Term(keyField, key)), Occur.MUST } }, 1).TotalHits == 0);
 
-    // Without top, Azure returns 50 results and the request for the next 50 (followed by the SDKs' paged iterables).
-    public static void AddNextPage(SearchResponse response, SearchRequest request, long available, string indexName)
+    // Without top, Azure returns 50 results and the request for the next 50 (followed by the SDKs' paged iterables);
+    // the API adds @odata.nextLink, which depends on the HTTP request.
+    public static void AddNextPage(SearchResponse response, SearchRequest request, long available)
     {
         var skip = request.Skip ?? 0;
         if (request.Top != null || available <= skip + DefaultPageSize)
@@ -28,7 +29,6 @@ internal static class SearchCompat
         var next = JsonSerializer.Deserialize<SearchRequest>(JsonSerializer.Serialize(request))!;
         next.Skip = skip + DefaultPageSize;
         response.NextPageParameters = next;
-        response.ODataNextLink = $"https://localhost/indexes('{indexName}')/docs/search.post.search";
     }
 
     // The sortable field a $orderby clause sorts on, or null for search.score().
