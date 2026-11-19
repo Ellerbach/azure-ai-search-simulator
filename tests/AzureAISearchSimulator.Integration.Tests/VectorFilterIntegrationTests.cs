@@ -12,7 +12,8 @@ namespace AzureAISearchSimulator.Integration.Tests;
 
 /// <summary>
 /// Integration tests for vector queries with a <c>$filter</c>: as in Azure (pre-filtering), the k nearest neighbours
-/// are taken among the documents that pass the filter, and a vector query without search text returns only them.
+/// are taken among the documents that pass the filter, a vector query without search text returns only them, and a
+/// hybrid query counts both its text matches and its neighbours.
 /// </summary>
 public class VectorFilterIntegrationTests : IDisposable
 {
@@ -113,6 +114,23 @@ public class VectorFilterIntegrationTests : IDisposable
         Assert.Empty(response.Value);
     }
 
+    [Fact]
+    public async Task SearchAsync_HybridQueryWithCount_CountsTextMatchesAndNeighbours()
+    {
+        // Arrange: the text matches d51..d59, the vector neighbours are d1, d3 and d5.
+        var indexName = await SeedAsync();
+        var request = VectorRequest(k: 3);
+        request.Search = "alpha";
+        request.Count = true;
+
+        // Act
+        var response = await _searchService.SearchAsync(indexName, request);
+
+        // Assert
+        Assert.Equal(8, response.Value.Count);
+        Assert.Equal(8, response.ODataCount);
+    }
+
     private static SearchRequest VectorRequest(int k) => new()
     {
         Filter = $"ClientIdentifier eq '{Client}'",
@@ -133,6 +151,7 @@ public class VectorFilterIntegrationTests : IDisposable
             [
                 new SearchField { Name = "id", Type = "Edm.String", Key = true, Filterable = true },
                 new SearchField { Name = "ClientIdentifier", Type = "Edm.String", Filterable = true },
+                new SearchField { Name = "Title", Type = "Edm.String", Searchable = true },
                 new SearchField { Name = "Embedding", Type = "Collection(Edm.Single)", Searchable = true, Dimensions = 2, VectorSearchProfile = "p" },
             ],
             VectorSearch = new VectorSearchConfiguration
@@ -152,6 +171,7 @@ public class VectorFilterIntegrationTests : IDisposable
                 ["@search.action"] = "upload",
                 ["id"] = $"d{i}",
                 ["ClientIdentifier"] = i % 2 == 1 ? Client : "acme_43",
+                ["Title"] = i >= 50 ? "alpha" : "beta",
                 ["Embedding"] = new[] { (float)Math.Cos(i * 0.05), (float)Math.Sin(i * 0.05) },
             }).ToList(),
         });

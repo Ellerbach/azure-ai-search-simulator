@@ -306,7 +306,12 @@ public class SearchService : ISearchService
         // Include count if requested
         if (request.Count == true)
         {
-            if (topDocs != null)
+            if (topDocs != null && vectorScores != null)
+            {
+                // As in Azure, a hybrid query counts the fused results (text matches plus vector neighbours).
+                response.ODataCount = combinedResults.Results.Count() + Math.Max(0, topDocs.TotalHits - topDocs.ScoreDocs.Length);
+            }
+            else if (topDocs != null)
             {
                 response.ODataCount = topDocs.TotalHits;
             }
