@@ -297,6 +297,11 @@ public partial class IndexService : IIndexService
         // Validate suggesters
         if (index.Suggesters != null)
         {
+            if (index.Suggesters.Count > 1)
+            {
+                errors.Add("An index cannot have more than one suggester with searchMode='analyzingInfixMatching'.");
+            }
+
             foreach (var suggester in index.Suggesters)
             {
                 if (string.IsNullOrWhiteSpace(suggester.Name))
@@ -306,12 +311,20 @@ public partial class IndexService : IIndexService
 
                 foreach (var sourceField in suggester.SourceFields)
                 {
-                    var field = index.Fields?.FirstOrDefault(f => f.Name == sourceField);
+                    // As in Azure, a source field can be a path to a sub-field of a complex field.
+                    SearchField? field = null;
+                    var candidates = index.Fields;
+                    foreach (var segment in sourceField.Split('/'))
+                    {
+                        field = candidates?.FirstOrDefault(f => f.Name == segment);
+                        candidates = field?.Fields;
+                    }
+
                     if (field == null)
                     {
                         errors.Add($"Suggester '{suggester.Name}' references unknown field '{sourceField}'");
                     }
-                    else if (field.Type != SearchFieldDataType.String)
+                    else if (field.Type != SearchFieldDataType.String && field.Type != SearchFieldDataType.CollectionString)
                     {
                         errors.Add($"Suggester '{suggester.Name}' field '{sourceField}' must be of type Edm.String");
                     }
