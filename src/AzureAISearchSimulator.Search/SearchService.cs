@@ -160,14 +160,7 @@ public class SearchService : ISearchService
         if (textQuery != null)
         {
             // Apply OData filter if present
-            Query finalQuery = textQuery;
-            if (filterQuery != null)
-            {
-                var bq = new BooleanQuery();
-                bq.Add(textQuery, Occur.MUST);
-                bq.Add(filterQuery, Occur.MUST);
-                finalQuery = bq;
-            }
+            var finalQuery = BuildEffectiveQuery(textQuery, filterQuery);
 
             var sort = BuildSort(request.OrderBy, index);
             topDocs = sort != null
@@ -2081,10 +2074,8 @@ public class SearchService : ISearchService
     {
         if (textQuery != null && filterQuery != null)
         {
-            var bq = new BooleanQuery();
-            bq.Add(textQuery, Occur.MUST);
-            bq.Add(filterQuery, Occur.MUST);
-            return bq;
+            // As in Azure, filters narrow the results without changing scores.
+            return new FilteredQuery(textQuery, new QueryWrapperFilter(filterQuery));
         }
         return textQuery ?? filterQuery ?? new MatchAllDocsQuery();
     }

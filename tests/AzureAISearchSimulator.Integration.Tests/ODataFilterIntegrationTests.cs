@@ -104,6 +104,21 @@ public class ODataFilterIntegrationTests : IDisposable
         Assert.Equal(["p1"], ids);
     }
 
+    [Fact]
+    public async Task SearchAsync_WithFilterAndSearchText_KeepsTheTextScores()
+    {
+        // Arrange
+        var index = await SeedAsync();
+        var unfiltered = await _searchService.SearchAsync(index, new SearchRequest { Search = "admin" });
+
+        // Act
+        var filtered = await _searchService.SearchAsync(index, new SearchRequest { Search = "admin", Filter = "ClientIdentifier eq 'acme_42'" });
+
+        // Assert
+        var expected = unfiltered.Value.Single(r => r["id"]!.ToString() == "p1").Score;
+        Assert.Equal(expected, Assert.Single(filtered.Value).Score);
+    }
+
     [Theory]
     [InlineData("Unknown eq 'x'")]
     [InlineData("not Rating gt 5")]
