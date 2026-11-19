@@ -128,11 +128,11 @@ public class SearchService : ISearchService
         Dictionary<string, double>? vectorScores = null;
         if (request.VectorQueries != null && request.VectorQueries.Any())
         {
+            SearchCompat.ValidateVectorQueries(index, request);
             vectorSearchStopwatch.Start();
-            // As in Azure (pre-filter), the k nearest neighbours are taken among the documents that pass the filter.
             vectorScores = filterQuery == null
                 ? ExecuteVectorSearch(indexName, request.VectorQueries)
-                : SearchCompat.PreFilteredVectorSearch(searcher, index, keyField, filterQuery, request.VectorQueries);
+                : SearchCompat.FilteredVectorSearch(searcher, index, keyField, filterQuery, request.VectorFilterMode, request.VectorQueries);
             vectorSearchStopwatch.Stop();
             
             if (debugMode && debugInfo != null)

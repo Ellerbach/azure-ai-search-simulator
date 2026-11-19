@@ -52,6 +52,130 @@ public class VectorFilterIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task SearchAsync_VectorQueryWithFilterMatchingOnlyTheFarthestDocument_ReturnsIt()
+    {
+        // Arrange: 59 nearer documents fail the filter, more than any oversampling of k = 1 would look at.
+        var indexName = await SeedAsync();
+        var request = VectorRequest(k: 1);
+        request.Filter = "id eq 'd59'";
+
+        // Act
+        var response = await _searchService.SearchAsync(indexName, request);
+
+        // Assert
+        Assert.Equal(["d59"], Ids(response));
+    }
+
+    [Theory]
+    [InlineData(null, "d1")]
+    [InlineData("preFilter", "d1")]
+    [InlineData("postFilter", "")]
+    [InlineData("strictPostFilter", "")]
+    public async Task SearchAsync_VectorQueryWithFilterMode_AppliesTheFilterBeforeOrAfterTheNeighbours(string? mode, string expected)
+    {
+        // Arrange: the nearest document, d0, fails the filter.
+        var indexName = await SeedAsync();
+        var request = VectorRequest(k: 1);
+        request.VectorFilterMode = mode;
+
+        // Act
+        var response = await _searchService.SearchAsync(indexName, request);
+
+        // Assert
+        Assert.Equal(expected, string.Join(',', Ids(response)));
+    }
+
+    [Fact]
+    public async Task SearchAsync_VectorQueryWithPostFilter_KeepsTheNeighboursThatPass()
+    {
+        // Arrange: of the 4 nearest documents (d0..d3), d1 and d3 pass the filter.
+        var indexName = await SeedAsync();
+        var request = VectorRequest(k: 4);
+        request.VectorFilterMode = "postFilter";
+
+        // Act
+        var response = await _searchService.SearchAsync(indexName, request);
+
+        // Assert
+        Assert.Equal(["d1", "d3"], Ids(response));
+    }
+
+    [Theory]
+    [InlineData("Embedding", 3, "unknown")]
+    [InlineData("Missing", 2, null)]
+    [InlineData("ClientIdentifier", 2, null)]
+    [InlineData("Embedding", 3, null)]
+    public async Task SearchAsync_InvalidVectorQuery_Throws(string field, int dimensions, string? mode)
+    {
+        // Arrange
+        var indexName = await SeedAsync();
+        var request = VectorRequest(k: 1);
+        request.VectorQueries![0].Fields = field;
+        request.VectorQueries[0].Vector = new float[dimensions];
+        request.VectorFilterMode = mode;
+
+        // Act & Assert
+        await Assert.ThrowsAsync<ArgumentException>(() => _searchService.SearchAsync(indexName, request));
+    }
+
+    [Theory]
+    [InlineData("hnsw", "dotProduct", "a")]
+    [InlineData("exhaustiveKnn", "euclidean", "c")]
+    [InlineData("exhaustiveKnn", "cosine", "a")]
+    public async Task SearchAsync_VectorQueryWithFilter_RanksByTheAlgorithmMetric(string kind, string metric, string expected)
+    {
+        // Arrange: for [1, 0], dot product prefers a = [3, 0], euclidean prefers c = [1, 1], cosine prefers a (then b).
+        var indexName = $"vector-metric-{Guid.NewGuid():N}";
+        var algorithm = new VectorSearchAlgorithm { Name = "alg", Kind = kind };
+        if (kind == "hnsw")
+        {
+            algorithm.HnswParameters = new HnswParameters { Metric = metric };
+        }
+        else
+        {
+            algorithm.ExhaustiveKnnParameters = new ExhaustiveKnnParameters { Metric = metric };
+        }
+
+        var index = new SearchIndex
+        {
+            Name = indexName,
+            Fields =
+            [
+                new SearchField { Name = "id", Type = "Edm.String", Key = true, Filterable = true },
+                new SearchField { Name = "Embedding", Type = "Collection(Edm.Single)", Searchable = true, Dimensions = 2, VectorSearchProfile = "p" },
+            ],
+            VectorSearch = new VectorSearchConfiguration
+            {
+                Algorithms = [algorithm],
+                Profiles = [new VectorSearchProfile { Name = "p", Algorithm = "alg" }],
+            },
+        };
+        _indexServiceMock.Setup(x => x.GetIndexAsync(indexName, It.IsAny<CancellationToken>())).ReturnsAsync(index);
+        _luceneManager.GetWriter(indexName);
+        await _documentService.IndexDocumentsAsync(indexName, new IndexDocumentsRequest
+        {
+            Value =
+            [
+                new IndexAction { ["@search.action"] = "upload", ["id"] = "a", ["Embedding"] = new[] { 3f, 0f } },
+                new IndexAction { ["@search.action"] = "upload", ["id"] = "b", ["Embedding"] = new[] { 2.5f, 0f } },
+                new IndexAction { ["@search.action"] = "upload", ["id"] = "c", ["Embedding"] = new[] { 1f, 1f } },
+            ],
+        });
+
+        // Act
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Filter = "id ne 'none'",
+            VectorQueries = [new VectorQuery { Kind = "vector", Vector = [1f, 0f], Fields = "Embedding", K = 1 }],
+        });
+
+        // Assert
+        var result = Assert.Single(response.Value);
+        Assert.Equal(expected, result["id"]?.ToString());
+        Assert.True(result.Score is { } score && double.IsFinite(score) && score > 0);
+    }
+
+    [Fact]
     public async Task SearchAsync_VectorQueryWithFilter_ReturnsTheNearestMatchingDocuments()
     {
         // Arrange

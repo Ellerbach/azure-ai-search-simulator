@@ -144,17 +144,48 @@ internal static class SearchCompat
         };
     }
 
-    // Exact k nearest neighbours among the documents that pass the filter, scored like the simulator's HNSW (1 / (1 + distance)).
-    public static Dictionary<string, double> PreFilteredVectorSearch(
+    // Azure rejects vector queries on fields that aren't vector fields, vectors of the wrong length and unknown filter modes.
+    public static void ValidateVectorQueries(SearchIndex index, SearchRequest request)
+    {
+        if (request.VectorFilterMode is not (null or "preFilter" or "postFilter" or "strictPostFilter"))
+        {
+            throw new ArgumentException($"Invalid vectorFilterMode '{request.VectorFilterMode}'. Use 'preFilter', 'postFilter' or 'strictPostFilter'.");
+        }
+
+        foreach (var query in request.VectorQueries!.Where(q => q.Vector is { Length: > 0 }))
+        {
+            foreach (var name in VectorFields(query))
+            {
+                var field = index.Fields.FirstOrDefault(f => f.Name == name)
+                    ?? throw new ArgumentException($"Unknown field '{name}' in vector field list.");
+                if (field.Dimensions is not > 0 || !field.IsCollection)
+                {
+                    throw new ArgumentException($"The field '{name}' in the vector field list is not a vector field.");
+                }
+
+                if (query.Vector!.Length != field.Dimensions)
+                {
+                    throw new ArgumentException(
+                        $"The vector field '{name}', with dimension of '{field.Dimensions}', expects a length of '{field.Dimensions}'. However, the provided vector has a length of '{query.Vector.Length}'.");
+                }
+            }
+        }
+    }
+
+    // Exact k nearest neighbours. preFilter (Azure's default) takes them among the documents that pass the filter;
+    // postFilter and strictPostFilter (the same on one shard) take them among all documents, then drop those that don't pass.
+    public static Dictionary<string, double> FilteredVectorSearch(
         IndexSearcher searcher,
         SearchIndex index,
         string keyField,
         Query filterQuery,
+        string? filterMode,
         List<VectorQuery> queries)
     {
+        var preFilter = filterMode is null or "preFilter";
         var sourceAndKey = new HashSet<string> { "_raw_json", keyField };
         var candidates = new List<(string Key, JsonElement Source)>();
-        foreach (var hit in searcher.Search(filterQuery, Math.Max(1, searcher.IndexReader.MaxDoc)).ScoreDocs)
+        foreach (var hit in searcher.Search(preFilter ? filterQuery : new MatchAllDocsQuery(), Math.Max(1, searcher.IndexReader.MaxDoc)).ScoreDocs)
         {
             var doc = searcher.IndexReader.Document(hit.Doc, sourceAndKey);
             if (doc.Get(keyField) is { } key && doc.Get("_raw_json") is { } json)
@@ -164,20 +195,27 @@ internal static class SearchCompat
             }
         }
 
+        var passing = preFilter
+            ? null
+            : searcher.Search(filterQuery, Math.Max(1, searcher.IndexReader.MaxDoc)).ScoreDocs
+                .Select(hit => searcher.IndexReader.Document(hit.Doc, sourceAndKey).Get(keyField))
+                .ToHashSet(StringComparer.Ordinal);
+
         var result = new Dictionary<string, double>(StringComparer.Ordinal);
         foreach (var query in queries.Where(q => q.Vector is { Length: > 0 }))
         {
-            foreach (var field in (query.Fields ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            foreach (var field in VectorFields(query))
             {
                 var metric = MetricFor(index, field);
                 var nearest = candidates
                     .Select(c => (c.Key, Vector: c.Source.TryGetProperty(field, out var v) && v.ValueKind == JsonValueKind.Array ? v.EnumerateArray().Select(x => x.GetSingle()).ToArray() : null))
                     .Where(c => c.Vector is not null && c.Vector.Length == query.Vector!.Length)
-                    .Select(c => (c.Key, Score: 1.0 / (1.0 + Distance(metric, query.Vector!, c.Vector!))))
-                    .OrderByDescending(c => c.Score)
+                    .Select(c => (c.Key, Measure: Measure(metric, query.Vector!, c.Vector!)))
+                    .OrderBy(c => c.Measure.Distance)
                     .ThenBy(c => c.Key, StringComparer.Ordinal)
-                    .Take(query.K > 0 ? query.K : 50);
-                foreach (var (key, score) in nearest)
+                    .Take(query.K > 0 ? query.K : 50)
+                    .Where(c => passing is null || passing.Contains(c.Key));
+                foreach (var (key, (_, score)) in nearest)
                 {
                     result[key] = result.TryGetValue(key, out var existing) ? Math.Max(existing, score) : score;
                 }
@@ -187,14 +225,19 @@ internal static class SearchCompat
         return result;
     }
 
+    private static IEnumerable<string> VectorFields(VectorQuery query) =>
+        (query.Fields ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
     private static string MetricFor(SearchIndex index, string fieldName)
     {
         var profile = index.Fields.FirstOrDefault(f => f.Name == fieldName)?.VectorSearchProfile;
         var algorithm = index.VectorSearch?.Profiles?.FirstOrDefault(p => p.Name == profile)?.Algorithm;
-        return index.VectorSearch?.Algorithms?.FirstOrDefault(a => a.Name == algorithm)?.HnswParameters?.Metric ?? "cosine";
+        var definition = index.VectorSearch?.Algorithms?.FirstOrDefault(a => a.Name == algorithm);
+        return (definition?.Kind == "exhaustiveKnn" ? definition.ExhaustiveKnnParameters?.Metric : definition?.HnswParameters?.Metric) ?? "cosine";
     }
 
-    private static double Distance(string metric, float[] a, float[] b)
+    // Ranked by distance (lower is nearer); scored 1 / (1 + distance) like the simulator's HNSW search.
+    private static (double Distance, double Score) Measure(string metric, float[] a, float[] b)
     {
         double dot = 0, aa = 0, bb = 0, l2 = 0;
         for (var i = 0; i < a.Length; i++)
@@ -205,11 +248,16 @@ internal static class SearchCompat
             l2 += (a[i] - b[i]) * (a[i] - b[i]);
         }
 
-        return metric.ToLowerInvariant() switch
+        switch (metric.ToLowerInvariant())
         {
-            "euclidean" => Math.Sqrt(l2),
-            "dotproduct" => 1 - dot,
-            _ => aa == 0 || bb == 0 ? 1 : 1 - dot / Math.Sqrt(aa * bb),
-        };
+            case "euclidean":
+                return (Math.Sqrt(l2), 1 / (1 + Math.Sqrt(l2)));
+            case "dotproduct":
+                // The dot product is unbounded, so 1 / (2 - dot) (the cosine score on unit vectors) only applies up to 1.
+                return (-dot, dot <= 1 ? 1 / (2 - dot) : dot);
+            default:
+                var cosineDistance = aa == 0 || bb == 0 ? 1 : 1 - dot / Math.Sqrt(aa * bb);
+                return (cosineDistance, 1 / (1 + cosineDistance));
+        }
     }
 }

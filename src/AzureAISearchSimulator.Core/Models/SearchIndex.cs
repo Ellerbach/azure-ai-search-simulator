@@ -446,6 +446,24 @@ public class VectorSearchAlgorithm
 
     [JsonPropertyName("hnswParameters")]
     public HnswParameters? HnswParameters { get; set; }
+
+    /// <summary>
+    /// Parameters of an exhaustiveKnn algorithm.
+    /// </summary>
+    [JsonPropertyName("exhaustiveKnnParameters")]
+    public ExhaustiveKnnParameters? ExhaustiveKnnParameters { get; set; }
+}
+
+/// <summary>
+/// Parameters of an exhaustive KNN vector search algorithm.
+/// </summary>
+public class ExhaustiveKnnParameters
+{
+    /// <summary>
+    /// Similarity metric: cosine, euclidean, dotProduct or hamming.
+    /// </summary>
+    [JsonPropertyName("metric")]
+    public string Metric { get; set; } = "cosine";
 }
 
 public class HnswParameters

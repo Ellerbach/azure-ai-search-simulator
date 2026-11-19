@@ -123,6 +123,12 @@ public class SearchRequest
     public List<VectorQuery>? VectorQueries { get; set; }
 
     /// <summary>
+    /// When the filter applies to vector queries: "preFilter" (the default), "postFilter" or "strictPostFilter".
+    /// </summary>
+    [JsonPropertyName("vectorFilterMode")]
+    public string? VectorFilterMode { get; set; }
+
+    /// <summary>
     /// Enables a debugging tool that can be used to further explore your search results.
     /// Supported values: "disabled", "semantic", "vector", "queryRewrites", "innerHits", "all".
     /// Multiple modes can be combined with '|', e.g. "semantic|vector".
