@@ -2708,14 +2708,12 @@ public class SearchService : ISearchService
             var analyzer = _indexManager.GetAnalyzer(indexName);
             var parser = new QueryParser(LuceneDocumentMapper.AppLuceneVersion, fieldName, analyzer);
 
+            // A field's similarity is its contribution to the document's score: the query terms it matches, whatever
+            // searchMode requires of the document as a whole.
+            parser.DefaultOperator = Operator.OR;
             if (request.QueryType?.ToLowerInvariant() == "full")
             {
-                parser.DefaultOperator = Operator.AND;
                 parser.AllowLeadingWildcard = true;
-            }
-            else
-            {
-                parser.DefaultOperator = Operator.OR;
             }
 
             var searchText = EscapeForSimpleQuery(request.Search ?? "*", request.QueryType);

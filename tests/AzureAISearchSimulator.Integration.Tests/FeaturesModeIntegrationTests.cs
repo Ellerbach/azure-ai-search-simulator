@@ -267,6 +267,33 @@ public class FeaturesModeIntegrationTests : IDisposable
         Assert.Equal(1.0, features["content"].UniqueTokenMatches); // Only 1 unique term
     }
 
+    [Theory]
+    [InlineData("full", "any")]
+    [InlineData("full", "all")]
+    [InlineData("simple", "all")]
+    public async Task FeaturesMode_FieldMatchingSomeOfTheTerms_HasAPositiveSimilarityScore(string queryType, string searchMode)
+    {
+        // Arrange: the title only has "azure", the content has both terms.
+        var indexName = $"features-partial-{queryType}-{searchMode}";
+        var (lucene, search, docs, indexMock) = CreateServices(indexName);
+        indexMock.Setup(x => x.GetIndexAsync(indexName)).ReturnsAsync(CreateIndex(indexName));
+        await UploadDocuments(docs, indexName, ("1", "Azure", "Azure AI Search provides full-text search"));
+
+        // Act
+        var response = await search.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "azure search",
+            QueryType = queryType,
+            SearchMode = searchMode,
+            FeaturesMode = "enabled"
+        });
+
+        // Assert
+        var features = Assert.Single(response.Value).Features!;
+        Assert.True(features["title"].SimilarityScore > 0);
+        Assert.True(features["content"].SimilarityScore > 0);
+    }
+
     [Fact]
     public async Task FeaturesMode_SimilarityScore_PositiveForMatchingFields()
     {
