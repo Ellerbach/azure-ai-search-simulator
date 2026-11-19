@@ -534,7 +534,7 @@ public partial class IndexerService : IIndexerService
         Dictionary<string, object?>? existingDoc;
         try
         {
-            existingDoc = await _documentService.GetDocumentAsync(
+            existingDoc = await _documentService.GetStoredDocumentAsync(
                 indexer.TargetIndexName, docKey);
         }
         catch
@@ -1333,7 +1333,7 @@ public partial class IndexerService : IIndexerService
         return element.ValueKind switch
         {
             System.Text.Json.JsonValueKind.String => element.GetString(),
-            System.Text.Json.JsonValueKind.Number => element.TryGetInt64(out var longValue) ? longValue : element.GetDouble(),
+            System.Text.Json.JsonValueKind.Number => element.TryGetInt64(out var longValue) ? (object)longValue : element.GetDouble(),
             System.Text.Json.JsonValueKind.True => true,
             System.Text.Json.JsonValueKind.False => false,
             System.Text.Json.JsonValueKind.Null => null,

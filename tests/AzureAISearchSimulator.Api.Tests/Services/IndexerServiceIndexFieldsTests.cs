@@ -15,8 +15,9 @@ using System.Text.Json;
 namespace AzureAISearchSimulator.Api.Tests.Services;
 
 /// <summary>
-/// Tests that an indexer only uploads the fields its target index defines: as in Azure, other source and
-/// enrichment fields (such as <c>metadata_storage_path</c>) are ignored rather than failing the batch.
+/// Tests how an indexer's documents meet the target index: as in Azure, source and enrichment fields the index
+/// doesn't define (such as <c>metadata_storage_path</c>) are ignored rather than failing the batch, values keep their
+/// precision, and change detection reads the stored document rather than a lookup's response.
 /// </summary>
 public class IndexerServiceIndexFieldsTests
 {
@@ -71,7 +72,61 @@ public class IndexerServiceIndexFieldsTests
         Assert.Equal("Brick", document["name"]?.ToString());
     }
 
-    private void SetupIndexer(SearchIndex index)
+    [Fact]
+    public async Task RunAsync_SourceHasTheLargestInt64_UploadsItExactly()
+    {
+        // Arrange
+        SetupIndexer(new SearchIndex
+        {
+            Name = "products",
+            Fields =
+            [
+                new SearchField { Name = "id", Type = "Edm.String", Key = true },
+                new SearchField { Name = "stock", Type = "Edm.Int64" },
+            ],
+        }, new { id = "p1", stock = long.MaxValue });
+        IndexDocumentsRequest? uploaded = null;
+        _documentServiceMock
+            .Setup(x => x.IndexDocumentsAsync("products", It.IsAny<IndexDocumentsRequest>()))
+            .Callback<string, IndexDocumentsRequest>((_, request) => uploaded = request)
+            .ReturnsAsync(new IndexDocumentsResponse());
+
+        // Act
+        await _sut.RunAsync("products-indexer");
+
+        // Assert
+        Assert.Equal("9223372036854775807", JsonSerializer.Serialize(Assert.Single(uploaded!.Value)["stock"]));
+    }
+
+    [Fact]
+    public async Task RunAsync_HighWaterMarkFieldNotRetrievable_SkipsUnchangedDocument()
+    {
+        // Arrange: the stored high-water mark has more precision than Azure returns, in a field lookups don't return.
+        var lastModified = DateTimeOffset.Parse("2026-01-01T00:00:00.1234567Z", System.Globalization.CultureInfo.InvariantCulture);
+        SetupIndexer(new SearchIndex
+        {
+            Name = "products",
+            Fields =
+            [
+                new SearchField { Name = "id", Type = "Edm.String", Key = true },
+                new SearchField { Name = "metadata_storage_last_modified", Type = "Edm.DateTimeOffset", Retrievable = false },
+            ],
+        }, lastModified: lastModified);
+        _documentServiceMock
+            .Setup(x => x.GetDocumentAsync("products", "cDEuanNvbg", null))
+            .ReturnsAsync(new Dictionary<string, object?> { ["id"] = "cDEuanNvbg" });
+        _documentServiceMock
+            .Setup(x => x.GetStoredDocumentAsync("products", "cDEuanNvbg"))
+            .ReturnsAsync(new Dictionary<string, object?> { ["id"] = "cDEuanNvbg", ["metadata_storage_last_modified"] = lastModified.ToString("O") });
+
+        // Act
+        await _sut.RunAsync("products-indexer");
+
+        // Assert
+        _documentServiceMock.Verify(x => x.IndexDocumentsAsync(It.IsAny<string>(), It.IsAny<IndexDocumentsRequest>()), Times.Never);
+    }
+
+    private void SetupIndexer(SearchIndex index, object? source = null, DateTimeOffset? lastModified = null)
     {
         var indexer = new Indexer
         {
@@ -80,8 +135,14 @@ public class IndexerServiceIndexFieldsTests
             TargetIndexName = index.Name,
             Parameters = new IndexerParameters { Configuration = new IndexerConfiguration { ParsingMode = "json" } },
         };
-        var dataSource = new DataSource { Name = "products-ds", Type = "filesystem", Container = new DataSourceContainer { Name = "data" } };
-        var content = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new { id = "p1", name = "Brick", colour = "red" }));
+        var dataSource = new DataSource
+        {
+            Name = "products-ds",
+            Type = "filesystem",
+            Container = new DataSourceContainer { Name = "data" },
+            DataChangeDetectionPolicy = lastModified is null ? null : new DataChangeDetectionPolicy { HighWaterMarkColumnName = "metadata_storage_last_modified" },
+        };
+        var content = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(source ?? new { id = "p1", name = "Brick", colour = "red" }));
 
         _repositoryMock.Setup(x => x.GetAsync(indexer.Name)).ReturnsAsync(indexer);
         _repositoryMock.Setup(x => x.GetStatusAsync(indexer.Name)).ReturnsAsync(new IndexerStatus());
@@ -100,6 +161,7 @@ public class IndexerServiceIndexFieldsTests
                     ContentType = "application/json",
                     Content = content,
                     Size = content.Length,
+                    LastModified = lastModified,
                 },
             ]);
     }

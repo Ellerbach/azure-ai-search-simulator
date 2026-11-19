@@ -492,6 +492,9 @@ public class DocumentService : IDocumentService
         return document is null ? null : DocumentCompat.Shape((await _indexService.GetIndexAsync(indexName))!, document, selectedFields);
     }
 
+    public Task<Dictionary<string, object?>?> GetStoredDocumentAsync(string indexName, string key) =>
+        LoadDocumentAsync(indexName, key);
+
     private async Task<Dictionary<string, object?>?> LoadDocumentAsync(
         string indexName,
         string key,
