@@ -59,14 +59,18 @@ public class SearchModeIntegrationTests : IDisposable
     {
         // Arrange
         var indexName = await SeedAsync();
-
-        // Act
-        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        var request = new SearchRequest
         {
             Search = "ocean view",
             QueryType = queryType,
-            SearchMode = searchMode,
-        });
+        };
+        if (searchMode is not null)
+        {
+            request.SearchMode = searchMode;
+        }
+
+        // Act
+        var response = await _searchService.SearchAsync(indexName, request);
 
         // Assert
         Assert.Equal(expected.Split(','), response.Value.Select(r => r["id"]!.ToString()!).Order());
