@@ -8,7 +8,7 @@ namespace AzureAISearchSimulator.Search;
 // Azure's document semantics that upstream doesn't model: batch validation, recursive merges and the shape of returned documents.
 internal static class DocumentCompat
 {
-    private static readonly Regex ValidKey = new("^[A-Za-z0-9_=-]+$", RegexOptions.CultureInvariant);
+    private static readonly Regex ValidKey = new(@"\A[A-Za-z0-9_=-]+\z", RegexOptions.CultureInvariant);
 
     // Azure rejects the whole batch (HTTP 400) when any action is invalid, before applying any of them.
     public static void ValidateBatch(SearchIndex schema, string keyField, IReadOnlyList<IndexAction> actions)
@@ -79,8 +79,12 @@ internal static class DocumentCompat
                 return;
             case SearchFieldDataType.String when value.ValueKind == JsonValueKind.String:
             case SearchFieldDataType.Boolean when value.ValueKind is JsonValueKind.True or JsonValueKind.False:
-            case SearchFieldDataType.Int32 or SearchFieldDataType.Int64 or SearchFieldDataType.Double
-                or "Edm.Single" or "Edm.Half" or "Edm.Int16" or "Edm.SByte" or "Edm.Byte" when value.ValueKind == JsonValueKind.Number:
+            case SearchFieldDataType.Int32 when IsWhole(value, int.MinValue, int.MaxValue):
+            case SearchFieldDataType.Int64 when IsWhole(value, long.MinValue, long.MaxValue):
+            case "Edm.Int16" when IsWhole(value, short.MinValue, short.MaxValue):
+            case "Edm.SByte" when IsWhole(value, sbyte.MinValue, sbyte.MaxValue):
+            case "Edm.Byte" when IsWhole(value, byte.MinValue, byte.MaxValue):
+            case SearchFieldDataType.Double or "Edm.Single" or "Edm.Half" when value.ValueKind == JsonValueKind.Number:
             case SearchFieldDataType.GeographyPoint when value.ValueKind == JsonValueKind.Object:
                 return;
             case SearchFieldDataType.DateTimeOffset when value.ValueKind == JsonValueKind.String
@@ -90,6 +94,10 @@ internal static class DocumentCompat
                 throw Invalid(value, field.Type);
         }
     }
+
+    private static bool IsWhole(JsonElement value, decimal min, decimal max) =>
+        value.ValueKind == JsonValueKind.Number && value.TryGetDecimal(out var number)
+        && decimal.Truncate(number) == number && number >= min && number <= max;
 
     private static ArgumentException Invalid(JsonElement value, string type) =>
         new($"The request is invalid. Details: Cannot convert the literal '{(value.ValueKind == JsonValueKind.String ? value.GetString() : value.GetRawText())}' to the expected type '{type}'.");

@@ -46,12 +46,18 @@ public class DocumentValidationIntegrationTests : IDisposable
     [InlineData("""{"id":"a.b"}""")]
     [InlineData("""{"id":"a b"}""")]
     [InlineData("""{"id":"_a"}""")]
+    [InlineData("""{"id":"abc\n"}""")]
     [InlineData("""{"id":"1","unknown":1}""")]
     [InlineData("""{"id":"1","address":{"unknown":1}}""")]
     [InlineData("""{"id":"1","title":5}""")]
     [InlineData("""{"id":"1","title":{"a":1}}""")]
     [InlineData("""{"id":"1","rating":"5"}""")]
     [InlineData("""{"id":"1","count":true}""")]
+    [InlineData("""{"id":"1","count":1.5}""")]
+    [InlineData("""{"id":"1","count":2147483648}""")]
+    [InlineData("""{"id":"1","count":-2147483649}""")]
+    [InlineData("""{"id":"1","big":9223372036854775808}""")]
+    [InlineData("""{"id":"1","big":0.5}""")]
     [InlineData("""{"id":"1","active":"true"}""")]
     [InlineData("""{"id":"1","updated":"yesterday"}""")]
     [InlineData("""{"id":"1","tags":"a"}""")]
@@ -76,7 +82,7 @@ public class DocumentValidationIntegrationTests : IDisposable
 
         // Act
         await IndexAsync(indexName,
-            ("upload", """{"id":"a-b_c=1","title":"t","rating":4.5,"count":3,"active":true,"updated":"2024-03-05T10:20:30Z","tags":["x"],"address":{"city":"Paris"},"contacts":[{"name":"n"}]}"""),
+            ("upload", """{"id":"a-b_c=1","title":"t","rating":4.5,"count":-2147483648,"big":9223372036854775807,"active":true,"updated":"2024-03-05T10:20:30Z","tags":["x"],"address":{"city":"Paris"},"contacts":[{"name":"n"}]}"""),
             ("upload", """{"id":"2","title":null,"tags":null,"address":null}"""),
             ("delete", """{"id":"3"}"""));
 
@@ -97,6 +103,7 @@ public class DocumentValidationIntegrationTests : IDisposable
                 new SearchField { Name = "title", Type = "Edm.String", Searchable = true },
                 new SearchField { Name = "rating", Type = "Edm.Double", Filterable = true },
                 new SearchField { Name = "count", Type = "Edm.Int32", Filterable = true },
+                new SearchField { Name = "big", Type = "Edm.Int64", Filterable = true },
                 new SearchField { Name = "active", Type = "Edm.Boolean", Filterable = true },
                 new SearchField { Name = "updated", Type = "Edm.DateTimeOffset", Filterable = true },
                 new SearchField { Name = "tags", Type = "Collection(Edm.String)", Filterable = true },
