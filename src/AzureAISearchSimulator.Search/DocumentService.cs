@@ -47,9 +47,11 @@ public class DocumentService : IDocumentService
         var keyField = LuceneDocumentMapper.GetKeyFieldName(index);
         DocumentCompat.ValidateBatch(index, keyField, request.Value);
         IndexWriter writer;
+        HashSet<string> existedBefore;
         try
         {
             writer = _indexManager.GetWriter(indexName);
+            existedBefore = UploadKeysThatExist(indexName, keyField, request.Value);
         }
         catch (ObjectDisposedException)
         {
@@ -69,11 +71,17 @@ public class DocumentService : IDocumentService
         }
 
         var results = new List<IndexingResult>();
+        var existsNow = new Dictionary<string, bool>(StringComparer.Ordinal);
+        bool Exists(string key) => existsNow.TryGetValue(key, out var exists) ? exists : existedBefore.Contains(key);
 
         foreach (var action in request.Value)
         {
-            var result = await ProcessActionAsync(indexName, index, keyField, writer, action);
+            var result = await ProcessActionAsync(indexName, index, keyField, writer, action, Exists);
             results.Add(result);
+            if (result.Status)
+            {
+                existsNow[result.Key] = action.ActionType != IndexActionType.Delete;
+            }
 
             // If the index was disposed mid-batch, stop processing remaining actions
             if (result.StatusCode == 503)
@@ -115,12 +123,52 @@ public class DocumentService : IDocumentService
         return response;
     }
 
+    // Which uploaded keys are already in the index, from one reader snapshot. Reopening a near-real-time reader per
+    // document is slow and disposes the shared reader under concurrent requests, so the batch avoids it.
+    private HashSet<string> UploadKeysThatExist(string indexName, string keyField, IEnumerable<IndexAction> actions)
+    {
+        var keys = actions
+            .Where(a => a.ActionType == IndexActionType.Upload)
+            .Select(a => a.Document.TryGetValue(keyField, out var key) && key != null ? ConvertToString(key) : null)
+            .OfType<string>()
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                var found = new HashSet<string>(StringComparer.Ordinal);
+                if (keys.Count == 0)
+                {
+                    return found;
+                }
+
+                var searcher = _indexManager.GetSearcher(indexName);
+                foreach (var key in keys)
+                {
+                    if (searcher.Search(new Lucene.Net.Search.TermQuery(new Term(keyField, key)), 1).TotalHits > 0)
+                    {
+                        found.Add(key);
+                    }
+                }
+
+                return found;
+            }
+            catch (ObjectDisposedException) when (attempt < 3)
+            {
+                // Another request refreshed the shared reader; take a new snapshot.
+            }
+        }
+    }
+
     private async Task<IndexingResult> ProcessActionAsync(
         string indexName,
         SearchIndex schema,
         string keyField,
         IndexWriter writer,
-        IndexAction action)
+        IndexAction action,
+        Func<string, bool> exists)
     {
         string? key = null;
         try
@@ -146,8 +194,7 @@ public class DocumentService : IDocumentService
             switch (actionType)
             {
                 case IndexActionType.Upload:
-                    var existingDoc = await GetDocumentAsync(indexName, key);
-                    return await UploadDocumentAsync(indexName, schema, writer, term, key, action.Document, isMerge: existingDoc != null);
+                    return await UploadDocumentAsync(indexName, schema, writer, term, key, action.Document, isMerge: exists(key));
 
                 case IndexActionType.Merge:
                     return await MergeDocumentAsync(indexName, schema, writer, term, key, action.Document);
