@@ -29,17 +29,23 @@ internal static class ODataFilter
     }
 
     // Exact Lucene terms for top-level string equality, so only documents that can match are evaluated.
+    // A clause that would exceed Lucene's clause limit is left to the exact evaluation instead.
     private static Query? BuildCandidateQuery(FilterNode root)
     {
         var candidates = new BooleanQuery();
         foreach (var clause in Conjuncts(root))
         {
+            if (candidates.Clauses.Count >= BooleanQuery.MaxClauseCount)
+            {
+                break;
+            }
+
             switch (clause)
             {
                 case ComparisonNode { Operator: "eq", Value: { Kind: LiteralKind.String, Value: string value }, Field: var field } when IndexedExactly(field):
                     candidates.Add(new TermQuery(new Term(LuceneDocumentMapper.GetFilterFieldName(field.Field!), value)), Occur.MUST);
                     break;
-                case SearchInNode { Field: var field, Values: var values } when IndexedExactly(field):
+                case SearchInNode { Field: var field, Values: var values } when IndexedExactly(field) && values.Count <= BooleanQuery.MaxClauseCount:
                     var any = new BooleanQuery();
                     foreach (var value in values)
                     {

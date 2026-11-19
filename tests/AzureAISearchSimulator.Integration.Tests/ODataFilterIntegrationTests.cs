@@ -119,6 +119,20 @@ public class ODataFilterIntegrationTests : IDisposable
         Assert.Equal(expected, Assert.Single(filtered.Value).Score);
     }
 
+    [Fact]
+    public async Task SearchAsync_WithSearchInOfMoreValuesThanLuceneClauses_ReturnsTheMatchingDocuments()
+    {
+        // Arrange
+        var index = await SeedAsync();
+        var values = string.Join(",", Enumerable.Range(0, 2000).Select(i => $"client_{i}").Append("other_1"));
+
+        // Act
+        var ids = await IdsAsync(index, $"search.in(ClientIdentifier, '{values}') and search.in(id, 'p1,p2,p5')");
+
+        // Assert
+        Assert.Equal(["p5"], ids);
+    }
+
     [Theory]
     [InlineData("Unknown eq 'x'")]
     [InlineData("not Rating gt 5")]
