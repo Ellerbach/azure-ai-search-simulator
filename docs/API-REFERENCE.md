@@ -667,14 +667,13 @@ The simulator implements a dual-layer vector search system:
 
 **Filtered Vector Search:**
 
-When filters are applied, the simulator uses post-filtering with oversampling:
+When a search has a `filter`, the simulator pre-filters, as Azure does by default (`vectorFilterMode: preFilter`):
 
-1. Retrieve `k × oversampleMultiplier` candidates from HNSW
-2. Filter candidates to those matching the OData filter
-3. Return top-k filtered results
-4. Fall back to brute-force if insufficient results
+1. Find the documents that match the OData filter
+2. Compute the exact distance from the query vector to each of them, with the vector profile's metric
+3. Return the k nearest
 
-This ensures good recall even with selective filters.
+The k nearest neighbours are always taken among the documents that pass the filter, however selective it is. A vector query without search text returns only its k neighbours.
 
 **Score Calculation:**
 

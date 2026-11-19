@@ -32,18 +32,18 @@ The simulator is designed for **development, learning, and testing purposes only
 
 | Feature | Notes |
 | ------- | ----- |
-| Index CRUD operations | Full support for create, read, update, delete |
+| Index CRUD operations | Full support for create, read, update, delete; updates Azure can't apply (deleted or changed fields, removed suggesters, changed analysis components or vector algorithms in use) are refused with Azure's messages |
 | Field types | All basic types including Complex types and Collections |
 | **Vector fields** | `Collection(Edm.Single)` with dimensions property |
-| Document operations | upload, merge, mergeOrUpload, delete |
+| Document operations | upload, merge, mergeOrUpload, delete; a batch with an invalid action is rejected before any action is applied, complex fields merge recursively, and documents are returned in Azure's shape (missing values `null`, missing collections `[]`, dates in UTC to the millisecond) |
 | Simple query syntax | Standard search queries |
 | Full Lucene syntax | Wildcards, fuzzy, proximity, boosting |
 | **Vector search (HNSW)** | HNSW algorithm for fast ANN search |
 | **Hybrid search** | Combined text + vector with RRF/weighted fusion |
-| **Filtered vector search** | Post-filter pattern with oversampling |
-| OData filters | Comparison, logical, and collection operators |
-| Sorting | Single and multi-field sorting |
-| Paging | Top and skip parameters |
+| **Filtered vector search** | Pre-filtered, as in Azure: the k nearest neighbours are taken exactly among the documents that pass the filter |
+| OData filters | Evaluated exactly: comparison, logical, and collection operators (see [OData Filter Limitations](#odata-filter-limitations)) |
+| Sorting | Single and multi-field sorting on sortable fields |
+| Paging | Top and skip parameters; `@search.nextPageParameters` when `top` is omitted |
 | Facets | Count, interval, and aggregation (`metric:sum`/`min`/`max`/`avg`) facets |
 | Highlighting | Hit highlighting in search results |
 | Autocomplete | Term completion with filter, searchFields and highlight tags, ranked by document count (POST and GET) |
@@ -79,7 +79,6 @@ The simulator is designed for **development, learning, and testing purposes only
 | ------- | ------ |
 | **Semantic search** | Requires Azure AI models |
 | **Semantic ranking** | Requires Azure AI models |
-| **Pre-filtering for vectors** | HNSW does not support native filtering; uses post-filter |
 | **Knowledge stores** | Complex Azure Storage integration |
 | **AI enrichment skills** | OCR, Entity Recognition, etc. require Azure AI Services |
 | **Private endpoints** | Azure networking feature |
@@ -325,20 +324,20 @@ The simulator supports custom normalizers with the following configuration:
 
 ### OData Filter Limitations
 
-Supported functions:
+Filters are evaluated exactly against each candidate document. A filter the simulator can't evaluate, or that Azure would reject, returns 400 instead of being ignored.
 
-- `search.ismatch()` - Basic support
-- `search.in()` - Full support
-- `geo.distance()` - Basic support
-- `any()` - Supports `eq`, `gt`/`lt`/`ge`/`le`, and nested `search.in(...)` predicates over primitive collections, plus single-sub-field `eq` predicates over `Collection(Edm.ComplexType)` (e.g. `Accounts/any(acc: acc/Currency eq 'EUR')`)
+Supported:
+
+- `eq`, `ne`, `gt`, `lt`, `ge`, `le` on string, numeric, boolean and date fields, including sub-fields of complex fields (e.g. `address/city eq 'Paris'`), and `null` comparisons
+- `and`, `or`, `not` and parentheses
+- `any()` and `all()` over primitive and complex collections, nested to any depth; conditions inside one lambda hold for the same element
+- `search.in()` and `search.ismatch()`
+- Dates compare at millisecond precision, as in Azure
 
 Not supported:
 
-- `search.ismatchscoring()`
-- Complex geo-spatial functions
-- `all()` - recognized but always matches zero documents; would require confirming every indexed element satisfies the predicate, which isn't expressible as a single term/range query over a multi-valued field
-- Compound predicates inside complex collection lambdas (e.g. `Accounts/any(acc: acc/Currency eq 'EUR' and acc/AccountNumber eq '12345')`)
-- `ne` inside `any()`/`all()` (e.g. `tags/any(t: t ne 'casino')`) - "any element differs" isn't a simple term/range query either
+- `search.ismatchscoring()` and the `geo.*` functions (400)
+- Filtering on `Edm.GeographyPoint` fields (400)
 - Sorting or faceting on numeric collection fields (`Collection(Edm.Int32)`/`Int64`/`Double`) - no multi-valued numeric doc-values field type is available in this Lucene.Net version
 
 ### Query Limitations
@@ -357,7 +356,7 @@ Not supported:
 
 Supported:
 
-- Value facets with `count:N`
+- Value facets with `count:N`, counting exact, case-sensitive values (dates in UTC to the millisecond), as Azure does
 - Interval facets with `interval:N` (numeric fields)
 - Aggregation metrics `sum`, `min`, `max`, `avg` (`Edm.Int32`, `Edm.Int64`, `Edm.Double` fields, including sub-fields of a complex type)
 - `default:` missing-value substitution for the aggregation metrics above (numeric default only)
@@ -369,7 +368,9 @@ Not supported:
 - `sort`, `values`, and `timeoffset` facet parameters
 - Facet hierarchies (`>` and `;` operators) and facet filters (`includeTermFilter` / `excludeTermFilter`)
 - Facets on `Collection(Edm.ComplexType)` sub-fields (e.g. `Rooms/BaseRate` where `Rooms` is a collection)
-- General `$filter`/`$orderby` expressions on complex-type sub-fields; only the complex collection `any()` equality form documented above is supported
+- `$orderby` on complex-type sub-fields
+
+A facet on a field that isn't facetable returns 400, as in Azure.
 
 ## Security Limitations
 

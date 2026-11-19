@@ -26,16 +26,16 @@ Use the Azure AI Search simulator to:
 ### ✅ Implemented
 
 - **Index Management**: Create, update, delete, and list search indexes
-- **Document Operations**: Upload, merge, mergeOrUpload, and delete documents (Push model)
+- **Document Operations**: Upload, merge, mergeOrUpload, and delete documents (Push model); batches are validated as a whole, and complex fields merge recursively
 - **Full-Text Search**: Simple and Lucene query syntax
-- **Filtering**: Basic OData filter expressions (eq, ne, gt, lt, ge, le, not, search.in)
-- **Sorting & Paging**: OrderBy, top, skip support
+- **Filtering**: OData filter expressions evaluated exactly (comparisons, and/or/not, any/all at any depth, search.in, search.ismatch); filters the simulator can't evaluate are rejected rather than ignored
+- **Sorting & Paging**: OrderBy on sortable fields, top, skip, and `@search.nextPageParameters` when top is omitted
 - **Field Selection**: $select parameter support
 - **Highlighting**: Search result highlighting
 - **Faceted Navigation**: Value facets and interval/range facets
 - **Autocomplete**: Term completion with filter and highlight tags, ranked like Azure
 - **Suggestions**: Prefix-based suggestions with filter, select, orderby and highlight tags
-- **Vector Search**: Cosine similarity with `Collection(Edm.Single)` fields
+- **Vector Search**: Cosine similarity with `Collection(Edm.Single)` fields; filtered vector queries are pre-filtered, as in Azure
 - **Hybrid Search**: Combined text and vector search scoring
 - **Authentication**: API keys, simulated JWT tokens, and Entra ID (Azure AD) support
 - **Role-Based Access Control**: Full RBAC with 6 Azure Search roles
