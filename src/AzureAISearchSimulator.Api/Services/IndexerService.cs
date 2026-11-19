@@ -261,6 +261,7 @@ public partial class IndexerService : IIndexerService
                     {
                         try
                         {
+                            RemoveFieldsNotInIndex(await _indexService.GetIndexAsync(targetIndex), actions);
                             var request = new IndexDocumentsRequest { Value = actions };
                             await _documentService.IndexDocumentsAsync(targetIndex, request);
                             processedCount += actions.Count;
@@ -634,6 +635,24 @@ public partial class IndexerService : IIndexerService
     /// Returns one or more IndexActions ready for bulk upload (JSON array produces multiple).
     /// Does NOT upload to the index.
     /// </summary>
+    // As in Azure, source and enrichment fields that the target index doesn't define aren't indexed.
+    private static void RemoveFieldsNotInIndex(SearchIndex? index, List<IndexAction> actions)
+    {
+        if (index is null)
+        {
+            return;
+        }
+
+        var fields = index.Fields.Select(f => f.Name).ToHashSet(StringComparer.Ordinal);
+        foreach (var action in actions)
+        {
+            foreach (var name in action.Keys.Where(k => !k.StartsWith('@') && !fields.Contains(k)).ToList())
+            {
+                action.Remove(name);
+            }
+        }
+    }
+
     private async Task<List<IndexAction>> PrepareDocumentAsync(
         Indexer indexer, DataSourceDocument sourceDoc,
         IDataSourceConnector connector, DataSource dataSource)
