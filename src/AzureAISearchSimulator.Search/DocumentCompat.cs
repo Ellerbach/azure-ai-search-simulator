@@ -1,12 +1,99 @@
 using System.Globalization;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using AzureAISearchSimulator.Core.Models;
 
 namespace AzureAISearchSimulator.Search;
 
-// Azure's document semantics that upstream doesn't model: recursive merges and the shape of returned documents.
+// Azure's document semantics that upstream doesn't model: batch validation, recursive merges and the shape of returned documents.
 internal static class DocumentCompat
 {
+    private static readonly Regex ValidKey = new("^[A-Za-z0-9_=-]+$", RegexOptions.CultureInvariant);
+
+    // Azure rejects the whole batch (HTTP 400) when any action is invalid, before applying any of them.
+    public static void ValidateBatch(SearchIndex schema, string keyField, IReadOnlyList<IndexAction> actions)
+    {
+        for (var i = 0; i < actions.Count; i++)
+        {
+            var document = actions[i].Document;
+            var key = document.TryGetValue(keyField, out var keyValue) ? AsString(keyValue) : null;
+            if (string.IsNullOrEmpty(key))
+            {
+                throw new ArgumentException($"The request is invalid. Details: actions : {i}: Document key cannot be missing or empty.");
+            }
+
+            if (!ValidKey.IsMatch(key))
+            {
+                throw new ArgumentException($"The request is invalid. Details: actions : {i}: Invalid document key: '{key}'. Keys can only contain letters, digits, underscore (_), dash (-), or equal sign (=).");
+            }
+
+            if (key.StartsWith('_'))
+            {
+                throw new ArgumentException($"The request is invalid. Details: actions : {i}: Invalid document key: '{key}'. Keys cannot start with a leading underscore.");
+            }
+
+            if (actions[i].ActionType != IndexActionType.Delete)
+            {
+                ValidateObject(schema.Fields, document.Where(p => !p.Key.StartsWith('@')).Select(p => (p.Key, p.Value)), "search.documentFields");
+            }
+        }
+    }
+
+    private static void ValidateObject(List<SearchField>? fields, IEnumerable<(string Name, object? Value)> properties, string typeName)
+    {
+        foreach (var (name, value) in properties)
+        {
+            var field = fields?.FirstOrDefault(f => f.Name == name)
+                ?? throw new ArgumentException($"The request is invalid. Details: The property '{name}' does not exist on type '{typeName}'. Make sure to only use property names that are defined by the type.");
+            ValidateValue(field, ToElement(value), $"search.complex.{field.Name}");
+        }
+    }
+
+    private static void ValidateValue(SearchField field, JsonElement value, string complexTypeName)
+    {
+        if (value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+        {
+            return;
+        }
+
+        if (field.IsCollection)
+        {
+            if (value.ValueKind != JsonValueKind.Array)
+            {
+                throw Invalid(value, field.Type);
+            }
+
+            var element = ElementOf(field);
+            foreach (var item in value.EnumerateArray())
+            {
+                ValidateValue(element, item, complexTypeName);
+            }
+
+            return;
+        }
+
+        switch (field.Type)
+        {
+            case SearchFieldDataType.ComplexType when value.ValueKind == JsonValueKind.Object:
+                ValidateObject(field.Fields, value.EnumerateObject().Select(p => (p.Name, (object?)p.Value)), complexTypeName);
+                return;
+            case SearchFieldDataType.String when value.ValueKind == JsonValueKind.String:
+            case SearchFieldDataType.Boolean when value.ValueKind is JsonValueKind.True or JsonValueKind.False:
+            case SearchFieldDataType.Int32 or SearchFieldDataType.Int64 or SearchFieldDataType.Double
+                or "Edm.Single" or "Edm.Half" or "Edm.Int16" or "Edm.SByte" or "Edm.Byte" when value.ValueKind == JsonValueKind.Number:
+            case SearchFieldDataType.GeographyPoint when value.ValueKind == JsonValueKind.Object:
+                return;
+            case SearchFieldDataType.DateTimeOffset when value.ValueKind == JsonValueKind.String
+                && DateTimeOffset.TryParse(value.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out _):
+                return;
+            default:
+                throw Invalid(value, field.Type);
+        }
+    }
+
+    private static ArgumentException Invalid(JsonElement value, string type) =>
+        new($"The request is invalid. Details: Cannot convert the literal '{(value.ValueKind == JsonValueKind.String ? value.GetString() : value.GetRawText())}' to the expected type '{type}'.");
+
     // Merge (and mergeOrUpload on an existing document) sets only the given values; complex objects merge
     // recursively, collections are replaced.
     public static Dictionary<string, object?> Merge(SearchIndex schema, Dictionary<string, object?> existing, Dictionary<string, object?> update)
@@ -165,5 +252,14 @@ internal static class DocumentCompat
         null => default,
         JsonElement element => element,
         _ => JsonSerializer.SerializeToElement(value),
+    };
+
+    private static string? AsString(object? value) => value switch
+    {
+        null => null,
+        string s => s,
+        JsonElement { ValueKind: JsonValueKind.String } e => e.GetString(),
+        JsonElement e => e.GetRawText(),
+        _ => Convert.ToString(value, CultureInfo.InvariantCulture),
     };
 }

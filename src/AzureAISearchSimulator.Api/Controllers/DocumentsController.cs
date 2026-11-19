@@ -72,6 +72,10 @@ public class DocumentsController : ControllerBase
         {
             return NotFound(new { error = new { message = $"Index '{indexName}' not found" } });
         }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = new { code = "InvalidRequestParameter", message = ex.Message } });
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error indexing documents to {IndexName}", indexName);

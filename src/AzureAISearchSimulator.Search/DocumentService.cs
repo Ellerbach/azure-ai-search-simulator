@@ -45,6 +45,7 @@ public class DocumentService : IDocumentService
         _indexManager.ConfigureAnalyzers(indexName, index);
 
         var keyField = LuceneDocumentMapper.GetKeyFieldName(index);
+        DocumentCompat.ValidateBatch(index, keyField, request.Value);
         IndexWriter writer;
         try
         {
