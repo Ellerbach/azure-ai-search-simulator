@@ -15,6 +15,13 @@ internal static class DocumentCompat
     {
         for (var i = 0; i < actions.Count; i++)
         {
+            // IndexAction.ActionType reads an unknown action as upload.
+            if (actions[i].TryGetValue("@search.action", out var action)
+                && AsString(action)?.ToLowerInvariant() is not ("upload" or "merge" or "mergeorupload" or "delete"))
+            {
+                throw new ArgumentException($"The request is invalid. Details: actions : {i}: '{AsString(action)}' isn't a valid @search.action. Use 'upload', 'merge', 'mergeOrUpload' or 'delete'.");
+            }
+
             var document = actions[i].Document;
             var key = document.TryGetValue(keyField, out var keyValue) ? AsString(keyValue) : null;
             if (string.IsNullOrEmpty(key))

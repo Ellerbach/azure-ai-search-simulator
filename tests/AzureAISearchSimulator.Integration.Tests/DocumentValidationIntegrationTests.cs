@@ -74,6 +74,21 @@ public class DocumentValidationIntegrationTests : IDisposable
         Assert.Null(await _documentService.GetDocumentAsync(indexName, "ok"));
     }
 
+    [Theory]
+    [InlineData("bogus")]
+    [InlineData("")]
+    [InlineData("upload ")]
+    public async Task IndexDocumentsAsync_UnknownSearchAction_RejectsTheWholeBatch(string action)
+    {
+        // Arrange
+        var indexName = SeedIndex();
+
+        // Act & Assert
+        await Assert.ThrowsAsync<ArgumentException>(() => IndexAsync(indexName, ("upload", """{"id":"ok"}"""), (action, """{"id":"1"}""")));
+        Assert.Null(await _documentService.GetDocumentAsync(indexName, "ok"));
+        Assert.Null(await _documentService.GetDocumentAsync(indexName, "1"));
+    }
+
     [Fact]
     public async Task IndexDocumentsAsync_ValidActions_AreApplied()
     {
@@ -84,11 +99,13 @@ public class DocumentValidationIntegrationTests : IDisposable
         await IndexAsync(indexName,
             ("upload", """{"id":"a-b_c=1","title":"t","rating":4.5,"count":-2147483648,"big":9223372036854775807,"active":true,"updated":"2024-03-05T10:20:30Z","tags":["x"],"address":{"city":"Paris"},"contacts":[{"name":"n"}]}"""),
             ("upload", """{"id":"2","title":null,"tags":null,"address":null}"""),
+            ("MergeOrUpload", """{"id":"4"}"""),
             ("delete", """{"id":"3"}"""));
 
         // Assert
         Assert.NotNull(await _documentService.GetDocumentAsync(indexName, "a-b_c=1"));
         Assert.NotNull(await _documentService.GetDocumentAsync(indexName, "2"));
+        Assert.NotNull(await _documentService.GetDocumentAsync(indexName, "4"));
     }
 
     private string SeedIndex()
