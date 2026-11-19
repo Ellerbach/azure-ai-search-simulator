@@ -129,7 +129,10 @@ public class SearchService : ISearchService
         if (request.VectorQueries != null && request.VectorQueries.Any())
         {
             vectorSearchStopwatch.Start();
-            vectorScores = ExecuteVectorSearch(indexName, request.VectorQueries);
+            // As in Azure (pre-filter), the k nearest neighbours are taken among the documents that pass the filter.
+            vectorScores = filterQuery == null
+                ? ExecuteVectorSearch(indexName, request.VectorQueries)
+                : SearchCompat.PreFilteredVectorSearch(searcher, index, keyField, filterQuery, request.VectorQueries);
             vectorSearchStopwatch.Stop();
             
             if (debugMode && debugInfo != null)
@@ -167,7 +170,7 @@ public class SearchService : ISearchService
                 ? searcher.Search(finalQuery, topN, sort)
                 : searcher.Search(finalQuery, topN);
         }
-        else if (filterQuery != null)
+        else if (filterQuery != null && vectorScores == null)
         {
             // Filter-only search
             var sort = BuildSort(request.OrderBy, index);
@@ -175,9 +178,9 @@ public class SearchService : ISearchService
                 ? searcher.Search(filterQuery, topN, sort)
                 : searcher.Search(filterQuery, topN);
         }
-        else if (vectorScores == null || !vectorScores.Any())
+        else if (vectorScores == null)
         {
-            // Match all documents
+            // Match all documents (a vector query without text returns only its nearest neighbours, as in Azure)
             var matchAllQuery = new MatchAllDocsQuery();
             var sort = BuildSort(request.OrderBy, index);
             topDocs = sort != null
