@@ -12,9 +12,23 @@ internal static class SearchCompat
     // Azure's default hybridSearch.maxTextRecallSize: how many text matches a hybrid query fuses with its vector neighbours.
     public const int MaxTextRecallSize = 1000;
 
-    public static int CountNotMatching(IndexSearcher searcher, string keyField, Query query, IEnumerable<string> keys) =>
-        keys.Count(key => searcher.Search(
-            new BooleanQuery { { query, Occur.MUST }, { new TermQuery(new Lucene.Net.Index.Term(keyField, key)), Occur.MUST } }, 1).TotalHits == 0);
+    // One search per thousand keys (Lucene's clause limit), not one per key: the query may carry an expensive filter.
+    public static int CountNotMatching(IndexSearcher searcher, string keyField, Query query, IReadOnlyCollection<string> keys)
+    {
+        var matching = 0;
+        foreach (var chunk in keys.Chunk(1000))
+        {
+            var anyKey = new BooleanQuery();
+            foreach (var key in chunk)
+            {
+                anyKey.Add(new TermQuery(new Lucene.Net.Index.Term(keyField, key)), Occur.SHOULD);
+            }
+
+            matching += searcher.Search(new BooleanQuery { { query, Occur.MUST }, { anyKey, Occur.MUST } }, 1).TotalHits;
+        }
+
+        return keys.Count - matching;
+    }
 
     // Without top, Azure returns 50 results and the request for the next 50 (followed by the SDKs' paged iterables);
     // the API adds @odata.nextLink, which depends on the HTTP request.
