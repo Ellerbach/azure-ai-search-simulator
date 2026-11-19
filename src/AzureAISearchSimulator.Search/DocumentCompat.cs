@@ -4,9 +4,42 @@ using AzureAISearchSimulator.Core.Models;
 
 namespace AzureAISearchSimulator.Search;
 
-// Azure's document semantics that upstream doesn't model: the shape of returned documents.
+// Azure's document semantics that upstream doesn't model: recursive merges and the shape of returned documents.
 internal static class DocumentCompat
 {
+    // Merge (and mergeOrUpload on an existing document) sets only the given values; complex objects merge
+    // recursively, collections are replaced.
+    public static Dictionary<string, object?> Merge(SearchIndex schema, Dictionary<string, object?> existing, Dictionary<string, object?> update)
+    {
+        var merged = new Dictionary<string, object?>(existing);
+        foreach (var (name, value) in update)
+        {
+            var field = schema.Fields.FirstOrDefault(f => f.Name == name);
+            merged[name] = field is null ? value : MergeValue(field, merged.TryGetValue(name, out var old) ? old : null, value);
+        }
+
+        return merged;
+    }
+
+    private static object? MergeValue(SearchField field, object? existing, object? update)
+    {
+        var updated = ToElement(update);
+        var current = ToElement(existing);
+        if (field.Type != SearchFieldDataType.ComplexType || updated.ValueKind != JsonValueKind.Object || current.ValueKind != JsonValueKind.Object)
+        {
+            return update;
+        }
+
+        var result = current.EnumerateObject().ToDictionary(p => p.Name, p => (object?)p.Value);
+        foreach (var property in updated.EnumerateObject())
+        {
+            var sub = field.Fields?.FirstOrDefault(f => f.Name == property.Name);
+            result[property.Name] = sub is null ? property.Value : MergeValue(sub, result.TryGetValue(property.Name, out var old) ? old : null, property.Value);
+        }
+
+        return JsonSerializer.SerializeToElement(result);
+    }
+
     // Azure returns every retrievable (or selected) field: missing values are null, missing collections are empty,
     // and dates are UTC to the millisecond.
     public static Dictionary<string, object?> Shape(SearchIndex schema, Dictionary<string, object?> document, IEnumerable<string>? select)

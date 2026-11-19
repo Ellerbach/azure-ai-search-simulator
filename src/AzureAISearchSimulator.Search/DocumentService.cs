@@ -369,13 +369,7 @@ public class DocumentService : IDocumentService
             };
         }
 
-        // Merge fields
-        foreach (var kvp in document)
-        {
-            existing[kvp.Key] = kvp.Value;
-        }
-
-        return await UploadDocumentAsync(indexName, schema, writer, keyTerm, key, existing, isMerge: true);
+        return await UploadDocumentAsync(indexName, schema, writer, keyTerm, key, DocumentCompat.Merge(schema, existing, document), isMerge: true);
     }
 
     private async Task<IndexingResult> MergeOrUploadDocumentAsync(
@@ -390,12 +384,7 @@ public class DocumentService : IDocumentService
         var existing = await LoadDocumentAsync(indexName, key);
         if (existing != null)
         {
-            // Merge fields
-            foreach (var kvp in document)
-            {
-                existing[kvp.Key] = kvp.Value;
-            }
-            document = existing;
+            document = DocumentCompat.Merge(schema, existing, document);
         }
 
         return await UploadDocumentAsync(indexName, schema, writer, keyTerm, key, document, isMerge: existing != null);
