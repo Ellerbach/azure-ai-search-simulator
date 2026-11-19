@@ -991,6 +991,43 @@ public class FacetIntegrationTests : IDisposable
         Assert.Equal(4, facet.Count);
     }
 
+    [Fact]
+    public async Task Facets_OnFieldWithNormalizer_CountsNormalizedValues()
+    {
+        // Arrange
+        var indexName = $"facet-normalizer-{Guid.NewGuid():N}";
+        RegisterIndex(new SearchIndex
+        {
+            Name = indexName,
+            Fields = new List<SearchField>
+            {
+                new() { Name = "id", Type = "Edm.String", Key = true },
+                new() { Name = "city", Type = "Edm.String", Facetable = true, Filterable = true, Normalizer = "lowercase" },
+                new() { Name = "tags", Type = "Collection(Edm.String)", Facetable = true, Normalizer = "asciifolding" }
+            }
+        });
+
+        await UploadDocuments(indexName,
+            new Dictionary<string, object?> { ["id"] = "1", ["city"] = "Paris", ["tags"] = new[] { "café" } },
+            new Dictionary<string, object?> { ["id"] = "2", ["city"] = "PARIS", ["tags"] = new[] { "cafe", "Café" } },
+            new Dictionary<string, object?> { ["id"] = "3", ["city"] = "Lyon", ["tags"] = new[] { "Cafe" } });
+
+        // Act
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Facets = new List<string> { "city", "tags" }
+        });
+
+        // Assert: one bucket per normalized value, holding the normalized value.
+        var cities = response.SearchFacets!["city"];
+        Assert.Equal(new object[] { "paris", "lyon" }, cities.Select(f => f.Value));
+        Assert.Equal(new long?[] { 2, 1 }, cities.Select(f => f.Count));
+        var tags = response.SearchFacets["tags"];
+        Assert.Equal(new object[] { "Cafe", "cafe" }, tags.Select(f => f.Value));
+        Assert.Equal(new long?[] { 2, 2 }, tags.Select(f => f.Count));
+    }
+
     private async Task<string> SeedValueFacetIndexAsync()
     {
         var indexName = $"facet-values-{Guid.NewGuid():N}";

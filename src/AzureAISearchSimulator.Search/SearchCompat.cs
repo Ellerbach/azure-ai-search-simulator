@@ -50,8 +50,8 @@ internal static class SearchCompat
         }
     }
 
-    // Value facets from each matching document's source: exact, case-sensitive values, as Azure counts them.
-    public static List<FacetResult> ValueFacet(IndexSearcher searcher, SearchField field, string path, int maxCount, IEnumerable<int> docs)
+    // Value facets from each matching document's source: exact, case-sensitive values (after the field's normalizer), as Azure counts them.
+    public static List<FacetResult> ValueFacet(IndexSearcher searcher, SearchIndex schema, SearchField field, string path, int maxCount, IEnumerable<int> docs)
     {
         var counts = new Dictionary<string, (object Value, long Count)>(StringComparer.Ordinal);
         var sourceOnly = new HashSet<string> { "_raw_json" };
@@ -67,7 +67,7 @@ internal static class SearchCompat
             var seen = new HashSet<string>(StringComparer.Ordinal);
             foreach (var value in Values(source.RootElement, path.Split('/'), 0))
             {
-                if (FacetValue(field, value) is not { } facetValue || !seen.Add(facetValue.Key))
+                if (FacetValue(schema, field, value) is not { } facetValue || !seen.Add(facetValue.Key))
                 {
                     continue;
                 }
@@ -111,7 +111,7 @@ internal static class SearchCompat
         }
     }
 
-    private static (string Key, object Value)? FacetValue(SearchField field, JsonElement value)
+    private static (string Key, object Value)? FacetValue(SearchIndex schema, SearchField field, JsonElement value)
     {
         var type = field.Type.StartsWith("Collection(", StringComparison.Ordinal) ? field.Type["Collection(".Length..^1] : field.Type;
         return value.ValueKind switch
@@ -119,7 +119,8 @@ internal static class SearchCompat
             JsonValueKind.String when type == SearchFieldDataType.DateTimeOffset
                 && DateTimeOffset.TryParse(value.GetString(), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal, out var date)
                 => ("d" + DocumentCompat.FormatDate(date), DocumentCompat.FormatDate(date)),
-            JsonValueKind.String => ("s" + value.GetString(), value.GetString()!),
+            JsonValueKind.String when NormalizerFactory.Normalize(value.GetString(), field.Normalizer, schema.Normalizers, schema.CharFilters) is { } text
+                => ("s" + text, text),
             JsonValueKind.True or JsonValueKind.False => ("b" + value.GetBoolean(), value.GetBoolean()),
             JsonValueKind.Number when value.TryGetInt64(out var whole) => ("n" + whole, whole),
             JsonValueKind.Number => ("n" + value.GetDouble().ToString("R", System.Globalization.CultureInfo.InvariantCulture), value.GetDouble()),

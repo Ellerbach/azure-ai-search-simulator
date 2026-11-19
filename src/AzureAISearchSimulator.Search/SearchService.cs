@@ -2061,7 +2061,7 @@ public class SearchService : ISearchService
             else
             {
                 // Value facet
-                results = SearchCompat.ValueFacet(searcher, field, canonicalFieldName, count, matchingDocs);
+                results = SearchCompat.ValueFacet(searcher, schema, field, canonicalFieldName, count, matchingDocs);
             }
 
             // The same field may appear in multiple facet expressions
