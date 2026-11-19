@@ -551,13 +551,13 @@ public class SearchService : ISearchService
         return modes;
     }
 
-    private Query BuildTextQuery(string indexName, SearchIndex schema, SearchRequest request, Dictionary<string, double>? textWeights = null)
+    private Query BuildTextQuery(string indexName, SearchIndex schema, SearchRequest request, Dictionary<string, double>? textWeights = null, bool strict = false)
     {
         var searchableFields = ResolveSearchFields(schema, request.SearchFields);
 
         if (!searchableFields.Any())
         {
-            return new MatchAllDocsQuery();
+            return strict ? throw new ArgumentException("The index has no searchable fields for search.ismatch.") : new MatchAllDocsQuery();
         }
 
         var analyzer = _indexManager.GetAnalyzer(indexName);
@@ -606,6 +606,10 @@ public class SearchService : ISearchService
             // Expand with synonyms if any searchable fields have synonym maps
             var synonymExpandedQuery = ExpandWithSynonyms(schema, request, baseQuery, analyzer);
             return synonymExpandedQuery ?? baseQuery;
+        }
+        catch (ParseException ex) when (strict)
+        {
+            throw new ArgumentException($"Invalid expression: search.ismatch query '{request.Search}' can't be parsed: {ex.Message}\r\nParameter name: $filter", ex);
         }
         catch (ParseException ex)
         {
@@ -802,35 +806,15 @@ public class SearchService : ISearchService
         return escaped;
     }
 
-    private Query? BuildFilterQuery(SearchIndex schema, string filter)
-    {
-        // Simple OData filter parser - handles basic cases
-        // Full OData support would require a proper parser
-        
-        try
+    // Fails closed: anything the filter parser can't evaluate exactly is a 400, never an ignored clause.
+    private Query? BuildFilterQuery(SearchIndex schema, string filter) =>
+        Filtering.ODataFilter.ToQuery(schema, filter, isMatch => BuildTextQuery(schema.Name, schema, new SearchRequest
         {
-            var boolQuery = new BooleanQuery();
-
-            var parts = SplitTopLevelAndClauses(filter);
-
-            foreach (var part in parts)
-            {
-                var trimmed = part.Trim();
-                var query = ParseFilterExpression(schema, trimmed);
-                if (query != null)
-                {
-                    boolQuery.Add(query, Occur.MUST);
-                }
-            }
-
-            return boolQuery.Clauses.Count > 0 ? boolQuery : null;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to parse filter '{Filter}'", filter);
-            return null;
-        }
-    }
+            Search = isMatch.Search,
+            SearchFields = isMatch.SearchFields,
+            QueryType = isMatch.QueryType,
+            SearchMode = isMatch.SearchMode,
+        }, strict: true));
 
     /// <summary>
     /// Splits a filter string into top-level "and"-conjoined clauses, the same way
