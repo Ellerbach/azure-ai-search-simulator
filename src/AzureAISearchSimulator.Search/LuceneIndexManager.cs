@@ -421,12 +421,12 @@ public class LuceneIndexManager : IDisposable
             if (schema.Analyzers != null && schema.Analyzers.Count > 0)
                 return true;
 
-            // Has field-level analyzer settings (built-in analyzers assigned to fields)
-            return schema.Fields.Any(f =>
-                f.Searchable == true &&
-                (!string.IsNullOrEmpty(f.Analyzer) ||
-                 !string.IsNullOrEmpty(f.IndexAnalyzer) ||
-                 !string.IsNullOrEmpty(f.SearchAnalyzer)));
+            // Has field-level analyzer settings (built-in analyzers assigned to fields, including complex sub-fields)
+            return AnalyzerFactory.FlattenFields(schema.Fields, "").Any(f =>
+                f.Field.Searchable == true &&
+                (!string.IsNullOrEmpty(f.Field.Analyzer) ||
+                 !string.IsNullOrEmpty(f.Field.IndexAnalyzer) ||
+                 !string.IsNullOrEmpty(f.Field.SearchAnalyzer)));
         }
     }
 }

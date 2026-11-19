@@ -373,7 +373,8 @@ public static class AnalyzerFactory
 
         var fieldAnalyzers = new Dictionary<string, Analyzer>();
 
-        foreach (var field in schema.Fields)
+        // Complex sub-fields are indexed under path-qualified names (e.g. "ShortName/fr_CA"), so they need entries too.
+        foreach (var (path, field) in FlattenFields(schema.Fields, ""))
         {
             if (field.Searchable != true)
                 continue;
@@ -388,17 +389,22 @@ public static class AnalyzerFactory
             // Check if it's a custom analyzer defined in the index
             if (customAnalyzers.TryGetValue(analyzerName, out var customDef))
             {
-                fieldAnalyzers[field.Name] = BuildCustomAnalyzer(customDef, schema);
+                fieldAnalyzers[path] = BuildCustomAnalyzer(customDef, schema);
             }
             else
             {
                 // Built-in analyzer
-                fieldAnalyzers[field.Name] = Create(analyzerName);
+                fieldAnalyzers[path] = Create(analyzerName);
             }
         }
 
         return new PerFieldAnalyzerWrapper(defaultAnalyzer, fieldAnalyzers);
     }
+
+    internal static IEnumerable<(string Path, SearchField Field)> FlattenFields(IEnumerable<SearchField>? fields, string prefix) =>
+        (fields ?? []).SelectMany(f => f.Fields is { Count: > 0 }
+            ? FlattenFields(f.Fields, prefix + f.Name + "/")
+            : [(prefix + f.Name, f)]);
 
     /// <summary>
     /// Builds a Lucene Analyzer from a CustomAnalyzer definition and the index's token filter/tokenizer definitions.
