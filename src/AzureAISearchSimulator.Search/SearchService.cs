@@ -1431,6 +1431,7 @@ public class SearchService : ISearchService
             var fieldName = tokens[0];
             var reverse = tokens.Length > 1 && 
                 tokens[1].Equals("desc", StringComparison.OrdinalIgnoreCase);
+            SearchCompat.ValidateOrderBy(index, fieldName, tokens);
 
             if (fieldName.Equals("search.score()", StringComparison.OrdinalIgnoreCase))
             {

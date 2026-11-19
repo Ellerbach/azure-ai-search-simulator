@@ -169,6 +169,75 @@ public class OrderByIntegrationTests : IDisposable
         Assert.Equal("3", response.Value[2]["id"]?.ToString()); // 4.9
     }
 
+    [Theory]
+    [InlineData("hotelName asc")]
+    [InlineData("unknown asc")]
+    [InlineData("tags asc")]
+    [InlineData("address asc")]
+    [InlineData("address/city asc")]
+    [InlineData("rating ascending")]
+    [InlineData("rating asc desc")]
+    public async Task OrderBy_NotASortableFieldOrDirection_Throws(string orderBy)
+    {
+        // Arrange
+        var indexName = await SeedSortValidationIndexAsync();
+
+        // Act & Assert
+        await Assert.ThrowsAsync<ArgumentException>(() => _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            OrderBy = orderBy
+        }));
+    }
+
+    [Theory]
+    [InlineData("rating desc", "2,1")]
+    [InlineData("rating", "1,2")]
+    [InlineData("search.score() desc, rating desc", "2,1")]
+    public async Task OrderBy_SortableFieldOrScore_ReturnsSortedResults(string orderBy, string expectedIds)
+    {
+        // Arrange
+        var indexName = await SeedSortValidationIndexAsync();
+
+        // Act
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            OrderBy = orderBy
+        });
+
+        // Assert
+        Assert.Equal(expectedIds, string.Join(',', response.Value.Select(r => r["id"]?.ToString())));
+    }
+
+    private async Task<string> SeedSortValidationIndexAsync()
+    {
+        var indexName = $"sort-validation-{Guid.NewGuid():N}";
+        RegisterIndex(new SearchIndex
+        {
+            Name = indexName,
+            Fields = new List<SearchField>
+            {
+                new() { Name = "id", Type = "Edm.String", Key = true },
+                new() { Name = "hotelName", Type = "Edm.String", Searchable = true, Sortable = false },
+                new() { Name = "rating", Type = "Edm.Double", Sortable = true },
+                new() { Name = "tags", Type = "Collection(Edm.String)", Filterable = true },
+                new()
+                {
+                    Name = "address",
+                    Type = "Edm.ComplexType",
+                    Fields = new List<SearchField> { new() { Name = "city", Type = "Edm.String", Sortable = false } }
+                }
+            }
+        });
+
+        await UploadDocuments(indexName,
+            new Dictionary<string, object?> { ["id"] = "1", ["hotelName"] = "Hotel A", ["rating"] = 3.5 },
+            new Dictionary<string, object?> { ["id"] = "2", ["hotelName"] = "Hotel B", ["rating"] = 4.5 });
+
+        return indexName;
+    }
+
     public void Dispose()
     {
         _luceneManager?.Dispose();

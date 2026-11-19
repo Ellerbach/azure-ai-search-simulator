@@ -24,6 +24,32 @@ internal static class SearchCompat
         response.ODataNextLink = $"https://localhost/indexes('{indexName}')/docs/search.post.search";
     }
 
+    public static void ValidateOrderBy(SearchIndex index, string fieldName, string[] tokens)
+    {
+        if (tokens.Length > 2 || (tokens.Length == 2 && tokens[1] is not ("asc" or "desc")))
+        {
+            throw new ArgumentException($"Invalid expression: '{string.Join(' ', tokens)}' isn't a valid $orderby clause.\r\nParameter name: $orderby");
+        }
+
+        if (fieldName == "search.score()")
+        {
+            return;
+        }
+
+        SearchField? field = null;
+        var candidates = index.Fields;
+        foreach (var segment in fieldName.Split('/'))
+        {
+            field = candidates?.FirstOrDefault(f => f.Name == segment);
+            candidates = field?.Fields;
+        }
+
+        if (field is null || field.Sortable != true || field.IsCollection || field.IsComplex)
+        {
+            throw new ArgumentException($"Invalid expression: '{fieldName}' isn't a sortable field.\r\nParameter name: $orderby");
+        }
+    }
+
     // Exact k nearest neighbours among the documents that pass the filter, scored like the simulator's HNSW (1 / (1 + distance)).
     public static Dictionary<string, double> PreFilteredVectorSearch(
         IndexSearcher searcher,
