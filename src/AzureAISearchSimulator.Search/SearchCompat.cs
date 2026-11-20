@@ -279,10 +279,12 @@ internal static class SearchCompat
         double dot = 0, aa = 0, bb = 0, l2 = 0;
         for (var i = 0; i < a.Length; i++)
         {
-            dot += a[i] * b[i];
-            aa += a[i] * a[i];
-            bb += b[i] * b[i];
-            l2 += (a[i] - b[i]) * (a[i] - b[i]);
+            // In double, so large components don't overflow float.
+            double x = a[i], y = b[i];
+            dot += x * y;
+            aa += x * x;
+            bb += y * y;
+            l2 += (x - y) * (x - y);
         }
 
         switch (metric.ToLowerInvariant())

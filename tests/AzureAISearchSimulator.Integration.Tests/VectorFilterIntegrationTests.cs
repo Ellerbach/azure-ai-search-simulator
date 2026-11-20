@@ -241,6 +241,45 @@ public class VectorFilterIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task SearchAsync_VectorQueryWithLargeComponents_RanksByTheirRealDistance()
+    {
+        // Arrange: squared in float, both distances would be infinite.
+        var indexName = $"vector-large-{Guid.NewGuid():N}";
+        _indexServiceMock.Setup(x => x.GetIndexAsync(indexName, It.IsAny<CancellationToken>())).ReturnsAsync(new SearchIndex
+        {
+            Name = indexName,
+            Fields =
+            [
+                new SearchField { Name = "id", Type = "Edm.String", Key = true, Filterable = true },
+                new SearchField { Name = "Embedding", Type = "Collection(Edm.Single)", Searchable = true, Dimensions = 2, VectorSearchProfile = "p" },
+            ],
+            VectorSearch = new VectorSearchConfiguration
+            {
+                Algorithms = [new VectorSearchAlgorithm { Name = "alg", Kind = "exhaustiveKnn", ExhaustiveKnnParameters = new ExhaustiveKnnParameters { Metric = "euclidean" } }],
+                Profiles = [new VectorSearchProfile { Name = "p", Algorithm = "alg" }],
+            },
+        });
+        _luceneManager.GetWriter(indexName);
+        await _documentService.IndexDocumentsAsync(indexName, new IndexDocumentsRequest
+        {
+            Value =
+            [
+                new IndexAction { ["@search.action"] = "upload", ["id"] = "a", ["Embedding"] = new[] { 2e20f, 0f } },
+                new IndexAction { ["@search.action"] = "upload", ["id"] = "b", ["Embedding"] = new[] { 1e20f, 0f } },
+            ],
+        });
+
+        // Act
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            VectorQueries = [new VectorQuery { Kind = "vector", Vector = [1f, 0f], Fields = "Embedding", K = 1 }],
+        });
+
+        // Assert
+        Assert.Equal(["b"], Ids(response));
+    }
+
+    [Fact]
     public async Task SearchAsync_VectorQueryWithFilter_ReturnsTheNearestMatchingDocuments()
     {
         // Arrange
