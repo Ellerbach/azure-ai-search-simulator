@@ -152,7 +152,8 @@ internal static class SearchCompat
             JsonValueKind.String when NormalizerFactory.Normalize(value.GetString(), field.Normalizer, schema.Normalizers, schema.CharFilters) is { } text
                 => ("s" + text, text),
             JsonValueKind.True or JsonValueKind.False => ("b" + value.GetBoolean(), value.GetBoolean()),
-            JsonValueKind.Number when value.TryGetInt64(out var whole) => ("n" + whole, whole),
+            JsonValueKind.Number when type is not (SearchFieldDataType.Double or "Edm.Single" or "Edm.Half") && value.TryGetInt64(out var whole)
+                => ("n" + whole, whole),
             JsonValueKind.Number => ("n" + value.GetDouble().ToString("R", System.Globalization.CultureInfo.InvariantCulture), value.GetDouble()),
             _ => null,
         };

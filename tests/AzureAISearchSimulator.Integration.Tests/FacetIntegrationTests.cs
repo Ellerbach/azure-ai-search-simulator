@@ -1070,6 +1070,38 @@ public class FacetIntegrationTests : IDisposable
         Assert.Equal(new long?[] { 2, 2 }, tags.Select(f => f.Count));
     }
 
+    [Fact]
+    public async Task Facets_OnDoubleField_CountsEqualDoublesInOneBucket()
+    {
+        // Arrange: 2^53 and 2^53 + 1 are the same double.
+        var indexName = $"facet-double-{Guid.NewGuid():N}";
+        RegisterIndex(new SearchIndex
+        {
+            Name = indexName,
+            Fields = new List<SearchField>
+            {
+                new() { Name = "id", Type = "Edm.String", Key = true },
+                new() { Name = "score", Type = "Edm.Double", Facetable = true }
+            }
+        });
+
+        await UploadDocuments(indexName,
+            new Dictionary<string, object?> { ["id"] = "1", ["score"] = 9007199254740992L },
+            new Dictionary<string, object?> { ["id"] = "2", ["score"] = 9007199254740993L });
+
+        // Act
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Facets = new List<string> { "score" }
+        });
+
+        // Assert
+        var facet = Assert.Single(response.SearchFacets!["score"]);
+        Assert.Equal(9007199254740992d, facet.Value);
+        Assert.Equal(2, facet.Count);
+    }
+
     private async Task<string> SeedValueFacetIndexAsync()
     {
         var indexName = $"facet-values-{Guid.NewGuid():N}";
