@@ -921,7 +921,11 @@ public class FacetIntegrationTests : IDisposable
     [Theory]
     [InlineData("title")]
     [InlineData("unknown")]
-    public async Task Facets_OnFieldThatIsNotFacetable_Throws(string facet)
+    [InlineData("city,count:abc")]
+    [InlineData("city,count:-1")]
+    [InlineData("rooms/rate,interval:10")]
+    [InlineData("rooms/rate,metric:sum")]
+    public async Task Facets_OnFieldThatIsNotFacetableOrWithAnInvalidParameter_Throws(string facet)
     {
         // Arrange
         var indexName = await SeedValueFacetIndexAsync();
@@ -932,6 +936,44 @@ public class FacetIntegrationTests : IDisposable
             Search = "*",
             Facets = new List<string> { facet }
         }));
+    }
+
+    [Fact]
+    public async Task Facets_OnComplexCollectionSubField_CountsEachDocumentOncePerValue()
+    {
+        // Arrange
+        var indexName = await SeedValueFacetIndexAsync();
+
+        // Act
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Facets = new List<string> { "rooms/type" }
+        });
+
+        // Assert: document 1 has two suites and a single, document 2 a single.
+        var facets = response.SearchFacets!["rooms/type"];
+        Assert.Equal(new object[] { "single", "suite" }, facets.Select(f => f.Value));
+        Assert.Equal(new long?[] { 2, 1 }, facets.Select(f => f.Count));
+    }
+
+    [Theory]
+    [InlineData("city,count:0", 3)]
+    [InlineData("city,count:1", 1)]
+    public async Task Facets_WithCount_LimitsTheBucketsAndZeroMeansAll(string facet, int buckets)
+    {
+        // Arrange
+        var indexName = await SeedValueFacetIndexAsync();
+
+        // Act
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Facets = new List<string> { facet }
+        });
+
+        // Assert
+        Assert.Equal(buckets, response.SearchFacets!["city"].Count);
     }
 
     [Fact]
@@ -1040,14 +1082,30 @@ public class FacetIntegrationTests : IDisposable
                 new() { Name = "title", Type = "Edm.String", Searchable = true },
                 new() { Name = "city", Type = "Edm.String", Searchable = true, Facetable = true },
                 new() { Name = "tags", Type = "Collection(Edm.String)", Facetable = true },
-                new() { Name = "opened", Type = "Edm.DateTimeOffset", Facetable = true }
+                new() { Name = "opened", Type = "Edm.DateTimeOffset", Facetable = true },
+                new()
+                {
+                    Name = "rooms",
+                    Type = "Collection(Edm.ComplexType)",
+                    Fields = new List<SearchField>
+                    {
+                        new() { Name = "type", Type = "Edm.String", Facetable = true },
+                        new() { Name = "rate", Type = "Edm.Double", Facetable = true }
+                    }
+                }
             }
         });
 
         var opened = "2024-03-05T10:20:30.1234567+02:00";
+        var rooms = new[]
+        {
+            new Dictionary<string, object?> { ["type"] = "suite", ["rate"] = 300.0 },
+            new Dictionary<string, object?> { ["type"] = "suite" },
+            new Dictionary<string, object?> { ["type"] = "single" },
+        };
         await UploadDocuments(indexName,
-            new Dictionary<string, object?> { ["id"] = "1", ["city"] = "Paris", ["tags"] = new[] { "a", "a", "b" }, ["opened"] = opened },
-            new Dictionary<string, object?> { ["id"] = "2", ["city"] = "paris", ["tags"] = new[] { "a" }, ["opened"] = opened },
+            new Dictionary<string, object?> { ["id"] = "1", ["city"] = "Paris", ["tags"] = new[] { "a", "a", "b" }, ["opened"] = opened, ["rooms"] = rooms },
+            new Dictionary<string, object?> { ["id"] = "2", ["city"] = "paris", ["tags"] = new[] { "a" }, ["opened"] = opened, ["rooms"] = new[] { rooms[2] } },
             new Dictionary<string, object?> { ["id"] = "3", ["city"] = "New York", ["tags"] = new[] { "a" }, ["opened"] = opened },
             new Dictionary<string, object?> { ["id"] = "4", ["city"] = "New York", ["opened"] = opened });
 

@@ -111,7 +111,7 @@ internal static class SearchCompat
         return counts.Values
             .OrderByDescending(c => c.Count)
             .ThenBy(c => c.Value is string s ? s : Convert.ToString(c.Value, System.Globalization.CultureInfo.InvariantCulture), StringComparer.Ordinal)
-            .Take(maxCount)
+            .Take(maxCount == 0 ? int.MaxValue : maxCount)
             .Select(c => new FacetResult { Value = c.Value, Count = c.Count })
             .ToList();
     }

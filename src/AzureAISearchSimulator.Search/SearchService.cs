@@ -2023,7 +2023,7 @@ public class SearchService : ISearchService
     /// canonicalFieldName is rebuilt from the schema's own casing for each segment, since Lucene
     /// field names are case-sensitive and must match how LuceneDocumentMapper indexed them.
     /// </summary>
-    private static SearchField? ResolveFieldByPath(List<SearchField> topLevelFields, string path, out string canonicalFieldName)
+    private static SearchField? ResolveFieldByPath(List<SearchField> topLevelFields, string path, out string canonicalFieldName, bool throughComplexCollections = false)
     {
         var segments = path.Split('/');
         var candidates = topLevelFields;
@@ -2046,7 +2046,8 @@ public class SearchService : ISearchService
             {
                 // Only Edm.ComplexType sub-fields are indexed by LuceneDocumentMapper;
                 // Collection(Edm.ComplexType) sub-fields are not, so don't descend into them.
-                if (current.Type != SearchFieldDataType.ComplexType)
+                if (current.Type != SearchFieldDataType.ComplexType
+                    && !(throughComplexCollections && current.Type == SearchFieldDataType.CollectionComplex))
                 {
                     canonicalFieldName = path;
                     return null;
@@ -2099,6 +2100,12 @@ public class SearchService : ISearchService
             // (e.g. "Tiles/PendingPaymentCount"), so resolve it by walking the schema's
             // field/sub-field tree rather than a flat top-level lookup.
             var field = ResolveFieldByPath(schema.Fields, fieldName, out var canonicalFieldName);
+
+            // Value facets read the source, so they can also count sub-fields of complex collections, once per document.
+            if (field == null && metric == null && !interval.HasValue)
+            {
+                field = ResolveFieldByPath(schema.Fields, fieldName, out canonicalFieldName, throughComplexCollections: true);
+            }
 
             if (field == null || field.Facetable != true)
             {
@@ -2214,10 +2221,9 @@ public class SearchService : ISearchService
             var trimmed = part.Trim();
             if (trimmed.StartsWith("count:", StringComparison.OrdinalIgnoreCase))
             {
-                if (int.TryParse(trimmed.Substring(6).Trim(), out var c))
-                {
-                    count = c;
-                }
+                count = int.TryParse(trimmed.Substring(6).Trim(), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var c)
+                    ? c
+                    : throw new ArgumentException($"Invalid facet expression: '{trimmed}' needs a count of 0 (all values) or more.\r\nParameter name: facets");
             }
             else if (trimmed.StartsWith("interval:", StringComparison.OrdinalIgnoreCase))
             {
