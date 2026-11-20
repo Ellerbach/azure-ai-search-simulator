@@ -104,6 +104,7 @@ public class VectorFilterIntegrationTests : IDisposable
     [InlineData("Embedding", 3, "unknown")]
     [InlineData("Missing", 2, null)]
     [InlineData("ClientIdentifier", 2, null)]
+    [InlineData("Counts", 2, null)]
     [InlineData("Embedding", 3, null)]
     [InlineData("Embedding", 0, null)]
     [InlineData("", 2, null)]
@@ -518,6 +519,7 @@ public class VectorFilterIntegrationTests : IDisposable
                 new SearchField { Name = "ClientIdentifier", Type = "Edm.String", Filterable = true, Facetable = true },
                 new SearchField { Name = "Title", Type = "Edm.String", Searchable = true },
                 new SearchField { Name = "Embedding", Type = "Collection(Edm.Single)", Searchable = true, Dimensions = 2, VectorSearchProfile = "p" },
+                new SearchField { Name = "Counts", Type = "Collection(Edm.Int32)", Filterable = true, Dimensions = 2 },
             ],
             VectorSearch = new VectorSearchConfiguration
             {

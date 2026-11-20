@@ -183,7 +183,7 @@ internal static class SearchCompat
             {
                 var field = index.Fields.FirstOrDefault(f => f.Name == name)
                     ?? throw new ArgumentException($"Unknown field '{name}' in vector field list.");
-                if (field.Dimensions is not > 0 || !field.IsCollection)
+                if (!field.IsVector || field.Dimensions is not > 0)
                 {
                     throw new ArgumentException($"The field '{name}' in the vector field list is not a vector field.");
                 }
