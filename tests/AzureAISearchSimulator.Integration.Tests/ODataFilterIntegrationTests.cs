@@ -91,6 +91,9 @@ public class ODataFilterIntegrationTests : IDisposable
     [InlineData("Score eq 1e-29", "p2")]
     [InlineData("Score eq 0", "p3")]
     [InlineData("Score gt 0 and Score lt 1e-28", "p2")]
+    [InlineData("Score gt 1e300", "p4")]
+    [InlineData("Score ne 0", "p1,p2,p4,p5")]
+    [InlineData("Score lt 0 or Score ge 0", "p1,p2,p3,p4")]
     [InlineData("search.ismatch('admin', 'Title') eq false", "p2,p3,p4")]
     [InlineData("true eq search.ismatch('admin', 'Title')", "p1,p5")]
     [InlineData("search.ismatch('admin', 'Title') ne true", "p2,p3,p4")]
@@ -344,13 +347,13 @@ public class ODataFilterIntegrationTests : IDisposable
             new()
             {
                 // A work assignment without positions, and one starting in the future.
-                ["id"] = "p4", ["ClientIdentifier"] = "acme_42", ["Title"] = "Payroll",
+                ["id"] = "p4", ["ClientIdentifier"] = "acme_42", ["Title"] = "Payroll", ["Score"] = "INF",
                 ["EmployeeStatuses"] = new[] { Span(null, null, ("GroupXRefCode", "ACTIVE")) },
                 ["WorkAssignments"] = new[] { Span("2027-01-01T00:00:00Z", null), Span("2020-01-01T00:00:00Z", "2020-06-01T00:00:00Z") },
             },
             new()
             {
-                ["id"] = "p5", ["ClientIdentifier"] = "other_1", ["Title"] = "Payroll admin", ["Roles"] = new[] { "1004" }, ["IsReleased"] = true,
+                ["id"] = "p5", ["ClientIdentifier"] = "other_1", ["Title"] = "Payroll admin", ["Roles"] = new[] { "1004" }, ["IsReleased"] = true, ["Score"] = "NaN",
                 ["EmployeeStatuses"] = new[] { Span("2020-01-01T00:00:00Z", null, ("GroupXRefCode", "ACTIVE")) },
                 ["WorkAssignments"] = new[]
                 {

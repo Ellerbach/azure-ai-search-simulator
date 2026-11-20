@@ -231,6 +231,10 @@ internal static class ODataFilter
                     && number.Exact is { } exact && value.TryGetDecimal(out var stored)
                     ? stored.CompareTo(exact)
                     : value.GetDouble().CompareTo(number.Approximate);
+            case LiteralKind.Number when value.ValueKind == JsonValueKind.String && value.GetString() is "INF" or "-INF" or "NaN":
+                // Azure's named doubles; NaN has no order, so only ne matches it.
+                var named = value.GetString() switch { "INF" => double.PositiveInfinity, "-INF" => double.NegativeInfinity, _ => double.NaN };
+                return double.IsNaN(named) ? null : named.CompareTo(((NumberLiteral)literal!).Approximate);
             case LiteralKind.DateTimeOffset when value.ValueKind == JsonValueKind.String
                 && DateTimeOffset.TryParse(value.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var date):
                 return ToAzurePrecision(date).UtcTicks.CompareTo(((DateTimeOffset)literal!).UtcTicks);
