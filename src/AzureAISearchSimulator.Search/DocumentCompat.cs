@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Numerics;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using AzureAISearchSimulator.Core.Models;
@@ -13,6 +14,9 @@ internal static class DocumentCompat
     // OData's DateTimeOffset: a date, a time and a Z or an offset.
     private static readonly Regex OffsetDateTime = new(
         @"\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})\z", RegexOptions.CultureInvariant);
+
+    private static readonly Regex JsonNumber = new(
+        @"\A-?(?<int>\d+)(\.(?<frac>\d+))?([eE](?<exp>[+-]?\d+))?\z", RegexOptions.CultureInvariant);
 
     // Azure rejects the whole batch (HTTP 400) when any action is invalid, before applying any of them.
     public static void ValidateBatch(SearchIndex schema, string keyField, IReadOnlyList<IndexAction> actions)
@@ -121,9 +125,44 @@ internal static class DocumentCompat
         && coordinates[0].ValueKind == JsonValueKind.Number && coordinates[0].GetDouble() is >= -180 and <= 180
         && coordinates[1].ValueKind == JsonValueKind.Number && coordinates[1].GetDouble() is >= -90 and <= 90;
 
-    private static bool IsWhole(JsonElement value, decimal min, decimal max) =>
-        value.ValueKind == JsonValueKind.Number && value.TryGetDecimal(out var number)
-        && decimal.Truncate(number) == number && number >= min && number <= max;
+    private static bool IsWhole(JsonElement value, long min, long max)
+    {
+        if (value.ValueKind != JsonValueKind.Number)
+        {
+            return false;
+        }
+
+        if (value.TryGetInt64(out var whole))
+        {
+            return whole >= min && whole <= max;
+        }
+
+        // Read the JSON text exactly: decimal and double round fractions such as 1e-29 to whole numbers.
+        var number = JsonNumber.Match(value.GetRawText());
+        var fraction = number.Groups["frac"].Value;
+        var digits = (number.Groups["int"].Value + fraction).TrimStart('0');
+        var significant = digits.TrimEnd('0');
+        if (significant.Length == 0)
+        {
+            return min <= 0 && max >= 0;
+        }
+
+        var exponentText = number.Groups["exp"].Success ? number.Groups["exp"].Value : "0";
+        if (!int.TryParse(exponentText, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var exponent))
+        {
+            return false;
+        }
+
+        var power = (long)exponent - fraction.Length + (digits.Length - significant.Length);
+        if (power < 0 || significant.Length + power > 19)
+        {
+            return false;
+        }
+
+        var magnitude = BigInteger.Parse(significant, CultureInfo.InvariantCulture) * BigInteger.Pow(10, (int)power);
+        var signed = number.Value.StartsWith('-') ? -magnitude : magnitude;
+        return signed >= min && signed <= max;
+    }
 
     private static ArgumentException Invalid(JsonElement value, string type) =>
         new($"The request is invalid. Details: Cannot convert the literal '{(value.ValueKind == JsonValueKind.String ? value.GetString() : value.GetRawText())}' to the expected type '{type}'.");
