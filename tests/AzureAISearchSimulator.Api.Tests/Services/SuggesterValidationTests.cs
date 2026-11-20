@@ -41,6 +41,7 @@ public class SuggesterValidationTests
     [InlineData("tags")]
     [InlineData("ShortName/en")]
     [InlineData("ShortName/Nested/fr")]
+    [InlineData("ShortName/de")]
     public async Task CreateIndex_SuggesterOnStringOrSubField_Succeeds(string sourceField)
     {
         // Arrange
@@ -57,6 +58,9 @@ public class SuggesterValidationTests
     [InlineData("ShortName")]
     [InlineData("ShortName/missing")]
     [InlineData("rating")]
+    [InlineData("code")]
+    [InlineData("ShortName/keyword")]
+    [InlineData("ShortName/custom")]
     public async Task CreateIndex_SuggesterOnUnknownOrNonStringField_Throws(string sourceField)
     {
         // Arrange
@@ -93,6 +97,7 @@ public class SuggesterValidationTests
             new SearchField { Name = "title", Type = "Edm.String", Searchable = true },
             new SearchField { Name = "tags", Type = "Collection(Edm.String)", Searchable = true },
             new SearchField { Name = "rating", Type = "Edm.Double" },
+            new SearchField { Name = "code", Type = "Edm.String", Searchable = false },
             new SearchField
             {
                 Name = "ShortName",
@@ -100,6 +105,9 @@ public class SuggesterValidationTests
                 Fields =
                 [
                     new SearchField { Name = "en", Type = "Edm.String", Searchable = true },
+                    new SearchField { Name = "de", Type = "Edm.String", Searchable = true, Analyzer = "de.microsoft" },
+                    new SearchField { Name = "keyword", Type = "Edm.String", Searchable = true, Analyzer = "keyword" },
+                    new SearchField { Name = "custom", Type = "Edm.String", Searchable = true, Analyzer = "my_analyzer" },
                     new SearchField
                     {
                         Name = "Nested",
