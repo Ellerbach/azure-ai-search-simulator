@@ -161,6 +161,12 @@ public class FacetResult
     public double? Avg { get; set; }
 
     /// <summary>
+    /// Number of distinct field values across all matching documents (for metric:cardinality facets).
+    /// </summary>
+    [JsonPropertyName("cardinality")]
+    public long? Cardinality { get; set; }
+
+    /// <summary>
     /// Range start (for range facets).
     /// </summary>
     [JsonPropertyName("from")]

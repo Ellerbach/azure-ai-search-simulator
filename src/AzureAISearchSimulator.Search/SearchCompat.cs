@@ -6,7 +6,7 @@ namespace AzureAISearchSimulator.Search;
 
 /// <summary>
 /// Azure AI Search behaviours that the simulator adds around its search pipeline: paging, <c>$orderby</c> validation,
-/// value facets, and vector query validation and exact search.
+/// and vector query validation and exact search.
 /// </summary>
 internal static class SearchCompat
 {
@@ -103,101 +103,6 @@ internal static class SearchCompat
         }
 
         return field;
-    }
-
-    /// <summary>
-    /// Counts a value facet from each matching document's source: exact, case-sensitive values (after the field's
-    /// normalizer), each counted once per document, as Azure counts them.
-    /// </summary>
-    /// <param name="searcher">The index searcher.</param>
-    /// <param name="schema">The index definition.</param>
-    /// <param name="field">The facetable field.</param>
-    /// <param name="path">The field's path, e.g. <c>Rooms/Type</c>.</param>
-    /// <param name="maxCount">The most buckets to return; 0 returns them all.</param>
-    /// <param name="docs">The matching documents.</param>
-    /// <returns>The buckets, by descending count and then by value.</returns>
-    public static List<FacetResult> ValueFacet(IndexSearcher searcher, SearchIndex schema, SearchField field, string path, int maxCount, IEnumerable<int> docs)
-    {
-        var counts = new Dictionary<string, (object Value, long Count)>(StringComparer.Ordinal);
-        var sourceOnly = new HashSet<string> { "_raw_json" };
-        foreach (var doc in docs)
-        {
-            var json = searcher.IndexReader.Document(doc, sourceOnly).Get("_raw_json");
-            if (json is null)
-            {
-                continue;
-            }
-
-            using var source = JsonDocument.Parse(json);
-            var seen = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var value in Values(source.RootElement, path.Split('/'), 0))
-            {
-                if (FacetValue(schema, field, value) is not { } facetValue || !seen.Add(facetValue.Key))
-                {
-                    continue;
-                }
-
-                counts[facetValue.Key] = counts.TryGetValue(facetValue.Key, out var existing)
-                    ? (existing.Value, existing.Count + 1)
-                    : (facetValue.Value, 1);
-            }
-        }
-
-        return counts.Values
-            .OrderByDescending(c => c.Count)
-            .ThenBy(c => c.Value is string s ? s : Convert.ToString(c.Value, System.Globalization.CultureInfo.InvariantCulture), StringComparer.Ordinal)
-            .Take(maxCount == 0 ? int.MaxValue : maxCount)
-            .Select(c => new FacetResult { Value = c.Value, Count = c.Count })
-            .ToList();
-    }
-
-    /// <summary>
-    /// The non-null values at a path in a document's source, through any arrays on the way.
-    /// </summary>
-    private static IEnumerable<JsonElement> Values(JsonElement element, string[] path, int depth)
-    {
-        if (element.ValueKind == JsonValueKind.Array)
-        {
-            foreach (var item in element.EnumerateArray().SelectMany(item => Values(item, path, depth)))
-            {
-                yield return item;
-            }
-        }
-        else if (depth == path.Length)
-        {
-            if (element.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined))
-            {
-                yield return element;
-            }
-        }
-        else if (element.ValueKind == JsonValueKind.Object && element.TryGetProperty(path[depth], out var child))
-        {
-            foreach (var item in Values(child, path, depth + 1))
-            {
-                yield return item;
-            }
-        }
-    }
-
-    /// <summary>
-    /// A facet bucket's key and returned value for one source value, typed by the field, or null if it can't be faceted.
-    /// </summary>
-    private static (string Key, object Value)? FacetValue(SearchIndex schema, SearchField field, JsonElement value)
-    {
-        var type = field.Type.StartsWith("Collection(", StringComparison.Ordinal) ? field.Type["Collection(".Length..^1] : field.Type;
-        return value.ValueKind switch
-        {
-            JsonValueKind.String when type == SearchFieldDataType.DateTimeOffset
-                && DateTimeOffset.TryParse(value.GetString(), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal, out var date)
-                => ("d" + DocumentCompat.FormatDate(date), DocumentCompat.FormatDate(date)),
-            JsonValueKind.String when NormalizerFactory.Normalize(value.GetString(), field.Normalizer, schema.Normalizers, schema.CharFilters) is { } text
-                => ("s" + text, text),
-            JsonValueKind.True or JsonValueKind.False => ("b" + value.GetBoolean(), value.GetBoolean()),
-            JsonValueKind.Number when type is not (SearchFieldDataType.Double or "Edm.Single" or "Edm.Half") && value.TryGetInt64(out var whole)
-                => ("n" + whole, whole),
-            JsonValueKind.Number => ("n" + value.GetDouble().ToString("R", System.Globalization.CultureInfo.InvariantCulture), value.GetDouble()),
-            _ => null,
-        };
     }
 
     /// <summary>

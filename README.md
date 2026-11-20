@@ -32,7 +32,7 @@ Use the Azure AI Search simulator to:
 - **Sorting & Paging**: OrderBy on sortable fields, top, skip, and `@search.nextPageParameters` when top is omitted
 - **Field Selection**: $select parameter support
 - **Highlighting**: Search result highlighting
-- **Faceted Navigation**: Value facets and interval/range facets
+- **Faceted Navigation**: Value, interval, range and metric facets, including on collections and complex sub-fields
 - **Autocomplete**: Term completion with filter and highlight tags, ranked like Azure
 - **Suggestions**: Prefix-based suggestions with filter, select, orderby and highlight tags
 - **Vector Search**: Cosine similarity with `Collection(Edm.Single)` fields; filtered vector queries are pre-filtered, as in Azure

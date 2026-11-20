@@ -44,7 +44,7 @@ The simulator is designed for **development, learning, and testing purposes only
 | OData filters | Evaluated exactly: comparison, logical, and collection operators (see [OData Filter Limitations](#odata-filter-limitations)) |
 | Sorting | Single and multi-field sorting on sortable fields |
 | Paging | Top and skip parameters; `@search.nextPageParameters` when `top` is omitted |
-| Facets | Count, interval, and aggregation (`metric:sum`/`min`/`max`/`avg`) facets |
+| Facets | Value, interval, range (`values`) and metric (`sum`, `min`, `max`, `avg`, `cardinality`) facets |
 | Highlighting | Hit highlighting in search results |
 | Autocomplete | Term completion with filter, searchFields and highlight tags, ranked by document count (POST and GET) |
 | Suggestions | Type-ahead suggestions with filter, select, orderby and highlight tags (POST and GET) |
@@ -340,7 +340,6 @@ Not supported:
 
 - `search.ismatchscoring()` and the `geo.*` functions (400)
 - Filtering on `Edm.GeographyPoint` fields (400)
-- Sorting or faceting on numeric collection fields (`Collection(Edm.Int32)`/`Int64`/`Double`) - no multi-valued numeric doc-values field type is available in this Lucene.Net version
 
 ### Query Limitations
 
@@ -356,21 +355,17 @@ Not supported:
 
 ### Facet Limitations
 
-Supported:
+Supported, read from each matching document as Azure counts them, on fields, complex sub-fields and collections (each document counts once per bucket):
 
-- Value facets with `count:N` (`count:0` for all values), counting exact, case-sensitive values (dates in UTC to the millisecond) after the field's normalizer, as Azure does
-- Interval facets with `interval:N` (numeric fields)
-- Aggregation metrics `sum`, `min`, `max`, `avg` (`Edm.Int32`, `Edm.Int64`, `Edm.Double` fields, including sub-fields of a complex type)
-- `default:` missing-value substitution for the aggregation metrics above (numeric default only)
-- Facets on `Edm.ComplexType` sub-fields (e.g. `Tiles/PendingPaymentCount`) — sub-fields are indexed field-by-field under a path-qualified name
-- Value facets on `Collection(Edm.ComplexType)` sub-fields (e.g. `Rooms/Type`), counting each document once per value
+- Value facets with `count:N` (`count:0` for all values) and `sort` (`count`, `-count`, `value`, `-value`), counting exact, case-sensitive values (dates in UTC to the millisecond) after the field's normalizer
+- Interval facets: `interval:N` on numeric fields, and `minute`, `hour`, `day`, `week`, `month`, `quarter` or `year` on dates, with `timeoffset`
+- Range facets with `values:` bounds on numeric and date fields
+- Metrics `sum`, `min`, `max` and `avg` on numeric fields, over every element of a collection, with `default:`; and `cardinality`, which the simulator counts exactly (`precisionThreshold` is validated but has no effect)
+- Expressions Azure rejects (unknown or misspelled parameters, options that can't be combined, a field faceted twice) return 400 with Azure's messages
 
 Not supported:
 
-- The `cardinality` aggregation metric (and its `precisionThreshold` parameter)
-- `sort`, `values`, and `timeoffset` facet parameters
-- Facet hierarchies (`>` and `;` operators) and facet filters (`includeTermFilter` / `excludeTermFilter`)
-- Interval and metric facets on `Collection(Edm.ComplexType)` sub-fields (e.g. `Rooms/BaseRate`), which return 400
+- Facet hierarchies (`>` and `;` operators) and regex facet filters (`includeTermFilter` / `excludeTermFilter`), which return 400
 
 A facet on a field that isn't facetable returns 400, as in Azure.
 
