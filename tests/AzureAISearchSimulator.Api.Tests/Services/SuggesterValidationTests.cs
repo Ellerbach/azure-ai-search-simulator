@@ -61,6 +61,7 @@ public class SuggesterValidationTests
     [InlineData("code")]
     [InlineData("ShortName/keyword")]
     [InlineData("ShortName/custom")]
+    [InlineData("ShortName/unknown")]
     public async Task CreateIndex_SuggesterOnUnknownOrNonStringField_Throws(string sourceField)
     {
         // Arrange
@@ -108,6 +109,7 @@ public class SuggesterValidationTests
                     new SearchField { Name = "de", Type = "Edm.String", Searchable = true, Analyzer = "de.microsoft" },
                     new SearchField { Name = "keyword", Type = "Edm.String", Searchable = true, Analyzer = "keyword" },
                     new SearchField { Name = "custom", Type = "Edm.String", Searchable = true, Analyzer = "my_analyzer" },
+                    new SearchField { Name = "unknown", Type = "Edm.String", Searchable = true, Analyzer = "not-a-language.lucene" },
                     new SearchField
                     {
                         Name = "Nested",

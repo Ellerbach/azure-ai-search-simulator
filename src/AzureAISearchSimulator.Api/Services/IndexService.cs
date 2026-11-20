@@ -334,7 +334,7 @@ public partial class IndexService : IIndexService
                     {
                         errors.Add($"Suggester '{suggester.Name}' field '{sourceField}' must be searchable");
                     }
-                    else if (!IsSuggesterAnalyzer(index, field.Analyzer ?? field.IndexAnalyzer))
+                    else if (!IsSuggesterAnalyzer(field.Analyzer ?? field.IndexAnalyzer))
                     {
                         errors.Add($"Suggester '{suggester.Name}' field '{sourceField}' must use the standard Lucene analyzer or a language analyzer");
                     }
@@ -348,11 +348,12 @@ public partial class IndexService : IIndexService
     }
 
     // Azure disallows custom analyzers and the built-in ones other than standard Lucene (keyword, pattern, simple, ...).
-    private static bool IsSuggesterAnalyzer(SearchIndex index, string? name) =>
-        name is null or "standard.lucene" or "standard"
-        || ((name.EndsWith(".lucene", StringComparison.Ordinal) || name.EndsWith(".microsoft", StringComparison.Ordinal))
-            && name is not ("standardasciifolding.lucene" or "simple.lucene" or "whitespace.lucene" or "keyword.lucene" or "stop.lucene")
-            && index.Analyzers?.Any(a => a.Name == name) != true);
+    private static readonly HashSet<string> SuggesterAnalyzers = AnalyzerFactory.GetSupportedAnalyzers()
+        .Where(name => name is not ("standardasciifolding.lucene" or "simple.lucene" or "whitespace.lucene" or "keyword.lucene" or "stop.lucene"))
+        .Where(name => name.EndsWith(".lucene", StringComparison.Ordinal) || name.EndsWith(".microsoft", StringComparison.Ordinal))
+        .ToHashSet(StringComparer.Ordinal);
+
+    private static bool IsSuggesterAnalyzer(string? name) => name is null or "standard" || SuggesterAnalyzers.Contains(name);
 
     /// <summary>
     /// Validates scoring profiles, text weights, and scoring function field references.
