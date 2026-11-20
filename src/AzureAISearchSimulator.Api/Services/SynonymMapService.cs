@@ -136,6 +136,12 @@ public class SynonymMapService : ISynonymMapService, ISynonymMapResolver
         return result.ToList();
     }
 
+    /// <inheritdoc/>
+    public IReadOnlyCollection<string> GetRuleTerms(IEnumerable<string> synonymMapNames) =>
+        synonymMapNames.SelectMany(name => GetOrLoadRules(name)?.Keys ?? Enumerable.Empty<string>())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
     private Dictionary<string, HashSet<string>>? GetOrLoadRules(string synonymMapName)
     {
         if (_synonymCache.TryGetValue(synonymMapName, out var cached))

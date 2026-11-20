@@ -182,6 +182,25 @@ public class SynonymMapServiceTests
         Assert.Contains("car", result2);
     }
 
+    [Fact]
+    public void GetRuleTerms_ReturnsTheTermsRulesExpand()
+    {
+        // Arrange
+        _repositoryMock.Setup(x => x.GetByNameAsync("my-synonyms"))
+            .ReturnsAsync(new SynonymMap
+            {
+                Name = "my-synonyms",
+                Format = "solr",
+                Synonyms = "Running, sprint\nautomobile => car"
+            });
+
+        // Act
+        var terms = _service.GetRuleTerms(new[] { "my-synonyms", "missing" });
+
+        // Assert: the right side of an explicit mapping isn't expanded, so it isn't a rule term.
+        Assert.Equal(new[] { "automobile", "running", "sprint" }, terms.Order());
+    }
+
     #endregion
 
     #region CRUD Validation

@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 using AzureAISearchSimulator.Core.Models;
 using AzureAISearchSimulator.Core.Services;
 using AzureAISearchSimulator.Search.Hnsw;
+using System.Text;
 using System.Text.Json;
 
 namespace AzureAISearchSimulator.Search;
@@ -766,6 +767,26 @@ public class SearchService : ISearchService
         var synonymMaps = activeFields.ToDictionary(f => f.Path, f => f.Field.SynonymMaps!, StringComparer.Ordinal);
         var hasExpansions = false;
 
+        // As in Azure, rules are analyzed like the field, so on en.lucene the rule "running, sprint" applies to "run".
+        var rulesByField = new Dictionary<string, ILookup<string, string>>(StringComparer.Ordinal);
+        List<string> SynonymsOf(string field, string signature)
+        {
+            if (!rulesByField.TryGetValue(field, out var rules))
+            {
+                rules = (_synonymMapResolver.GetRuleTerms(synonymMaps[field]) ?? [])
+                    .ToLookup(term => Signature(AnalyzeTerms(field, term, analyzer)), StringComparer.Ordinal);
+                rulesByField[field] = rules;
+            }
+
+            return rules[signature]
+                .SelectMany(term => _synonymMapResolver.ExpandTerms(synonymMaps[field], term))
+                .Select(synonym => (Text: synonym, Signature: Signature(AnalyzeTerms(field, synonym, analyzer))))
+                .Where(synonym => synonym.Signature.Length > 0 && synonym.Signature != signature)
+                .DistinctBy(synonym => synonym.Signature, StringComparer.Ordinal)
+                .Select(synonym => synonym.Text)
+                .ToList();
+        }
+
         Query Expand(Query query)
         {
             switch (query)
@@ -778,11 +799,9 @@ public class SearchService : ISearchService
                     }
 
                     return copy;
-                case TermQuery termQuery when synonymMaps.TryGetValue(termQuery.Term.Field, out var maps):
+                case TermQuery termQuery when synonymMaps.ContainsKey(termQuery.Term.Field):
                     var text = termQuery.Term.Text;
-                    var synonyms = _synonymMapResolver.ExpandTerms(maps, text)
-                        .Where(s => !string.Equals(s, text, StringComparison.OrdinalIgnoreCase))
-                        .ToList();
+                    var synonyms = SynonymsOf(termQuery.Term.Field, text);
                     if (synonyms.Count == 0)
                     {
                         return query;
@@ -802,11 +821,9 @@ public class SearchService : ISearchService
                 // As in Azure, a quoted phrase is looked up as a whole (e.g. "new york" for the rule "new york, nyc").
                 case PhraseQuery phrase when phrase.GetTerms() is { Length: > 1 } phraseTerms
                     && phraseTerms.All(t => t.Field == phraseTerms[0].Field)
-                    && synonymMaps.TryGetValue(phraseTerms[0].Field, out var phraseMaps):
-                    var phraseText = string.Join(' ', phraseTerms.Select(t => t.Text));
-                    var phraseSynonyms = (_synonymMapResolver.ExpandTerms(phraseMaps, phraseText) ?? [])
-                        .Where(s => !string.Equals(s, phraseText, StringComparison.OrdinalIgnoreCase))
-                        .ToList();
+                    && synonymMaps.ContainsKey(phraseTerms[0].Field):
+                    var phraseSynonyms = SynonymsOf(
+                        phraseTerms[0].Field, Signature(phraseTerms.Select(t => t.Text).Zip(phrase.GetPositions()).ToList()));
                     if (phraseSynonyms.Count == 0)
                     {
                         return query;
@@ -835,22 +852,7 @@ public class SearchService : ISearchService
     // A synonym analyzed like the field: one term, or a phrase for a multi-word synonym (keeping gaps left by stopwords).
     private static Query AnalyzedQuery(string field, string text, Lucene.Net.Analysis.Analyzer analyzer)
     {
-        var terms = new List<(string Text, int Position)>();
-        using (var stream = analyzer.GetTokenStream(field, new StringReader(text)))
-        {
-            var termAttribute = stream.AddAttribute<Lucene.Net.Analysis.TokenAttributes.ICharTermAttribute>();
-            var incrementAttribute = stream.AddAttribute<Lucene.Net.Analysis.TokenAttributes.IPositionIncrementAttribute>();
-            var position = -1;
-            stream.Reset();
-            while (stream.IncrementToken())
-            {
-                position += incrementAttribute.PositionIncrement;
-                terms.Add((termAttribute.ToString(), position));
-            }
-
-            stream.End();
-        }
-
+        var terms = AnalyzeTerms(field, text, analyzer);
         if (terms.Count == 1)
         {
             return new TermQuery(new Lucene.Net.Index.Term(field, terms[0].Text));
@@ -863,6 +865,41 @@ public class SearchService : ISearchService
         }
 
         return phrase;
+    }
+
+    private static List<(string Text, int Position)> AnalyzeTerms(string field, string text, Lucene.Net.Analysis.Analyzer analyzer)
+    {
+        var terms = new List<(string Text, int Position)>();
+        using var stream = analyzer.GetTokenStream(field, new StringReader(text));
+        var termAttribute = stream.AddAttribute<Lucene.Net.Analysis.TokenAttributes.ICharTermAttribute>();
+        var incrementAttribute = stream.AddAttribute<Lucene.Net.Analysis.TokenAttributes.IPositionIncrementAttribute>();
+        var position = -1;
+        stream.Reset();
+        while (stream.IncrementToken())
+        {
+            position += incrementAttribute.PositionIncrement;
+            terms.Add((termAttribute.ToString(), position));
+        }
+
+        stream.End();
+        return terms;
+    }
+
+    // One space per position step, so a gap left by a dropped stopword ("city of lights") isn't "city lights".
+    private static string Signature(IReadOnlyList<(string Text, int Position)> terms)
+    {
+        var signature = new StringBuilder();
+        for (var i = 0; i < terms.Count; i++)
+        {
+            if (i > 0)
+            {
+                signature.Append(' ', terms[i].Position - terms[i - 1].Position);
+            }
+
+            signature.Append(terms[i].Text);
+        }
+
+        return signature.ToString();
     }
 
     private string EscapeForSimpleQuery(string query, string? queryType)
