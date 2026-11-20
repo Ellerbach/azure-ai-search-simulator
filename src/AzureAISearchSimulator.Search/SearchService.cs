@@ -1779,7 +1779,7 @@ public class SearchService : ISearchService
         var analyzer = _indexManager.GetAnalyzer(indexName);
         var termsByField = sourceFields
             .Distinct()
-            .ToDictionary(field => field, field => TokenizeSuggestSearch(analyzer, field, request.Search));
+            .ToDictionary(field => LuceneDocumentMapper.GetSuggestFieldName(index, field), field => TokenizeSuggestSearch(analyzer, LuceneDocumentMapper.GetSuggestFieldName(index, field), request.Search));
         var terms = termsByField.Values.SelectMany(t => t).Distinct().ToList();
 
         if (terms.Count == 0)
@@ -2058,7 +2058,7 @@ public class SearchService : ISearchService
 
         var liveDocs = MultiFields.GetLiveDocs(reader);
         var docsByTerm = new Dictionary<string, HashSet<int>>(StringComparer.Ordinal);
-        foreach (var field in sourceFields.Distinct())
+        foreach (var field in sourceFields.Distinct().Select(field => LuceneDocumentMapper.GetSuggestFieldName(index, field)))
         {
             var prefix = TokenizeSuggestSearch(analyzer, field, lastWord).LastOrDefault();
             var terms = prefix != null ? MultiFields.GetTerms(reader, field) : null;

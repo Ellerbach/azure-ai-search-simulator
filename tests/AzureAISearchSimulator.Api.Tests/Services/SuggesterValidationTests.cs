@@ -11,7 +11,7 @@ namespace AzureAISearchSimulator.Api.Tests.Services;
 
 /// <summary>
 /// Tests for suggester validation: as in Azure, an index has at most one suggester, and its source fields can be
-/// string or string collection fields, including sub-fields of complex fields.
+/// string or string collection fields, including sub-fields of complex fields and fields that aren't searchable.
 /// </summary>
 public class SuggesterValidationTests
 {
@@ -39,6 +39,8 @@ public class SuggesterValidationTests
     [Theory]
     [InlineData("title")]
     [InlineData("tags")]
+    [InlineData("code")]
+    [InlineData("id")]
     [InlineData("ShortName/en")]
     [InlineData("ShortName/Nested/fr")]
     [InlineData("ShortName/de")]
@@ -58,7 +60,6 @@ public class SuggesterValidationTests
     [InlineData("ShortName")]
     [InlineData("ShortName/missing")]
     [InlineData("rating")]
-    [InlineData("code")]
     [InlineData("ShortName/keyword")]
     [InlineData("ShortName/custom")]
     [InlineData("ShortName/unknown")]
@@ -87,6 +88,21 @@ public class SuggesterValidationTests
 
         // Assert
         Assert.Contains("more than one suggester", ex.Message);
+    }
+
+    [Theory]
+    [InlineData("One or more fields in suggester 'sg' are duplicates of each other.", "title", "title")]
+    [InlineData("Suggesters must have at least one source field. No fields referenced by suggester 'sg'.")]
+    public async Task CreateIndex_SuggesterWithDuplicateOrNoSourceFields_Throws(string message, params string[] sourceFields)
+    {
+        // Arrange
+        var index = CreateIndex(new Suggester { Name = "sg", SourceFields = [.. sourceFields] });
+
+        // Act
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => _sut.CreateIndexAsync(index));
+
+        // Assert
+        Assert.Contains(message, ex.Message);
     }
 
     private static SearchIndex CreateIndex(params Suggester[] suggesters) => new()

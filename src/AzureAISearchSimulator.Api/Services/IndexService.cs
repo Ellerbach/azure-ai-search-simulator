@@ -311,9 +311,20 @@ public partial class IndexService : IIndexService
                     errors.Add("Suggester name is required");
                 }
 
-                foreach (var sourceField in suggester.SourceFields)
+                if (suggester.SourceFields.Count == 0)
                 {
-                    // As in Azure, a source field can be a path to a sub-field of a complex field.
+                    errors.Add($"Suggesters must have at least one source field. No fields referenced by suggester '{suggester.Name}'.");
+                }
+
+                if (suggester.SourceFields.Distinct(StringComparer.Ordinal).Count() != suggester.SourceFields.Count)
+                {
+                    errors.Add($"One or more fields in suggester '{suggester.Name}' are duplicates of each other.");
+                }
+
+                var unknown = new List<string>();
+                foreach (var sourceField in suggester.SourceFields.Distinct(StringComparer.Ordinal))
+                {
+                    // As in Azure, a source field can be a path to a sub-field of a complex field, and needn't be searchable.
                     SearchField? field = null;
                     var candidates = index.Fields;
                     foreach (var segment in sourceField.Split('/'))
@@ -324,20 +335,21 @@ public partial class IndexService : IIndexService
 
                     if (field == null)
                     {
-                        errors.Add($"Suggester '{suggester.Name}' references unknown field '{sourceField}'");
+                        unknown.Add(sourceField);
                     }
                     else if (field.Type != SearchFieldDataType.String && field.Type != SearchFieldDataType.CollectionString)
                     {
-                        errors.Add($"Suggester '{suggester.Name}' field '{sourceField}' must be of type Edm.String");
-                    }
-                    else if (field.Searchable == false)
-                    {
-                        errors.Add($"Suggester '{suggester.Name}' field '{sourceField}' must be searchable");
+                        errors.Add($"Field '{sourceField}' in suggester '{suggester.Name}' is of type '{field.Type}'. Only fields of type Edm.String or Collection(Edm.String) can be used as source of suggestions.");
                     }
                     else if (!IsSuggesterAnalyzer(field.Analyzer ?? field.IndexAnalyzer))
                     {
-                        errors.Add($"Suggester '{suggester.Name}' field '{sourceField}' must use the standard Lucene analyzer or a language analyzer");
+                        errors.Add($"Field '{sourceField}' in suggester '{suggester.Name}' uses an unsupported analyzers configuration. Suggesters are only supported with the default analyzer and language analyzers in this version of the API.");
                     }
+                }
+
+                if (unknown.Count > 0)
+                {
+                    errors.Add($"One or more fields in suggester '{suggester.Name}' are not defined as fields in the index. Please remove them from the suggester definition. Fields: {string.Join(", ", unknown)}.");
                 }
             }
         }

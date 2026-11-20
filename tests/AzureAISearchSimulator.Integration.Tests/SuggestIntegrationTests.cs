@@ -305,6 +305,32 @@ public class SuggestIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task Suggest_OnFieldThatIsNotSearchable_MatchesItsWordsThoughSearchDoesNot()
+    {
+        // Arrange
+        var indexName = $"suggest-not-searchable-{Guid.NewGuid():N}";
+        var index = CreatePurchaserIndex(indexName);
+        index.Fields.Add(new SearchField { Name = "City", Type = "Edm.String", Filterable = true });
+        index.Suggesters![0].SourceFields = ["City"];
+        RegisterIndex(index);
+
+        await UploadDocuments(indexName,
+            new Dictionary<string, object?> { ["Id"] = "1", ["City"] = "Montreal Harbour" },
+            new Dictionary<string, object?> { ["Id"] = "2", ["City"] = "Monterey Bay" },
+            new Dictionary<string, object?> { ["Id"] = "3", ["City"] = "Paris" });
+
+        // Act
+        var suggestions = await _searchService.SuggestAsync(indexName, new SuggestRequest { Search = "harb", SuggesterName = "sg" });
+        var completions = await _searchService.AutocompleteAsync(indexName, new AutocompleteRequest { Search = "mont", SuggesterName = "sg" });
+        var search = await _searchService.SearchAsync(indexName, new SearchRequest { Search = "montreal" });
+
+        // Assert: as in Azure, suggestions match the field's words, but searches don't.
+        Assert.Equal(new List<string?> { "1" }, Ids(suggestions));
+        Assert.Equal(["monterey", "montreal"], completions.Value.Select(c => c.Text));
+        Assert.Empty(search.Value);
+    }
+
+    [Fact]
     public async Task Suggest_WithMultipleTerms_RequiresAllTermsAndHighlightsEach()
     {
         var indexName = $"suggest-multi-{Guid.NewGuid():N}";
