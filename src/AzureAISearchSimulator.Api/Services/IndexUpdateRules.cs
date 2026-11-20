@@ -153,7 +153,8 @@ internal static class IndexUpdateRules
         && a.Dimensions == b.Dimensions
         && a.VectorEncoding == b.VectorEncoding;
 
-    private static bool SameJson<T>(T a, T b) => JsonSerializer.Serialize(a) == JsonSerializer.Serialize(b);
+    // Structural: an unchanged component can list its parameters in another order.
+    private static bool SameJson<T>(T a, T b) => JsonElement.DeepEquals(JsonSerializer.SerializeToElement(a), JsonSerializer.SerializeToElement(b));
 
     private static InvalidOperationException Refused(string message) => new(message);
 }

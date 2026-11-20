@@ -44,6 +44,7 @@ public class IndexUpdateRulesTests
         { "new field added to a suggester", i => AddFieldToSuggester(i), false },
         { "analyzer added with downtime", i => AddAnalyzer(i), true },
         { "unused vector algorithm changed", i => i.VectorSearch!.Algorithms![1].HnswParameters!.Metric = "dotProduct", false },
+        { "token filter parameters reordered", i => i.TokenFilters![0].AdditionalProperties = Parameters(("maxGram", 10), ("minGram", 2)), false },
     };
 
     public static TheoryData<string, Action<SearchIndex>, string> RefusedUpdates => new()
@@ -59,6 +60,7 @@ public class IndexUpdateRulesTests
         { "suggester removed", i => i.Suggesters!.Clear(), "suggesters defined in it that cannot be removed" },
         { "custom analyzer changed", i => i.Analyzers![0].TokenFilters = ["lowercase", "asciifolding"], "Existing analyzers configuration cannot be modified" },
         { "custom analyzer removed", i => i.Analyzers!.Clear(), "Existing analyzers configuration cannot be modified" },
+        { "token filter parameter changed", i => i.TokenFilters![0].AdditionalProperties = Parameters(("minGram", 3), ("maxGram", 10)), "Existing token filters configuration cannot be modified" },
         { "analyzer added without downtime", i => AddAnalyzer(i), "allowIndexDowntime" },
         { "vector algorithm in use changed", i => i.VectorSearch!.Algorithms![0].HnswParameters!.Metric = "euclidean", "already used by an existing vector field" },
         { "vector profile pointed to another algorithm", i => i.VectorSearch!.Profiles![0].Algorithm = "hnsw2", "Algorithm name cannot be updated" },
@@ -105,6 +107,9 @@ public class IndexUpdateRulesTests
     private static void AddAnalyzer(SearchIndex index) =>
         index.Analyzers!.Add(new CustomAnalyzer { Name = "other", Tokenizer = "standard_v2", TokenFilters = ["lowercase"] });
 
+    private static Dictionary<string, System.Text.Json.JsonElement> Parameters(params (string Name, int Value)[] parameters) =>
+        parameters.ToDictionary(p => p.Name, p => System.Text.Json.JsonSerializer.SerializeToElement(p.Value));
+
     private static SearchIndex CreateIndex() => new()
     {
         Name = "test-index",
@@ -123,6 +128,10 @@ public class IndexUpdateRulesTests
         ],
         Suggesters = [new Suggester { Name = "sg", SourceFields = ["title", "tags"] }],
         Analyzers = [new CustomAnalyzer { Name = "my", Tokenizer = "standard_v2", TokenFilters = ["lowercase"] }],
+        TokenFilters =
+        [
+            new CustomTokenFilter { Name = "grams", ODataType = "#Microsoft.Azure.Search.EdgeNGramTokenFilterV2", AdditionalProperties = Parameters(("minGram", 2), ("maxGram", 10)) },
+        ],
         VectorSearch = new VectorSearchConfiguration
         {
             Algorithms =
