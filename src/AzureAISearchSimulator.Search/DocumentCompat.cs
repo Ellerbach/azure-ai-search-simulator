@@ -10,6 +10,10 @@ internal static class DocumentCompat
 {
     private static readonly Regex ValidKey = new(@"\A[A-Za-z0-9_=-]+\z", RegexOptions.CultureInvariant);
 
+    // OData's DateTimeOffset: a date, a time and a Z or an offset.
+    private static readonly Regex OffsetDateTime = new(
+        @"\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})\z", RegexOptions.CultureInvariant);
+
     // Azure rejects the whole batch (HTTP 400) when any action is invalid, before applying any of them.
     public static void ValidateBatch(SearchIndex schema, string keyField, IReadOnlyList<IndexAction> actions)
     {
@@ -73,6 +77,11 @@ internal static class DocumentCompat
             var element = ElementOf(field);
             foreach (var item in value.EnumerateArray())
             {
+                if (item.ValueKind == JsonValueKind.Null)
+                {
+                    throw new ArgumentException($"The request is invalid. Details: A null value was found for the property named '{field.Name}', which expects a non-null value: collections can't contain null.");
+                }
+
                 ValidateValue(element, item, complexTypeName);
             }
 
@@ -92,15 +101,25 @@ internal static class DocumentCompat
             case "Edm.SByte" when IsWhole(value, sbyte.MinValue, sbyte.MaxValue):
             case "Edm.Byte" when IsWhole(value, byte.MinValue, byte.MaxValue):
             case SearchFieldDataType.Double or "Edm.Single" or "Edm.Half" when value.ValueKind == JsonValueKind.Number:
-            case SearchFieldDataType.GeographyPoint when value.ValueKind == JsonValueKind.Object:
+            case SearchFieldDataType.Double when value.ValueKind == JsonValueKind.String && value.GetString() is "NaN" or "INF" or "-INF":
+            case SearchFieldDataType.GeographyPoint when IsGeoJsonPoint(value):
                 return;
             case SearchFieldDataType.DateTimeOffset when value.ValueKind == JsonValueKind.String
+                && OffsetDateTime.IsMatch(value.GetString()!)
                 && DateTimeOffset.TryParse(value.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out _):
                 return;
             default:
                 throw Invalid(value, field.Type);
         }
     }
+
+    private static bool IsGeoJsonPoint(JsonElement value) =>
+        value.ValueKind == JsonValueKind.Object
+        && value.TryGetProperty("type", out var type) && type.ValueKind == JsonValueKind.String && type.GetString() == "Point"
+        && value.TryGetProperty("coordinates", out var coordinates) && coordinates.ValueKind == JsonValueKind.Array
+        && coordinates.GetArrayLength() == 2
+        && coordinates[0].ValueKind == JsonValueKind.Number && coordinates[0].GetDouble() is >= -180 and <= 180
+        && coordinates[1].ValueKind == JsonValueKind.Number && coordinates[1].GetDouble() is >= -90 and <= 90;
 
     private static bool IsWhole(JsonElement value, decimal min, decimal max) =>
         value.ValueKind == JsonValueKind.Number && value.TryGetDecimal(out var number)

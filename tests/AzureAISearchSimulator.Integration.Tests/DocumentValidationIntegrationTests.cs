@@ -64,6 +64,14 @@ public class DocumentValidationIntegrationTests : IDisposable
     [InlineData("""{"id":"1","tags":[1]}""")]
     [InlineData("""{"id":"1","address":"Paris"}""")]
     [InlineData("""{"id":"1","contacts":[{"name":1}]}""")]
+    [InlineData("""{"id":"1","tags":["a",null]}""")]
+    [InlineData("""{"id":"1","contacts":[null]}""")]
+    [InlineData("""{"id":"1","updated":"2024-03-05T10:20:30"}""")]
+    [InlineData("""{"id":"1","updated":"2024-03-05"}""")]
+    [InlineData("""{"id":"1","rating":"nan"}""")]
+    [InlineData("""{"id":"1","location":{}}""")]
+    [InlineData("""{"id":"1","location":{"type":"Point","coordinates":[200,0]}}""")]
+    [InlineData("""{"id":"1","location":{"type":"LineString","coordinates":[1,2]}}""")]
     public async Task IndexDocumentsAsync_InvalidAction_RejectsTheWholeBatch(string invalid)
     {
         // Arrange
@@ -100,12 +108,14 @@ public class DocumentValidationIntegrationTests : IDisposable
             ("upload", """{"id":"a-b_c=1","title":"t","rating":4.5,"count":-2147483648,"big":9223372036854775807,"active":true,"updated":"2024-03-05T10:20:30Z","tags":["x"],"address":{"city":"Paris"},"contacts":[{"name":"n"}]}"""),
             ("upload", """{"id":"2","title":null,"tags":null,"address":null}"""),
             ("MergeOrUpload", """{"id":"4"}"""),
+            ("upload", """{"id":"5","rating":"NaN","scores":["INF",1.5,"-INF"],"updated":"2024-03-05T10:20+02:00","location":{"type":"Point","coordinates":[-122.13,47.67]}}"""),
             ("delete", """{"id":"3"}"""));
 
         // Assert
         Assert.NotNull(await _documentService.GetDocumentAsync(indexName, "a-b_c=1"));
         Assert.NotNull(await _documentService.GetDocumentAsync(indexName, "2"));
         Assert.NotNull(await _documentService.GetDocumentAsync(indexName, "4"));
+        Assert.NotNull(await _documentService.GetDocumentAsync(indexName, "5"));
     }
 
     private string SeedIndex()
@@ -124,6 +134,8 @@ public class DocumentValidationIntegrationTests : IDisposable
                 new SearchField { Name = "active", Type = "Edm.Boolean", Filterable = true },
                 new SearchField { Name = "updated", Type = "Edm.DateTimeOffset", Filterable = true },
                 new SearchField { Name = "tags", Type = "Collection(Edm.String)", Filterable = true },
+                new SearchField { Name = "scores", Type = "Collection(Edm.Double)", Filterable = true },
+                new SearchField { Name = "location", Type = "Edm.GeographyPoint", Filterable = true },
                 new SearchField
                 {
                     Name = "address",

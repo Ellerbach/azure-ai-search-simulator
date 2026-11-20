@@ -663,7 +663,8 @@ public static class LuceneDocumentMapper
 
         if (field.Retrievable != false)
         {
-            fields.Add(new StoredField(field.Name, JsonSerializer.Serialize(values)));
+            // NaN and the infinities are valid Edm.Double values.
+            fields.Add(new StoredField(field.Name, JsonSerializer.Serialize(values, new JsonSerializerOptions { NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowNamedFloatingPointLiterals })));
         }
 
         return fields;
@@ -756,13 +757,22 @@ public static class LuceneDocumentMapper
             return je.ValueKind switch
             {
                 JsonValueKind.Number => je.GetDouble(),
-                JsonValueKind.String => double.TryParse(je.GetString(), out var s) ? s : 0,
+                JsonValueKind.String => ParseDouble(je.GetString()),
                 _ => 0
             };
         }
 
-        return Convert.ToDouble(value);
+        return value is string text ? ParseDouble(text) : Convert.ToDouble(value);
     }
+
+    // Azure's JSON spells the special values NaN, INF and -INF.
+    private static double ParseDouble(string? text) => text switch
+    {
+        "NaN" => double.NaN,
+        "INF" => double.PositiveInfinity,
+        "-INF" => double.NegativeInfinity,
+        _ => double.TryParse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var number) ? number : 0,
+    };
 
     private static bool ConvertToBoolean(object? value)
     {
