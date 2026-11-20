@@ -76,6 +76,8 @@ public class DocumentValidationIntegrationTests : IDisposable
     [InlineData("""{"id":"1","location":{}}""")]
     [InlineData("""{"id":"1","location":{"type":"Point","coordinates":[200,0]}}""")]
     [InlineData("""{"id":"1","location":{"type":"LineString","coordinates":[1,2]}}""")]
+    [InlineData("""{"id":"1","embedding":[0.1,0.2]}""")]
+    [InlineData("""{"id":"1","embedding":[0.1,0.2,0.3,0.4]}""")]
     public async Task IndexDocumentsAsync_InvalidAction_RejectsTheWholeBatch(string invalid)
     {
         // Arrange
@@ -112,7 +114,7 @@ public class DocumentValidationIntegrationTests : IDisposable
             ("upload", """{"id":"a-b_c=1","title":"t","rating":4.5,"count":-2147483648,"big":9223372036854775807,"active":true,"updated":"2024-03-05T10:20:30Z","tags":["x"],"address":{"city":"Paris"},"contacts":[{"name":"n"}]}"""),
             ("upload", """{"id":"2","title":null,"tags":null,"address":null}"""),
             ("MergeOrUpload", """{"id":"4"}"""),
-            ("upload", """{"id":"5","rating":"NaN","scores":["INF",1.5,"-INF"],"updated":"2024-03-05T10:20+02:00","location":{"type":"Point","coordinates":[-122.13,47.67]}}"""),
+            ("upload", """{"id":"5","rating":"NaN","scores":["INF",1.5,"-INF"],"updated":"2024-03-05T10:20+02:00","location":{"type":"Point","coordinates":[-122.13,47.67]},"embedding":[0.1,0.2,0.3]}"""),
             ("delete", """{"id":"3"}"""));
 
         // Assert
@@ -140,6 +142,7 @@ public class DocumentValidationIntegrationTests : IDisposable
                 new SearchField { Name = "tags", Type = "Collection(Edm.String)", Filterable = true },
                 new SearchField { Name = "scores", Type = "Collection(Edm.Double)", Filterable = true },
                 new SearchField { Name = "location", Type = "Edm.GeographyPoint", Filterable = true },
+                new SearchField { Name = "embedding", Type = "Collection(Edm.Single)", Searchable = true, Dimensions = 3 },
                 new SearchField
                 {
                     Name = "address",

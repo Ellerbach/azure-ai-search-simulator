@@ -96,6 +96,11 @@ internal static class DocumentCompat
                 throw Invalid(value, field.Type);
             }
 
+            if (field.IsVector && field.Dimensions is > 0 && value.GetArrayLength() != field.Dimensions)
+            {
+                throw new ArgumentException($"The request is invalid. Details: The vector field '{field.Name}', with dimension of '{field.Dimensions}', expects a length of '{field.Dimensions}'. However, the provided vector has a length of '{value.GetArrayLength()}'.");
+            }
+
             var element = ElementOf(field);
             foreach (var item in value.EnumerateArray())
             {
