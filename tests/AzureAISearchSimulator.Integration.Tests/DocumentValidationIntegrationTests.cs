@@ -51,9 +51,15 @@ public class DocumentValidationIntegrationTests : IDisposable
     [InlineData("""{"id":"1","address":{"unknown":1}}""")]
     [InlineData("""{"id":"1","title":5}""")]
     [InlineData("""{"id":"1","title":{"a":1}}""")]
-    [InlineData("""{"id":"1","rating":"5"}""")]
+    [InlineData("""{"id":"1","rating":true}""")]
+    [InlineData("""{"id":"1","rating":"abc"}""")]
+    [InlineData("""{"id":"1","rating":"infinity"}""")]
+    [InlineData("""{"id":"1","rating":"Infinity "}""")]
     [InlineData("""{"id":"1","count":true}""")]
     [InlineData("""{"id":"1","count":1.5}""")]
+    [InlineData("""{"id":"1","count":5.0}""")]
+    [InlineData("""{"id":"1","count":1e2}""")]
+    [InlineData("""{"id":"1","count":"5.0"}""")]
     [InlineData("""{"id":"1","count":1e-29}""")]
     [InlineData("""{"id":"1","count":1.00000000000000000000000000001}""")]
     [InlineData("""{"id":"1","count":3e9}""")]
@@ -61,8 +67,10 @@ public class DocumentValidationIntegrationTests : IDisposable
     [InlineData("""{"id":"1","count":2147483648}""")]
     [InlineData("""{"id":"1","count":-2147483649}""")]
     [InlineData("""{"id":"1","big":9223372036854775808}""")]
-    [InlineData("""{"id":"1","big":0.5}""")]
-    [InlineData("""{"id":"1","active":"true"}""")]
+    [InlineData("""{"id":"1","big":1e2}""")]
+    [InlineData("""{"id":"1","big":"5"}""")]
+    [InlineData("""{"id":"1","active":"1"}""")]
+    [InlineData("""{"id":"1","active":1}""")]
     [InlineData("""{"id":"1","updated":"yesterday"}""")]
     [InlineData("""{"id":"1","tags":"a"}""")]
     [InlineData("""{"id":"1","tags":[1]}""")]
@@ -71,9 +79,15 @@ public class DocumentValidationIntegrationTests : IDisposable
     [InlineData("""{"id":"1","tags":["a",null]}""")]
     [InlineData("""{"id":"1","contacts":[null]}""")]
     [InlineData("""{"id":"1","updated":"2024-03-05T10:20:30"}""")]
-    [InlineData("""{"id":"1","updated":"2024-03-05"}""")]
-    [InlineData("""{"id":"1","rating":"nan"}""")]
+    [InlineData("""{"id":"1","updated":"2024-03"}""")]
+    [InlineData("""{"id":"1","updated":"2024-03-05T24:00:00Z"}""")]
+    [InlineData("""{"id":"1","updated":" 2024-03-05T10:20:30Z "}""")]
     [InlineData("""{"id":"1","location":{}}""")]
+    [InlineData("""{"id":"1","location":[2,48]}""")]
+    [InlineData("""{"id":"1","location":{"type":"point","coordinates":[2,48]}}""")]
+    [InlineData("""{"id":"1","location":{"type":"Point","coordinates":[2]}}""")]
+    [InlineData("""{"id":"1","location":{"type":"Point","coordinates":["2",48]}}""")]
+    [InlineData("""{"id":"1","location":{"type":"Point","coordinates":[2,48],"crs":{"type":"link"}}}""")]
     [InlineData("""{"id":"1","location":{"type":"Point","coordinates":[200,0]}}""")]
     [InlineData("""{"id":"1","location":{"type":"LineString","coordinates":[1,2]}}""")]
     [InlineData("""{"id":"1","embedding":[0.1,0.2]}""")]
@@ -122,6 +136,60 @@ public class DocumentValidationIntegrationTests : IDisposable
         Assert.NotNull(await _documentService.GetDocumentAsync(indexName, "2"));
         Assert.NotNull(await _documentService.GetDocumentAsync(indexName, "4"));
         Assert.NotNull(await _documentService.GetDocumentAsync(indexName, "5"));
+    }
+
+    [Fact]
+    public async Task IndexDocumentsAsync_ConvertsValuesAsAzureReadsThem()
+    {
+        // Arrange
+        var indexName = SeedIndex();
+
+        // Act
+        await IndexAsync(indexName, ("upload", """{"id":"1","rating":"1,000.5","count":" +5 ","big":2.5,"active":" TRUE ","updated":"2024-03-05","tags":["x"],"scores":["nan","-Inf","Infinity",2,1e400],"location":{"coordinates":[2,48,10],"type":"Point","bbox":[1,2,3,4]},"contacts":[{"name":"n"}]}"""));
+
+        // Assert: Azure returns the converted values, Int64 decimals rounded half to even and points in WGS 84.
+        Assert.Equal(
+            """{"id":"1","title":null,"rating":1000.5,"count":5,"big":2,"active":true,"updated":"2024-03-05T00:00:00Z","tags":["x"],"scores":["NaN","-INF","INF",2.0,"INF"],"location":{"type":"Point","coordinates":[2.0,48.0],"crs":{"type":"name","properties":{"name":"EPSG:4326"}}},"embedding":null,"address":null,"contacts":[{"name":"n"}]}""",
+            JsonSerializer.Serialize(await _documentService.GetDocumentAsync(indexName, "1")));
+    }
+
+    [Theory]
+    [InlineData("2024-03-05", "2024-03-05T00:00:00Z")]
+    [InlineData("2024-03-05+02:00", "2024-03-04T22:00:00Z")]
+    [InlineData("2024-03-05T10:20Z", "2024-03-05T10:20:00Z")]
+    [InlineData("2024-03-05T10:20:30z", "2024-03-05T10:20:30Z")]
+    [InlineData("2024-03-05T10:20:30.12345678+14:00", "2024-03-04T20:20:30.123Z")]
+    public async Task IndexDocumentsAsync_Date_IsReadAsAzureReadsIt(string date, string expected)
+    {
+        // Arrange
+        var indexName = SeedIndex();
+
+        // Act
+        await IndexAsync(indexName, ("upload", $$"""{"id":"1","updated":"{{date}}"}"""));
+
+        // Assert
+        var document = await _documentService.GetDocumentAsync(indexName, "1");
+        Assert.Equal(expected, document!["updated"]);
+    }
+
+    [Theory]
+    [InlineData("""{"id":"1","count":5.0}""", "Cannot convert the literal '5.0' to the expected type 'Edm.Int32'.")]
+    [InlineData("""{"id":"1","count":1e2}""", "Cannot convert the literal '100' to the expected type 'Edm.Int32'.")]
+    [InlineData("""{"id":"1","big":1e19}""", "Cannot convert the literal '1E+19' to the expected type 'Edm.Int64'.")]
+    [InlineData("""{"id":"1","rating":true}""", "Cannot convert the literal 'True' to the expected type 'Edm.Double'.")]
+    [InlineData("""{"id":"1","big":"5"}""", "Cannot convert a value to target type 'Edm.Int64' because of conflict between input format string/number and parameter 'IEEE754Compatible' false/true.")]
+    [InlineData("""{"id":"1","location":{"type":"Point","coordinates":[2,100]}}""", "actions : 1: The data field 'location' has an invalid latitude coordinate '100'. A latitude coordinate must be a value between -90.0 and +90.0 degrees. The coordinates should be specified as [longitude, latitude].")]
+    [InlineData("""{"id":"1","location":{"type":"Point","coordinates":[2]}}""", "Invalid GeoJSON. A position must contain at least two and no more than four elements.")]
+    public async Task IndexDocumentsAsync_InvalidValue_FailsWithAzuresMessage(string invalid, string message)
+    {
+        // Arrange
+        var indexName = SeedIndex();
+
+        // Act
+        var error = await Assert.ThrowsAsync<ArgumentException>(() => IndexAsync(indexName, ("upload", """{"id":"ok"}"""), ("upload", invalid)));
+
+        // Assert
+        Assert.Equal($"The request is invalid. Details: {message}", error.Message);
     }
 
     private string SeedIndex()

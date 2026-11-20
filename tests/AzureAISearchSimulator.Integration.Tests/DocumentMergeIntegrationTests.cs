@@ -58,7 +58,7 @@ public class DocumentMergeIntegrationTests : IDisposable
         // Assert
         var doc = await _documentService.GetDocumentAsync(indexName, "1");
         Assert.Equal(
-            """{"city":"Paris","zip":"75002","geo":{"lat":3,"lon":2}}""",
+            """{"city":"Paris","zip":"75002","geo":{"lat":3.0,"lon":2.0}}""",
             JsonSerializer.Serialize(doc!["address"]));
         Assert.Equal("t", doc["title"]?.ToString());
     }

@@ -1,31 +1,30 @@
 using System.Globalization;
-using System.Numerics;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Xml;
 using AzureAISearchSimulator.Core.Models;
 
 namespace AzureAISearchSimulator.Search;
 
 /// <summary>
-/// Azure AI Search document semantics the simulator adds: batch validation, recursive merges and the shape of
-/// returned documents.
+/// Azure AI Search document semantics the simulator adds: batch validation and value conversion, recursive merges
+/// and the shape of returned documents.
 /// </summary>
 internal static class DocumentCompat
 {
     private static readonly Regex ValidKey = new(@"\A[A-Za-z0-9_=-]+\z", RegexOptions.CultureInvariant);
 
-    /// <summary>
-    /// OData's DateTimeOffset: a date, a time and a Z or an offset.
-    /// </summary>
-    private static readonly Regex OffsetDateTime = new(
-        @"\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})\z", RegexOptions.CultureInvariant);
+    private static readonly Regex ZoneSuffix = new(@"(Z|z|[+-]\d{2}:\d{2})\z", RegexOptions.CultureInvariant);
 
-    private static readonly Regex JsonNumber = new(
-        @"\A-?(?<int>\d+)(\.(?<frac>\d+))?([eE](?<exp>[+-]?\d+))?\z", RegexOptions.CultureInvariant);
+    /// <summary>
+    /// The number format Azure's OData reader parses doubles with: invariant, with OData's INF, -INF and NaN.
+    /// </summary>
+    private static readonly NumberFormatInfo ODataNumbers = CreateODataNumbers();
 
     /// <summary>
     /// Validates a batch as Azure does, before any of its actions is applied: the action, the key, and every
-    /// property's name and type.
+    /// property's name and type. Each value is converted to its field's type as Azure reads it (e.g. <c>"5"</c> for an
+    /// <c>Edm.Int32</c> becomes <c>5</c>) and replaced, in its action, by the value Azure stores.
     /// </summary>
     /// <param name="schema">The index definition.</param>
     /// <param name="keyField">The name of the index's key field.</param>
@@ -61,32 +60,33 @@ internal static class DocumentCompat
 
             if (actions[i].ActionType != IndexActionType.Delete)
             {
-                ValidateObject(schema.Fields, document.Where(p => !p.Key.StartsWith('@')).Select(p => (p.Key, p.Value)), "search.documentFields");
+                foreach (var name in actions[i].Keys.Where(k => !k.StartsWith('@')).ToList())
+                {
+                    var field = FieldOf(schema.Fields, name, "search.documentFields");
+                    if (actions[i][name] is { } value)
+                    {
+                        actions[i][name] = ConvertValue(field, ToElement(value), i);
+                    }
+                }
             }
         }
     }
 
     /// <summary>
-    /// Checks that every property is a field of the (complex) type and has a value of the field's type.
+    /// The field a property names, or Azure's error when the (complex) type has no such field.
     /// </summary>
-    private static void ValidateObject(List<SearchField>? fields, IEnumerable<(string Name, object? Value)> properties, string typeName)
-    {
-        foreach (var (name, value) in properties)
-        {
-            var field = fields?.FirstOrDefault(f => f.Name == name)
-                ?? throw new ArgumentException($"The request is invalid. Details: The property '{name}' does not exist on type '{typeName}'. Make sure to only use property names that are defined by the type.");
-            ValidateValue(field, ToElement(value), $"search.complex.{field.Name}");
-        }
-    }
+    private static SearchField FieldOf(List<SearchField>? fields, string name, string typeName) =>
+        fields?.FirstOrDefault(f => f.Name == name)
+            ?? throw new ArgumentException($"The request is invalid. Details: The property '{name}' does not exist on type '{typeName}'. Make sure to only use property names that are defined by the type.");
 
     /// <summary>
-    /// Checks that a value has the field's type, recursing into collections and complex objects.
+    /// Converts a value to its field's type as Azure reads it, recursing into collections and complex objects.
     /// </summary>
-    private static void ValidateValue(SearchField field, JsonElement value, string complexTypeName)
+    private static JsonElement ConvertValue(SearchField field, JsonElement value, int action)
     {
         if (value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
         {
-            return;
+            return value;
         }
 
         if (field.IsCollection)
@@ -102,102 +102,291 @@ internal static class DocumentCompat
             }
 
             var element = ElementOf(field);
-            foreach (var item in value.EnumerateArray())
-            {
-                if (item.ValueKind == JsonValueKind.Null)
+            var items = value.EnumerateArray().Select(item => item.ValueKind == JsonValueKind.Null
+                ? throw new ArgumentException($"The request is invalid. Details: A null value was found for the property named '{field.Name}', which expects a non-null value: collections can't contain null.")
+                : ConvertValue(element, item, action)).ToList();
+
+            // Vector elements are kept as given.
+            return IsVectorElement(element.Type) ? value : JsonSerializer.SerializeToElement(items);
+        }
+
+        if (field.Type == SearchFieldDataType.ComplexType)
+        {
+            return value.ValueKind == JsonValueKind.Object
+                ? JsonSerializer.SerializeToElement(value.EnumerateObject().ToDictionary(
+                    p => p.Name,
+                    p => ConvertValue(FieldOf(field.Fields, p.Name, $"search.complex.{field.Name}"), p.Value, action)))
+                : throw Invalid(value, field.Type);
+        }
+
+        var payload = Payload(value);
+        return field.Type switch
+        {
+            SearchFieldDataType.String when payload is string => value,
+            SearchFieldDataType.Int32 when ToInt32(payload) is { } number => Json(number.ToString(CultureInfo.InvariantCulture)),
+            SearchFieldDataType.Int64 when payload is string => throw new ArgumentException($"The request is invalid. Details: Cannot convert a value to target type '{field.Type}' because of conflict between input format string/number and parameter 'IEEE754Compatible' false/true."),
+            SearchFieldDataType.Int64 when ToInt64(payload) is { } number => Json(number.ToString(CultureInfo.InvariantCulture)),
+            SearchFieldDataType.Double when ToDouble(payload) is { } number => DoubleJson(number),
+            SearchFieldDataType.Boolean when ToBoolean(payload) is { } flag => Json(flag ? "true" : "false"),
+            SearchFieldDataType.DateTimeOffset when payload is string text && TryParseDate(text, out var date) => JsonSerializer.SerializeToElement(FormatDate(date)),
+            SearchFieldDataType.GeographyPoint => ConvertPoint(field, value, action),
+            "Edm.Single" or "Edm.Half" when value.ValueKind == JsonValueKind.Number => value,
+            "Edm.Int16" when payload is int number && number is >= short.MinValue and <= short.MaxValue => value,
+            "Edm.SByte" when payload is int number && number is >= sbyte.MinValue and <= sbyte.MaxValue => value,
+            "Edm.Byte" when payload is int number && number is >= byte.MinValue and <= byte.MaxValue => value,
+            _ => throw Invalid(value, field.Type),
+        };
+    }
+
+    /// <summary>
+    /// Whether a type is one of a vector field's element types.
+    /// </summary>
+    private static bool IsVectorElement(string type) => type is "Edm.Single" or "Edm.Half" or "Edm.Int16" or "Edm.SByte" or "Edm.Byte";
+
+    /// <summary>
+    /// A JSON primitive as Azure's OData reader reads it: a string, a bool, or a number as an int, else a decimal (no
+    /// exponent), else a double; <see langword="null"/> for objects and arrays.
+    /// </summary>
+    private static object? Payload(JsonElement value)
+    {
+        switch (value.ValueKind)
+        {
+            case JsonValueKind.String:
+                return value.GetString();
+            case JsonValueKind.True or JsonValueKind.False:
+                return value.GetBoolean();
+            case JsonValueKind.Number:
+                var text = value.GetRawText();
+                if (int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var whole))
                 {
-                    throw new ArgumentException($"The request is invalid. Details: A null value was found for the property named '{field.Name}', which expects a non-null value: collections can't contain null.");
+                    return whole;
                 }
 
-                ValidateValue(element, item, complexTypeName);
+                if (decimal.TryParse(text, NumberStyles.Number, CultureInfo.InvariantCulture, out var exact))
+                {
+                    return exact;
+                }
+
+                return double.Parse(text, NumberStyles.Float, CultureInfo.InvariantCulture);
+            default:
+                return null;
+        }
+    }
+
+    /// <summary>
+    /// An <c>Edm.Int32</c>: a JSON integer, or a string such as <c>" +5 "</c>.
+    /// </summary>
+    private static int? ToInt32(object? payload) => payload switch
+    {
+        int number => number,
+        string text when int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var number) => number,
+        _ => null,
+    };
+
+    /// <summary>
+    /// An <c>Edm.Int64</c>: a JSON integer, or a decimal number rounded half to even (<c>2.5</c> is <c>2</c>).
+    /// </summary>
+    private static long? ToInt64(object? payload)
+    {
+        try
+        {
+            return payload switch
+            {
+                int number => number,
+                decimal number => Convert.ToInt64(number),
+                _ => null,
+            };
+        }
+        catch (OverflowException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// An <c>Edm.Double</c>: any JSON number, or a string such as <c>"1,000.5"</c>, <c>"nan"</c>, <c>"-Inf"</c> or
+    /// <c>"Infinity"</c>.
+    /// </summary>
+    private static double? ToDouble(object? payload) => payload switch
+    {
+        int number => number,
+        decimal number => (double)number,
+        double number => number,
+        string text when double.TryParse(text switch { "Infinity" => "INF", "-Infinity" => "-INF", _ => text },
+            NumberStyles.Float | NumberStyles.AllowThousands, ODataNumbers, out var number) => number,
+        _ => null,
+    };
+
+    /// <summary>
+    /// An <c>Edm.Boolean</c>: <c>true</c>, <c>false</c>, or a string such as <c>" True "</c>.
+    /// </summary>
+    private static bool? ToBoolean(object? payload) => payload switch
+    {
+        bool flag => flag,
+        string text when bool.TryParse(text, out var flag) => flag,
+        _ => null,
+    };
+
+    /// <summary>
+    /// Reads a date as Azure's OData reader does: an XML Schema date or time, seconds optional, which must end with a
+    /// time zone. A date alone passes that check, as its last hyphen sits where an offset's sign would, and is read as UTC.
+    /// </summary>
+    private static bool TryParseDate(string text, out DateTimeOffset date)
+    {
+        date = default;
+        var t = text.IndexOf('T', StringComparison.Ordinal);
+        if (t > 0 && (text.Length == t + 6 || (text.Length > t + 6 && text[t + 6] != ':')))
+        {
+            text = text.Insert(t + 6, ":00");
+        }
+
+        try
+        {
+            date = XmlConvert.ToDateTimeOffset(text);
+        }
+        catch (Exception e) when (e is FormatException or ArgumentException or OverflowException)
+        {
+            return false;
+        }
+
+        if (!ZoneSuffix.IsMatch(text))
+        {
+            date = new DateTimeOffset(date.DateTime, TimeSpan.Zero);
+        }
+
+        return (text.Length > 1 && text[^1] is 'Z' or 'z') || (text.Length > 6 && text[^6] is '+' or '-');
+    }
+
+    /// <summary>
+    /// Converts a GeoJSON point as Azure does: two to four coordinates (it keeps the longitude and latitude), other
+    /// members allowed, returned with only its coordinates and the WGS 84 <c>crs</c>.
+    /// </summary>
+    private static JsonElement ConvertPoint(SearchField field, JsonElement value, int action)
+    {
+        if (value.ValueKind != JsonValueKind.Object)
+        {
+            throw new ArgumentException("The request is invalid. Details: The value specified for the spatial property was not valid. You must specify a valid spatial value.");
+        }
+
+        if (QuotedMember(value, "type") is var type && type != "Point")
+        {
+            throw InvalidGeoJson($"The value '{type}' is not a valid value for the 'type' member.");
+        }
+
+        var coordinates = Member(value, "coordinates");
+        if (coordinates.ValueKind != JsonValueKind.Array)
+        {
+            throw InvalidGeoJson("A primitive value was found in an array element where an array was expected.");
+        }
+
+        if (coordinates.GetArrayLength() == 0)
+        {
+            throw new ArgumentException($"The request is invalid. Details: actions : {action}: The 'coordinates' property of the data field '{field.Name}' cannot be empty.");
+        }
+
+        var position = coordinates.EnumerateArray().Select(c => c.ValueKind switch
+        {
+            JsonValueKind.Number => double.Parse(c.GetRawText(), NumberStyles.Float, CultureInfo.InvariantCulture),
+            JsonValueKind.Null => throw InvalidGeoJson("A null value was found in an array element where nulls are not allowed."),
+            _ => throw InvalidGeoJson("A non-numeric value was found in an array element where a numeric value was expected."),
+        }).ToList();
+        if (position.Count > 4 || position.Count < 2)
+        {
+            throw InvalidGeoJson("A position must contain at least two and no more than four elements.");
+        }
+
+        if (value.TryGetProperty("crs", out var crs))
+        {
+            if (crs.ValueKind != JsonValueKind.Object)
+            {
+                throw new ArgumentException($"The request is invalid. Details: Cannot read the value '{crs.GetRawText()}' as a JSON object.");
             }
 
-            return;
+            if (QuotedMember(crs, "type") is var crsType && crsType != "name")
+            {
+                throw InvalidGeoJson($"The value '{crsType}' is not a recognized CRS type.");
+            }
+
+            var properties = Member(crs, "properties");
+            if (properties.ValueKind != JsonValueKind.Object)
+            {
+                throw new ArgumentException($"The request is invalid. Details: Cannot read the value '{properties.GetRawText()}' as a JSON object.");
+            }
+
+            QuotedMember(properties, "name");
         }
 
-        switch (field.Type)
+        var (longitude, latitude) = (position[0], position[1]);
+        if (longitude is < -180 or > 180)
         {
-            case SearchFieldDataType.ComplexType when value.ValueKind == JsonValueKind.Object:
-                ValidateObject(field.Fields, value.EnumerateObject().Select(p => (p.Name, (object?)p.Value)), complexTypeName);
-                return;
-            case SearchFieldDataType.String when value.ValueKind == JsonValueKind.String:
-            case SearchFieldDataType.Boolean when value.ValueKind is JsonValueKind.True or JsonValueKind.False:
-            case SearchFieldDataType.Int32 when IsWhole(value, int.MinValue, int.MaxValue):
-            case SearchFieldDataType.Int64 when IsWhole(value, long.MinValue, long.MaxValue):
-            case "Edm.Int16" when IsWhole(value, short.MinValue, short.MaxValue):
-            case "Edm.SByte" when IsWhole(value, sbyte.MinValue, sbyte.MaxValue):
-            case "Edm.Byte" when IsWhole(value, byte.MinValue, byte.MaxValue):
-            case SearchFieldDataType.Double or "Edm.Single" or "Edm.Half" when value.ValueKind == JsonValueKind.Number:
-            case SearchFieldDataType.Double when value.ValueKind == JsonValueKind.String && value.GetString() is "NaN" or "INF" or "-INF":
-            case SearchFieldDataType.GeographyPoint when IsGeoJsonPoint(value):
-                return;
-            case SearchFieldDataType.DateTimeOffset when value.ValueKind == JsonValueKind.String
-                && OffsetDateTime.IsMatch(value.GetString()!)
-                && DateTimeOffset.TryParse(value.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out _):
-                return;
-            default:
-                throw Invalid(value, field.Type);
+            throw new ArgumentException($"The request is invalid. Details: actions : {action}: The data field '{field.Name}' has an invalid longitude coordinate '{longitude.ToString(CultureInfo.InvariantCulture)}'. A longitude coordinate must be a value between -180.0 and +180.0 degrees. The coordinates should be specified as [longitude, latitude].");
         }
+
+        if (latitude is < -90 or > 90)
+        {
+            throw new ArgumentException($"The request is invalid. Details: actions : {action}: The data field '{field.Name}' has an invalid latitude coordinate '{latitude.ToString(CultureInfo.InvariantCulture)}'. A latitude coordinate must be a value between -90.0 and +90.0 degrees. The coordinates should be specified as [longitude, latitude].");
+        }
+
+        var point = $"[{DoubleJson(longitude).GetRawText()},{DoubleJson(latitude).GetRawText()}]";
+        return Json("""{"type":"Point","coordinates":""" + point + ""","crs":{"type":"name","properties":{"name":"EPSG:4326"}}}""");
     }
 
     /// <summary>
-    /// Whether a value is a GeoJSON point with a valid longitude and latitude.
+    /// A required GeoJSON member.
     /// </summary>
-    private static bool IsGeoJsonPoint(JsonElement value) =>
-        value.ValueKind == JsonValueKind.Object
-        && value.TryGetProperty("type", out var type) && type.ValueKind == JsonValueKind.String && type.GetString() == "Point"
-        && value.TryGetProperty("coordinates", out var coordinates) && coordinates.ValueKind == JsonValueKind.Array
-        && coordinates.GetArrayLength() == 2
-        && coordinates[0].ValueKind == JsonValueKind.Number && coordinates[0].GetDouble() is >= -180 and <= 180
-        && coordinates[1].ValueKind == JsonValueKind.Number && coordinates[1].GetDouble() is >= -90 and <= 90;
+    private static JsonElement Member(JsonElement value, string name) =>
+        value.TryGetProperty(name, out var member) ? member : throw InvalidGeoJson($"The '{name}' member is required, but was not found.");
 
     /// <summary>
-    /// Whether a value is a whole number within a range, read exactly from its JSON text.
+    /// A required GeoJSON member that must be a string.
     /// </summary>
-    private static bool IsWhole(JsonElement value, long min, long max)
+    private static string QuotedMember(JsonElement value, string name) => Member(value, name) is var member && member.ValueKind == JsonValueKind.String
+        ? member.GetString()!
+        : throw new ArgumentException($"The request is invalid. Details: Cannot read the value '{member.GetRawText()}' for the property '{name}' as a quoted JSON string value.");
+
+    private static ArgumentException InvalidGeoJson(string message) => new($"The request is invalid. Details: Invalid GeoJSON. {message}");
+
+    /// <summary>
+    /// A double as Azure writes it: its shortest round-trip text with a decimal point (<c>2.0</c>, <c>1E+21</c>), or the
+    /// string <c>"NaN"</c>, <c>"INF"</c> or <c>"-INF"</c>.
+    /// </summary>
+    internal static JsonElement DoubleJson(double number)
     {
-        if (value.ValueKind != JsonValueKind.Number)
+        if (!double.IsFinite(number))
         {
-            return false;
+            return JsonSerializer.SerializeToElement(number.ToString(ODataNumbers));
         }
 
-        if (value.TryGetInt64(out var whole))
-        {
-            return whole >= min && whole <= max;
-        }
+        var text = number.ToString("R", CultureInfo.InvariantCulture);
+        return Json(text.IndexOfAny(['.', 'E']) < 0 ? text + ".0" : text);
+    }
 
-        // Read the JSON text exactly: decimal and double round fractions such as 1e-29 to whole numbers.
-        var number = JsonNumber.Match(value.GetRawText());
-        var fraction = number.Groups["frac"].Value;
-        var digits = (number.Groups["int"].Value + fraction).TrimStart('0');
-        var significant = digits.TrimEnd('0');
-        if (significant.Length == 0)
-        {
-            return min <= 0 && max >= 0;
-        }
+    private static JsonElement Json(string text) => JsonSerializer.Deserialize<JsonElement>(text);
 
-        var exponentText = number.Groups["exp"].Success ? number.Groups["exp"].Value : "0";
-        if (!int.TryParse(exponentText, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var exponent))
-        {
-            return false;
-        }
-
-        var power = (long)exponent - fraction.Length + (digits.Length - significant.Length);
-        if (power < 0 || significant.Length + power > 19)
-        {
-            return false;
-        }
-
-        var magnitude = BigInteger.Parse(significant, CultureInfo.InvariantCulture) * BigInteger.Pow(10, (int)power);
-        var signed = number.Value.StartsWith('-') ? -magnitude : magnitude;
-        return signed >= min && signed <= max;
+    private static NumberFormatInfo CreateODataNumbers()
+    {
+        var numbers = (NumberFormatInfo)NumberFormatInfo.InvariantInfo.Clone();
+        numbers.PositiveInfinitySymbol = "INF";
+        numbers.NegativeInfinitySymbol = "-INF";
+        numbers.NaNSymbol = "NaN";
+        return NumberFormatInfo.ReadOnly(numbers);
     }
 
     /// <summary>
-    /// Azure's error for a value of the wrong type.
+    /// Azure's error for a value of the wrong type, quoting it as .NET prints what the OData reader read
+    /// (<c>True</c>, <c>5.0</c>, <c>1E+19</c>).
     /// </summary>
-    private static ArgumentException Invalid(JsonElement value, string type) =>
-        new($"The request is invalid. Details: Cannot convert the literal '{(value.ValueKind == JsonValueKind.String ? value.GetString() : value.GetRawText())}' to the expected type '{type}'.");
+    private static ArgumentException Invalid(JsonElement value, string type)
+    {
+        var literal = Payload(value) switch
+        {
+            null => value.GetRawText(),
+            bool flag => flag ? "True" : "False",
+            IFormattable number => number.ToString(null, CultureInfo.InvariantCulture),
+            var text => text.ToString(),
+        };
+        return new($"The request is invalid. Details: Cannot convert the literal '{literal}' to the expected type '{type}'.");
+    }
 
     /// <summary>
     /// Merges a <c>merge</c> (or <c>mergeOrUpload</c> on an existing document) into the existing document: only the

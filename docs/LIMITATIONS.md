@@ -35,7 +35,7 @@ The simulator is designed for **development, learning, and testing purposes only
 | Index CRUD operations | Full support for create, read, update, delete; updates Azure can't apply (deleted or changed fields, removed suggesters, changed analysis components or vector algorithms in use) are refused with Azure's messages |
 | Field types | All basic types including Complex types and Collections |
 | **Vector fields** | `Collection(Edm.Single)` with dimensions property |
-| Document operations | upload, merge, mergeOrUpload, delete; a batch with an invalid action is rejected before any action is applied, complex fields merge recursively, and documents are returned in Azure's shape (missing values `null`, missing collections `[]`, dates in UTC to the millisecond) |
+| Document operations | upload, merge, mergeOrUpload, delete; a batch with an invalid action is rejected before any action is applied, values are converted to their field's type as Azure converts them, complex fields merge recursively, and documents are returned in Azure's shape (missing values `null`, missing collections `[]`, dates in UTC to the millisecond, points with Azure's `crs`) |
 | Simple query syntax | Standard search queries |
 | Full Lucene syntax | Wildcards, fuzzy, proximity, boosting |
 | **Vector search (HNSW)** | HNSW algorithm for fast ANN search |
