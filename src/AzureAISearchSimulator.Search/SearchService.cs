@@ -132,7 +132,7 @@ public class SearchService : ISearchService
             vectorSearchStopwatch.Start();
             // The HNSW index is approximate and cosine by default; filters, exhaustive queries and other metrics need the exact search.
             var exactQueries = filterQuery == null
-                ? request.VectorQueries.Where(q => SearchCompat.NeedsExactSearch(index, q)).ToList()
+                ? request.VectorQueries.Where(q => SearchCompat.NeedsExactSearch(index, q, _vectorSearchService.ApproximateMetric)).ToList()
                 : request.VectorQueries;
             vectorScores = SearchCompat.ExactVectorSearch(searcher, index, keyField, filterQuery, request.VectorFilterMode, exactQueries);
             foreach (var (key, score) in ExecuteVectorSearch(indexName, request.VectorQueries.Except(exactQueries).ToList()))

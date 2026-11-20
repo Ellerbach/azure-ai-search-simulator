@@ -280,6 +280,57 @@ public class VectorFilterIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task SearchAsync_UnfilteredCosineFieldWithAnotherHnswMetric_RanksByCosine()
+    {
+        // Arrange: a real HNSW service configured for euclidean; for [1, 0], cosine prefers a = [3, 0], euclidean c = [1, 1].
+        var settings = Options.Create(new VectorSearchSettings { UseHnsw = true, SimilarityMetric = "euclidean" });
+        var luceneSettings = Options.Create(new LuceneSettings { IndexPath = _testDir });
+        using var hnsw = new HnswIndexManager(Mock.Of<ILogger<HnswIndexManager>>(), settings, luceneSettings);
+        using var vectors = new HnswVectorSearchService(Mock.Of<ILogger<HnswVectorSearchService>>(), settings, hnsw, new VectorStore());
+        var documents = new DocumentService(Mock.Of<ILogger<DocumentService>>(), _luceneManager, vectors, _indexServiceMock.Object);
+        var search = new SearchService(
+            Mock.Of<ILogger<SearchService>>(),
+            _luceneManager,
+            vectors,
+            _indexServiceMock.Object,
+            Mock.Of<ISynonymMapResolver>(),
+            new ScoringProfileService(Mock.Of<ILogger<ScoringProfileService>>()));
+        var indexName = $"vector-hnsw-metric-{Guid.NewGuid():N}";
+        _indexServiceMock.Setup(x => x.GetIndexAsync(indexName, It.IsAny<CancellationToken>())).ReturnsAsync(new SearchIndex
+        {
+            Name = indexName,
+            Fields =
+            [
+                new SearchField { Name = "id", Type = "Edm.String", Key = true, Filterable = true },
+                new SearchField { Name = "Embedding", Type = "Collection(Edm.Single)", Searchable = true, Dimensions = 2, VectorSearchProfile = "p" },
+            ],
+            VectorSearch = new VectorSearchConfiguration
+            {
+                Algorithms = [new VectorSearchAlgorithm { Name = "alg", Kind = "hnsw", HnswParameters = new HnswParameters { Metric = "cosine" } }],
+                Profiles = [new VectorSearchProfile { Name = "p", Algorithm = "alg" }],
+            },
+        });
+        _luceneManager.GetWriter(indexName);
+        await documents.IndexDocumentsAsync(indexName, new IndexDocumentsRequest
+        {
+            Value =
+            [
+                new IndexAction { ["@search.action"] = "upload", ["id"] = "a", ["Embedding"] = new[] { 3f, 0f } },
+                new IndexAction { ["@search.action"] = "upload", ["id"] = "c", ["Embedding"] = new[] { 1f, 1f } },
+            ],
+        });
+
+        // Act
+        var response = await search.SearchAsync(indexName, new SearchRequest
+        {
+            VectorQueries = [new VectorQuery { Kind = "vector", Vector = [1f, 0f], Fields = "Embedding", K = 1 }],
+        });
+
+        // Assert
+        Assert.Equal(["a"], Ids(response));
+    }
+
+    [Fact]
     public async Task SearchAsync_VectorQueryWithFilter_ReturnsTheNearestMatchingDocuments()
     {
         // Arrange

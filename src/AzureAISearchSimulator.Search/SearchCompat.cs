@@ -196,9 +196,10 @@ internal static class SearchCompat
         }
     }
 
-    // Whether an unfiltered vector query must be searched exactly: the HNSW index is approximate and cosine by default.
-    public static bool NeedsExactSearch(SearchIndex index, VectorQuery query) =>
+    // Whether an unfiltered vector query must be searched exactly: only cosine fields can use the approximate search, and only when it is cosine too.
+    public static bool NeedsExactSearch(SearchIndex index, VectorQuery query, string? approximateMetric) =>
         query.Exhaustive == true
+        || !string.Equals(approximateMetric ?? "cosine", "cosine", StringComparison.OrdinalIgnoreCase)
         || VectorFields(query).Select(field => AlgorithmFor(index, field)).Any(a => a?.Kind == "exhaustiveKnn" || MetricOf(a) != "cosine");
 
     // Exact k nearest neighbours, over all documents or, with a filter, by its mode. preFilter (Azure's default) takes
