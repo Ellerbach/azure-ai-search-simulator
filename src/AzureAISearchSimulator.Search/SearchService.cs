@@ -814,7 +814,9 @@ public class SearchService : ISearchService
 
                     hasExpansions = true;
                     var phraseAlternatives = new BooleanQuery { Boost = phrase.Boost };
-                    phraseAlternatives.Add(phrase, Occur.SHOULD);
+                    var unboosted = (PhraseQuery)phrase.Clone();
+                    unboosted.Boost = 1;
+                    phraseAlternatives.Add(unboosted, Occur.SHOULD);
                     foreach (var synonym in phraseSynonyms)
                     {
                         phraseAlternatives.Add(AnalyzedQuery(phraseTerms[0].Field, synonym, analyzer), Occur.SHOULD);
