@@ -217,10 +217,14 @@ public class OrderByIntegrationTests : IDisposable
     [InlineData("*", "address/code", "4,2,1,3")]
     [InlineData("spa", "rating desc", "2,3,1")]
     [InlineData("spa", "search.score() desc, rating desc", "1,2,3")]
+    [InlineData("spa", "search.score() asc", "2,3,1")]
+    [InlineData("spa", "search.score()", "2,3,1")]
+    [InlineData("resort", "tier", "4,2,3")]
     public async Task OrderBy_SortableFieldOrScore_ReturnsSortedResults(string search, string orderBy, string expectedIds)
     {
-        // Arrange: in "spa", document 1 scores highest and documents 2 and 3 tie; document 4 has no values, and
-        // document 2's rank is int.MinValue, which still sorts after a missing rank.
+        // Arrange: in "spa", document 1 scores highest and documents 2 and 3 tie; document 4 has no rating, rank or code, and
+        // document 2's rank is int.MinValue, which still sorts after a missing rank. In "resort", documents 2 and 4
+        // tie on tier, and 4 (the shorter name) scores higher.
         var indexName = await SeedSortValidationIndexAsync();
 
         // Act
@@ -234,6 +238,19 @@ public class OrderByIntegrationTests : IDisposable
         Assert.Equal(expectedIds, string.Join(',', response.Value.Select(r => r["id"]?.ToString())));
     }
 
+    [Fact]
+    public async Task OrderBy_SortedTextSearch_ReturnsRelevanceScores()
+    {
+        // Arrange
+        var indexName = await SeedSortValidationIndexAsync();
+
+        // Act
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest { Search = "resort", OrderBy = "tier" });
+
+        // Assert: as in Azure, sorting doesn't replace @search.score.
+        Assert.True(response.Value[0].Score > response.Value[1].Score);
+    }
+
     private async Task<string> SeedSortValidationIndexAsync()
     {
         var indexName = $"sort-validation-{Guid.NewGuid():N}";
@@ -245,6 +262,7 @@ public class OrderByIntegrationTests : IDisposable
                 new() { Name = "id", Type = "Edm.String", Key = true },
                 new() { Name = "hotelName", Type = "Edm.String", Searchable = true, Sortable = false },
                 new() { Name = "rating", Type = "Edm.Double", Sortable = true },
+                new() { Name = "tier", Type = "Edm.Int32", Sortable = true },
                 new() { Name = "tags", Type = "Collection(Edm.String)", Filterable = true },
                 new()
                 {
@@ -274,15 +292,15 @@ public class OrderByIntegrationTests : IDisposable
             },
             new Dictionary<string, object?>
             {
-                ["id"] = "2", ["hotelName"] = "spa resort", ["rating"] = 5.0,
+                ["id"] = "2", ["hotelName"] = "spa resort", ["rating"] = 5.0, ["tier"] = 1,
                 ["address"] = new Dictionary<string, object?> { ["rank"] = int.MinValue, ["code"] = "A" }
             },
             new Dictionary<string, object?>
             {
-                ["id"] = "3", ["hotelName"] = "spa resort", ["rating"] = 4.0,
+                ["id"] = "3", ["hotelName"] = "spa resort", ["rating"] = 4.0, ["tier"] = 2,
                 ["address"] = new Dictionary<string, object?> { ["rank"] = 7, ["code"] = "C" }
             },
-            new Dictionary<string, object?> { ["id"] = "4", ["hotelName"] = "resort" });
+            new Dictionary<string, object?> { ["id"] = "4", ["hotelName"] = "resort", ["tier"] = 1 });
 
         return indexName;
     }

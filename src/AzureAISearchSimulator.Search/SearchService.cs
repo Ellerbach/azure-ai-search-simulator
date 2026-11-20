@@ -179,14 +179,14 @@ public class SearchService : ISearchService
         if (effectiveTextQuery != null)
         {
             topDocs = sort != null
-                ? searcher.Search(effectiveTextQuery, topN, sort)
+                ? searcher.Search(effectiveTextQuery, null, topN, sort, doDocScores: true, doMaxScore: false)
                 : searcher.Search(effectiveTextQuery, topN);
         }
         else if (filterQuery != null && vectorScores == null)
         {
             // Filter-only search
             topDocs = sort != null
-                ? searcher.Search(filterQuery, topN, sort)
+                ? searcher.Search(filterQuery, null, topN, sort, doDocScores: true, doMaxScore: false)
                 : searcher.Search(filterQuery, topN);
         }
         else if (vectorScores == null)
@@ -194,7 +194,7 @@ public class SearchService : ISearchService
             // Match all documents (a vector query without text returns only its nearest neighbours, as in Azure)
             var matchAllQuery = new MatchAllDocsQuery();
             topDocs = sort != null
-                ? searcher.Search(matchAllQuery, topN, sort)
+                ? searcher.Search(matchAllQuery, null, topN, sort, doDocScores: true, doMaxScore: false)
                 : searcher.Search(matchAllQuery, topN);
         }
         textSearchStopwatch.Stop();
@@ -240,7 +240,8 @@ public class SearchService : ISearchService
             debugVector,
             scoringProfile,
             scoringParameters,
-            index);
+            index,
+            keepTextOrder: sort != null && vectorScores == null);
 
         // Apply skip and top
         var finalResults = combinedResults.Results
@@ -390,7 +391,8 @@ public class SearchService : ISearchService
         bool debugVector,
         ScoringProfile? scoringProfile = null,
         Dictionary<string, string>? scoringParameters = null,
-        SearchIndex? index = null)
+        SearchIndex? index = null,
+        bool keepTextOrder = false)
     {
         var combined = new Dictionary<string, (int DocId, double TextScore, double VectorScore)>();
         var textRanks = new Dictionary<string, int>();
@@ -537,8 +539,11 @@ public class SearchService : ISearchService
                 }
 
                 return (DocId: docId, Score: finalScore, Key: kvp.Key);
-            })
-            .OrderByDescending(r => r.Score);
+            });
+        if (!keepTextOrder)
+        {
+            results = results.OrderByDescending(r => r.Score);
+        }
 
         return (results, documentDebugInfos);
     }
@@ -1491,7 +1496,8 @@ public class SearchService : ISearchService
 
             if (field is null)
             {
-                sortFields.Add(SortField.FIELD_SCORE);
+                // Lucene's score order is descending, so it's reversed for asc (the default).
+                sortFields.Add(new SortField(null, SortFieldType.SCORE, !reverse));
             }
             else
             {
@@ -1515,6 +1521,12 @@ public class SearchService : ISearchService
 
                 sortFields.Add(sortField);
             }
+        }
+
+        // As in Azure, ties are broken by score.
+        if (!sortFields.Any(s => s.Type == SortFieldType.SCORE))
+        {
+            sortFields.Add(SortField.FIELD_SCORE);
         }
 
         return sortFields.Any() ? new Sort(sortFields.ToArray()) : null;
