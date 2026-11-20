@@ -78,6 +78,12 @@ internal sealed class ODataFilterParser
     private readonly Stack<string> _scopes = new();
     private readonly List<IsMatchNode> _isMatches = [];
     private int _position;
+    private int _clauses;
+    private int _depth;
+
+    // Azure rejects filters with too many clauses ("hundreds" risk it); both limits keep the recursion safe.
+    private const int MaxClauses = 1000;
+    private const int MaxDepth = 100;
 
     private ODataFilterParser(SearchIndex schema, string filter)
     {
@@ -136,10 +142,15 @@ internal sealed class ODataFilterParser
 
     private FilterNode ParseBooleanTerm()
     {
+        if (++_clauses > MaxClauses)
+        {
+            throw Error($"the filter has more than {MaxClauses} clauses; use search.in for long lists of values", Peek);
+        }
+
         if (PeekKeyword("not"))
         {
             Next();
-            return new NotNode(ParseNotOperand());
+            return new NotNode(Nested(ParseNotOperand));
         }
 
         var left = ParseOperand();
@@ -158,7 +169,7 @@ internal sealed class ODataFilterParser
         if (PeekKeyword("not"))
         {
             Next();
-            return new NotNode(ParseNotOperand());
+            return new NotNode(Nested(ParseNotOperand));
         }
 
         var node = ToBoolean(ParseOperand());
@@ -169,6 +180,23 @@ internal sealed class ODataFilterParser
 
     private bool PeekComparisonOperator() => Peek.Kind == TokenKind.Identifier && ComparisonOperators.Contains(Peek.Text);
 
+    private T Nested<T>(Func<T> parse)
+    {
+        if (++_depth > MaxDepth)
+        {
+            throw Error($"the filter is nested more than {MaxDepth} levels deep", Peek);
+        }
+
+        try
+        {
+            return parse();
+        }
+        finally
+        {
+            _depth--;
+        }
+    }
+
     private Operand ParseOperand()
     {
         var token = Peek;
@@ -176,7 +204,7 @@ internal sealed class ODataFilterParser
         {
             case TokenKind.OpenParen:
                 Next();
-                var inner = ParseOr();
+                var inner = Nested(ParseOr);
                 Expect(TokenKind.CloseParen, "')'");
                 return new NodeOperand(inner);
             case TokenKind.String:
@@ -315,7 +343,7 @@ internal sealed class ODataFilterParser
         FilterNode body;
         try
         {
-            body = ParseOr();
+            body = Nested(ParseOr);
         }
         finally
         {
@@ -458,8 +486,19 @@ internal sealed class ODataFilterParser
         return node;
     }
 
-    private ComparisonNode BuildComparison(Operand left, Token op, Operand right)
+    private FilterNode BuildComparison(Operand left, Token op, Operand right)
     {
+        // As in Azure, comparing search.ismatch with true or false is allowed (and optional).
+        if ((left, right) is (NodeOperand { Node: IsMatchNode }, LiteralOperand) or (LiteralOperand, NodeOperand { Node: IsMatchNode }))
+        {
+            var (match, constant) = left is NodeOperand n
+                ? ((IsMatchNode)n.Node, ((LiteralOperand)right).Literal)
+                : ((IsMatchNode)((NodeOperand)right).Node, ((LiteralOperand)left).Literal);
+            return constant is { Kind: LiteralKind.Boolean, Value: bool value } && op.Text is "eq" or "ne"
+                ? (op.Text == "eq") == value ? match : new NotNode(match)
+                : throw Error("search.ismatch can only be compared with true or false, with 'eq' or 'ne'", op);
+        }
+
         var (field, literal, @operator) = (left, right) switch
         {
             (FieldOperand f, LiteralOperand l) => (f.Field, l.Literal, op.Text),

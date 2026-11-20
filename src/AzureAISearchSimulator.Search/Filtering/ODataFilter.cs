@@ -62,7 +62,7 @@ internal static class ODataFilter
 
     private static bool IndexedExactly(FieldRef field) =>
         field is { Variable: null, Segments.Length: 1, Type: SearchFieldDataType.String, Field: { } f }
-        && (f.Key || (f.Filterable == true && string.IsNullOrEmpty(f.Normalizer)));
+        && string.IsNullOrEmpty(f.Normalizer) && (f.Key || f.Filterable == true);
 
     private static IEnumerable<FilterNode> Conjuncts(FilterNode node) =>
         node is AndNode both ? Conjuncts(both.Left).Concat(Conjuncts(both.Right)) : [node];

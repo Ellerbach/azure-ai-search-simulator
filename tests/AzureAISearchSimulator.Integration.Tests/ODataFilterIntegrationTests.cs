@@ -91,6 +91,9 @@ public class ODataFilterIntegrationTests : IDisposable
     [InlineData("Score eq 1e-29", "p2")]
     [InlineData("Score eq 0", "p3")]
     [InlineData("Score gt 0 and Score lt 1e-28", "p2")]
+    [InlineData("search.ismatch('admin', 'Title') eq false", "p2,p3,p4")]
+    [InlineData("true eq search.ismatch('admin', 'Title')", "p1,p5")]
+    [InlineData("search.ismatch('admin', 'Title') ne true", "p2,p3,p4")]
     public async Task SearchAsync_WithFilter_ReturnsExactlyTheMatchingDocuments(string filter, string expected)
     {
         // Arrange
@@ -183,6 +186,8 @@ public class ODataFilterIntegrationTests : IDisposable
     [InlineData("Flags/all(f: f and f eq true)")]
     [InlineData("EmployeeStatuses/any(s: s/EffectiveStart eq 2025-02-30T00:00:00Z)")]
     [InlineData("Keywords/any()")]
+    [InlineData("search.ismatch('admin') gt false")]
+    [InlineData("search.ismatch('admin') eq 1")]
     public async Task SearchAsync_WithFilterItCannotEvaluateExactly_ThrowsArgumentException(string filter)
     {
         // Arrange
@@ -194,6 +199,55 @@ public class ODataFilterIntegrationTests : IDisposable
 
         // Assert
         Assert.Contains("filter", error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData(1000, 0, false)]
+    [InlineData(1001, 0, true)]
+    [InlineData(1, 100, false)]
+    [InlineData(1, 101, true)]
+    [InlineData(1, 5000, true)]
+    public async Task SearchAsync_WithFilterTooLargeOrDeep_ThrowsArgumentException(int clauses, int depth, bool rejected)
+    {
+        // Arrange: a stack overflow would end the process instead of returning a 400.
+        var index = await SeedAsync();
+        var filter = new string('(', depth) + string.Join(" or ", Enumerable.Repeat("Rating eq 5", clauses)) + new string(')', depth);
+
+        // Act
+        var search = () => _searchService.SearchAsync(index, new SearchRequest { Search = "*", Filter = filter });
+
+        // Assert
+        if (rejected)
+        {
+            await Assert.ThrowsAsync<ArgumentException>(search);
+        }
+        else
+        {
+            Assert.Single((await search()).Value);
+        }
+    }
+
+    [Fact]
+    public async Task SearchAsync_WithFilterOnANormalizedKey_ComparesNormalizedValues()
+    {
+        // Arrange
+        var name = $"normalized-key-{Guid.NewGuid():N}";
+        _indexServiceMock.Setup(x => x.GetIndexAsync(name, It.IsAny<CancellationToken>())).ReturnsAsync(new SearchIndex
+        {
+            Name = name,
+            Fields = [new SearchField { Name = "id", Type = "Edm.String", Key = true, Filterable = true, Normalizer = "lowercase" }],
+        });
+        _luceneManager.GetWriter(name);
+        await _documentService.IndexDocumentsAsync(name, new IndexDocumentsRequest
+        {
+            Value = [new IndexAction { ["@search.action"] = "upload", ["id"] = "ABC" }],
+        });
+
+        // Act
+        var ids = await IdsAsync(name, "id eq 'abc'");
+
+        // Assert
+        Assert.Equal(["ABC"], ids);
     }
 
     // Complex fields get filterable: false, as the API's defaults give them.
