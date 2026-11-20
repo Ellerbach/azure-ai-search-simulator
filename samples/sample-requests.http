@@ -49,7 +49,7 @@ api-key: {{adminKey}}
     { "name": "id", "type": "Edm.String", "key": true },
     { "name": "title", "type": "Edm.String", "searchable": true },
     { "name": "content", "type": "Edm.String", "searchable": true },
-    { "name": "contentVector", "type": "Collection(Edm.Single)", "searchable": false, "dimensions": 1536, "vectorSearchProfile": "vector-profile" }
+    { "name": "contentVector", "type": "Collection(Edm.Single)", "searchable": false, "dimensions": 8, "vectorSearchProfile": "vector-profile" }
   ],
   "vectorSearch": {
     "algorithms": [
