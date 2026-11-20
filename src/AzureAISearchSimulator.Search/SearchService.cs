@@ -799,6 +799,28 @@ public class SearchService : ISearchService
                     }
 
                     return alternatives;
+                // As in Azure, a quoted phrase is looked up as a whole (e.g. "new york" for the rule "new york, nyc").
+                case PhraseQuery phrase when phrase.GetTerms() is { Length: > 1 } phraseTerms
+                    && phraseTerms.All(t => t.Field == phraseTerms[0].Field)
+                    && synonymMaps.TryGetValue(phraseTerms[0].Field, out var phraseMaps):
+                    var phraseText = string.Join(' ', phraseTerms.Select(t => t.Text));
+                    var phraseSynonyms = (_synonymMapResolver.ExpandTerms(phraseMaps, phraseText) ?? [])
+                        .Where(s => !string.Equals(s, phraseText, StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+                    if (phraseSynonyms.Count == 0)
+                    {
+                        return query;
+                    }
+
+                    hasExpansions = true;
+                    var phraseAlternatives = new BooleanQuery { Boost = phrase.Boost };
+                    phraseAlternatives.Add(phrase, Occur.SHOULD);
+                    foreach (var synonym in phraseSynonyms)
+                    {
+                        phraseAlternatives.Add(AnalyzedQuery(phraseTerms[0].Field, synonym, analyzer), Occur.SHOULD);
+                    }
+
+                    return phraseAlternatives;
                 default:
                     return query;
             }

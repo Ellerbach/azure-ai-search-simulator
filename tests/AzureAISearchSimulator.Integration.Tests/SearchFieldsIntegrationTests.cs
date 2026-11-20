@@ -282,6 +282,22 @@ public class SearchFieldsIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task Search_WithQuotedPhraseInASynonymRule_ExpandsThePhrase()
+    {
+        // Arrange: no room type is "penthouse suite", but the rule maps it to "standard".
+        var indexName = await CreateHotelsIndexWithDocuments(roomTypeSynonymMaps: new List<string> { "room-types" });
+        _synonymMapResolverMock
+            .Setup(x => x.ExpandTerms(It.IsAny<IEnumerable<string>>(), It.IsAny<string>()))
+            .Returns((IEnumerable<string> _, string term) => new List<string> { term });
+        _synonymMapResolverMock
+            .Setup(x => x.ExpandTerms(It.IsAny<IEnumerable<string>>(), "penthouse suite"))
+            .Returns(new List<string> { "penthouse suite", "standard" });
+
+        // Act & Assert
+        Assert.Equal(new List<string?> { "2" }, await SearchIds(indexName, "\"penthouse suite\"", "rooms/type"));
+    }
+
+    [Fact]
     public async Task Search_WithFeaturesMode_ReportsComplexSubFields()
     {
         var indexName = await CreateHotelsIndexWithDocuments();
