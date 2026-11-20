@@ -670,9 +670,9 @@ internal sealed class ODataFilterParser
             throw Error($"'{field.Path}' is {field.Type} but is compared with a {literal.Kind} literal", op);
         }
 
-        if (expected is LiteralKind.Boolean or LiteralKind.String && @operator is not ("eq" or "ne"))
+        if (expected is LiteralKind.Boolean && @operator is not ("eq" or "ne"))
         {
-            throw Error($"'{@operator}' doesn't apply to {field.Type}; only 'eq' and 'ne' do", op);
+            throw Error("Boolean fields can only be compared using 'eq' or 'ne'", op);
         }
 
         return literal.Kind == LiteralKind.String

@@ -328,7 +328,7 @@ Filters are evaluated exactly against each candidate document. A filter the simu
 
 Supported:
 
-- `eq` and `ne` on string and boolean fields, and `eq`, `ne`, `gt`, `lt`, `ge`, `le` on numeric and date fields, including sub-fields of complex fields (e.g. `address/city eq 'Paris'`), and `null` comparisons
+- `eq` and `ne` on boolean fields, and `eq`, `ne`, `gt`, `lt`, `ge`, `le` on string, numeric and date fields (strings compare ordinally, after the field's normalizer), including sub-fields of complex fields (e.g. `address/city eq 'Paris'`), and `null` comparisons
 - `and`, `or`, `not` and parentheses
 - `any()` and `all()` over primitive and complex collections, nested to any depth; conditions inside one lambda hold for the same element
 - Lambda bodies follow Azure's rules: over strings, `any()` takes `eq`/`search.in` joined with `or` and `all()` takes `ne`/`not search.in` joined with `and`; over Booleans, a single test of the range variable; over numbers and dates, `any()` takes ORs of ANDs and `all()` ANDs of ORs. A lambda can only use its own range variable
