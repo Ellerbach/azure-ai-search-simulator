@@ -332,8 +332,9 @@ Supported:
 - `and`, `or`, `not` and parentheses
 - `any()` and `all()` over primitive and complex collections, nested to any depth; conditions inside one lambda hold for the same element
 - Lambda bodies follow Azure's rules: over strings, `any()` takes `eq`/`search.in` joined with `or` and `all()` takes `ne`/`not search.in` joined with `and`; over Booleans, a single test of the range variable; over numbers and dates, `any()` takes ORs of ANDs and `all()` ANDs of ORs. A lambda can only use its own range variable
-- `search.in()` (any number of values) and `search.ismatch()`
+- `search.in()` (any number of values) and `search.ismatch()`, which can be compared with `true` or `false`
 - Dates compare at millisecond precision, as in Azure
+- Up to 1,000 clauses, nested up to 100 levels deep (Azure's own limit is lower; it warns that hundreds of clauses risk it)
 
 Not supported:
 
@@ -357,18 +358,19 @@ Not supported:
 
 Supported:
 
-- Value facets with `count:N`, counting exact, case-sensitive values (dates in UTC to the millisecond) after the field's normalizer, as Azure does
+- Value facets with `count:N` (`count:0` for all values), counting exact, case-sensitive values (dates in UTC to the millisecond) after the field's normalizer, as Azure does
 - Interval facets with `interval:N` (numeric fields)
 - Aggregation metrics `sum`, `min`, `max`, `avg` (`Edm.Int32`, `Edm.Int64`, `Edm.Double` fields, including sub-fields of a complex type)
 - `default:` missing-value substitution for the aggregation metrics above (numeric default only)
 - Facets on `Edm.ComplexType` sub-fields (e.g. `Tiles/PendingPaymentCount`) — sub-fields are indexed field-by-field under a path-qualified name
+- Value facets on `Collection(Edm.ComplexType)` sub-fields (e.g. `Rooms/Type`), counting each document once per value
 
 Not supported:
 
 - The `cardinality` aggregation metric (and its `precisionThreshold` parameter)
 - `sort`, `values`, and `timeoffset` facet parameters
 - Facet hierarchies (`>` and `;` operators) and facet filters (`includeTermFilter` / `excludeTermFilter`)
-- Facets on `Collection(Edm.ComplexType)` sub-fields (e.g. `Rooms/BaseRate` where `Rooms` is a collection)
+- Interval and metric facets on `Collection(Edm.ComplexType)` sub-fields (e.g. `Rooms/BaseRate`), which return 400
 
 A facet on a field that isn't facetable returns 400, as in Azure.
 

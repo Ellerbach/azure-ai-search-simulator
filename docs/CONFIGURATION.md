@@ -142,7 +142,7 @@ The HNSW (Hierarchical Navigable Small World) algorithm provides fast approximat
 | `M` | Number of bi-directional links per node | `16` | 12-48 |
 | `EfConstruction` | Search depth during index build | `200` | 100-500 |
 | `EfSearch` | Search depth during query | `100` | 50-500 |
-| `OversampleMultiplier` | Multiplier for `IVectorSearchService.SearchWithFilter` (searches with a `filter` are pre-filtered and don't use it) | `5` | 3-10 |
+| `OversampleMultiplier` | Multiplier for `IVectorSearchService.SearchWithFilter` (searches with a `filter` use the exact search, whatever their `vectorFilterMode`, and don't use it) | `5` | 3-10 |
 | `RandomSeed` | Random seed (-1 for random) | `42` | Any integer |
 
 **Performance tuning:**
