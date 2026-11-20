@@ -16,21 +16,62 @@
 ### Prerequisites:
 ### - The simulator running at https://localhost:7250
 ### - REST Client extension for VS Code
+### - For the [AZURE] requests: an Azure AI Search service with role-based
+###   access, the Search Service Contributor and Search Index Data Contributor
+###   roles, and AZURE_BASE_URL and ENTRA_TOKEN in .env (see .env.example).
+###   To use keys instead, replace "Authorization: Bearer {{azureToken}}"
+###   with an api-key header.
+### - Each request is a [SIM]/[AZURE] pair; run the steps in order on each.
 ### =====================================================
 
 @baseUrl = {{$dotenv BASE_URL}}
 @apiVersion = {{$dotenv API_VERSION}}
 @adminKey = {{$dotenv ADMIN_KEY}}
 @queryKey = {{$dotenv QUERY_KEY}}
+@azureBaseUrl = {{$dotenv AZURE_BASE_URL}}
+@azureToken = {{$dotenv ENTRA_TOKEN}}
 
 # =====================================================
 # 1. CREATE THE INDEX
 # =====================================================
 
-### Create an index with one field of each kind
+### [SIM] Create an index with one field of each kind
 POST {{baseUrl}}/indexes?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{adminKey}}
+
+{
+  "name": "document-sample",
+  "fields": [
+    { "name": "id", "type": "Edm.String", "key": true, "filterable": true },
+    { "name": "name", "type": "Edm.String", "searchable": true },
+    { "name": "rating", "type": "Edm.Double", "filterable": true },
+    { "name": "rooms", "type": "Edm.Int32", "filterable": true },
+    { "name": "views", "type": "Edm.Int64", "filterable": true },
+    { "name": "active", "type": "Edm.Boolean", "filterable": true },
+    { "name": "updated", "type": "Edm.DateTimeOffset", "filterable": true },
+    { "name": "location", "type": "Edm.GeographyPoint", "filterable": true },
+    { "name": "tags", "type": "Collection(Edm.String)", "filterable": true },
+    { "name": "scores", "type": "Collection(Edm.Double)", "filterable": true },
+    {
+      "name": "address", "type": "Edm.ComplexType",
+      "fields": [
+        { "name": "street", "type": "Edm.String" },
+        { "name": "city", "type": "Edm.String", "filterable": true },
+        { "name": "zip", "type": "Edm.String" }
+      ]
+    },
+    {
+      "name": "contacts", "type": "Collection(Edm.ComplexType)",
+      "fields": [{ "name": "name", "type": "Edm.String" }, { "name": "phone", "type": "Edm.String" }]
+    }
+  ]
+}
+
+### [AZURE] Create an index with one field of each kind
+POST {{azureBaseUrl}}/indexes?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
 
 {
   "name": "document-sample",
@@ -64,7 +105,7 @@ api-key: {{adminKey}}
 # 2. UPLOAD, LOOK UP AND MERGE
 # =====================================================
 
-### Upload a full document and a minimal one (each item's status is 201: created)
+### [SIM] Upload a full document and a minimal one (each item's status is 201: created)
 POST {{baseUrl}}/indexes/document-sample/docs/index?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{adminKey}}
@@ -83,7 +124,26 @@ api-key: {{adminKey}}
   ]
 }
 
-### Upload document 2 again (its status is 200: replaced)
+### [AZURE] Upload a full document and a minimal one (each item's status is 201: created)
+POST {{azureBaseUrl}}/indexes/document-sample/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "value": [
+    {
+      "@search.action": "upload", "id": "1", "name": "Ocean View Hotel", "rating": 4.5, "rooms": 120,
+      "views": 9223372036854775807, "active": true, "updated": "2024-03-05T10:20:30.1234567+02:00",
+      "location": { "type": "Point", "coordinates": [2.35, 48.85] },
+      "tags": ["pool", "spa"], "scores": [1.5, 2.5],
+      "address": { "street": "1 Rue de la Paix", "city": "Paris", "zip": "75001" },
+      "contacts": [{ "name": "Front desk", "phone": "+33 1 00 00 00 00" }]
+    },
+    { "@search.action": "upload", "id": "2", "name": "Budget Inn" }
+  ]
+}
+
+### [SIM] Upload document 2 again (its status is 200: replaced)
 POST {{baseUrl}}/indexes/document-sample/docs/index?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{adminKey}}
@@ -92,19 +152,40 @@ api-key: {{adminKey}}
   "value": [{ "@search.action": "upload", "id": "2", "name": "Budget Inn Express" }]
 }
 
-### Look up the minimal document: every retrievable field is returned, null when missing and [] for collections
+### [AZURE] Upload document 2 again (its status is 200: replaced)
+POST {{azureBaseUrl}}/indexes/document-sample/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "value": [{ "@search.action": "upload", "id": "2", "name": "Budget Inn Express" }]
+}
+
+### [SIM] Look up the minimal document: every retrievable field is returned, null when missing and [] for collections
 GET {{baseUrl}}/indexes/document-sample/docs/2?api-version={{apiVersion}}
 api-key: {{queryKey}}
 
-### Look up the full document: dates come back in UTC to the millisecond (2024-03-05T08:20:30.123Z), and points with their crs (EPSG:4326)
+### [AZURE] Look up the minimal document: every retrievable field is returned, null when missing and [] for collections
+GET {{azureBaseUrl}}/indexes/document-sample/docs/2?api-version={{apiVersion}}
+Authorization: Bearer {{azureToken}}
+
+### [SIM] Look up the full document: dates come back in UTC to the millisecond (2024-03-05T08:20:30.123Z), and points with their crs (EPSG:4326)
 GET {{baseUrl}}/indexes/document-sample/docs/1?api-version={{apiVersion}}
 api-key: {{queryKey}}
 
-### $select can name sub-fields of complex fields
+### [AZURE] Look up the full document: dates come back in UTC to the millisecond (2024-03-05T08:20:30.123Z), and points with their crs (EPSG:4326)
+GET {{azureBaseUrl}}/indexes/document-sample/docs/1?api-version={{apiVersion}}
+Authorization: Bearer {{azureToken}}
+
+### [SIM] $select can name sub-fields of complex fields
 GET {{baseUrl}}/indexes/document-sample/docs/1?api-version={{apiVersion}}&$select=name,address/city
 api-key: {{queryKey}}
 
-### Merge into a complex field: the other sub-fields are kept, and collections are replaced
+### [AZURE] $select can name sub-fields of complex fields
+GET {{azureBaseUrl}}/indexes/document-sample/docs/1?api-version={{apiVersion}}&$select=name,address/city
+Authorization: Bearer {{azureToken}}
+
+### [SIM] Merge into a complex field: the other sub-fields are kept, and collections are replaced
 POST {{baseUrl}}/indexes/document-sample/docs/index?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{adminKey}}
@@ -113,11 +194,24 @@ api-key: {{adminKey}}
   "value": [{ "@search.action": "merge", "id": "1", "address": { "zip": "75002" }, "tags": ["rooftop"] }]
 }
 
-### Look up the merged document: address keeps its street and city, and tags is ["rooftop"]
+### [AZURE] Merge into a complex field: the other sub-fields are kept, and collections are replaced
+POST {{azureBaseUrl}}/indexes/document-sample/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "value": [{ "@search.action": "merge", "id": "1", "address": { "zip": "75002" }, "tags": ["rooftop"] }]
+}
+
+### [SIM] Look up the merged document: address keeps its street and city, and tags is ["rooftop"]
 GET {{baseUrl}}/indexes/document-sample/docs/1?api-version={{apiVersion}}&$select=address,tags
 api-key: {{queryKey}}
 
-### Values are converted to their field's type: special doubles in any case, numbers and booleans in strings, a date alone, a point with an altitude
+### [AZURE] Look up the merged document: address keeps its street and city, and tags is ["rooftop"]
+GET {{azureBaseUrl}}/indexes/document-sample/docs/1?api-version={{apiVersion}}&$select=address,tags
+Authorization: Bearer {{azureToken}}
+
+### [SIM] Values are converted to their field's type: special doubles in any case, numbers and booleans in strings, a date alone, a point with an altitude
 POST {{baseUrl}}/indexes/document-sample/docs/index?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{adminKey}}
@@ -131,14 +225,41 @@ api-key: {{adminKey}}
   ]
 }
 
-### Look up document 3: "NaN", 42, 8 (an Edm.Int64 rounds a fraction half to even), true, ["INF", 1.5, "-INF"], 2024-03-05T00:00:00Z, and the point without its altitude
+### [AZURE] Values are converted to their field's type: special doubles in any case, numbers and booleans in strings, a date alone, a point with an altitude
+POST {{azureBaseUrl}}/indexes/document-sample/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "value": [
+    {
+      "@search.action": "mergeOrUpload", "id": "3", "rating": "nan", "rooms": " 42 ", "views": 7.5, "active": "True",
+      "scores": ["INF", 1.5, "-Inf"], "updated": "2024-03-05", "location": { "type": "Point", "coordinates": [-122.13, 47.67, 30] }
+    }
+  ]
+}
+
+### [SIM] Look up document 3: "NaN", 42, 8 (an Edm.Int64 rounds a fraction half to even), true, ["INF", 1.5, "-INF"], 2024-03-05T00:00:00Z, and the point without its altitude
 GET {{baseUrl}}/indexes/document-sample/docs/3?api-version={{apiVersion}}&$select=rating,rooms,views,active,scores,updated,location
 api-key: {{queryKey}}
 
-### Delete document 3
+### [AZURE] Look up document 3: "NaN", 42, 8 (an Edm.Int64 rounds a fraction half to even), true, ["INF", 1.5, "-INF"], 2024-03-05T00:00:00Z, and the point without its altitude
+GET {{azureBaseUrl}}/indexes/document-sample/docs/3?api-version={{apiVersion}}&$select=rating,rooms,views,active,scores,updated,location
+Authorization: Bearer {{azureToken}}
+
+### [SIM] Delete document 3
 POST {{baseUrl}}/indexes/document-sample/docs/index?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{adminKey}}
+
+{
+  "value": [{ "@search.action": "delete", "id": "3" }]
+}
+
+### [AZURE] Delete document 3
+POST {{azureBaseUrl}}/indexes/document-sample/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
 
 {
   "value": [{ "@search.action": "delete", "id": "3" }]
@@ -149,7 +270,7 @@ api-key: {{adminKey}}
 # =====================================================
 # One invalid action rejects the whole batch before any action is applied.
 
-### A valid action and an invalid one: nothing is written → 400
+### [SIM] A valid action and an invalid one: nothing is written → 400
 POST {{baseUrl}}/indexes/document-sample/docs/index?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{adminKey}}
@@ -161,11 +282,27 @@ api-key: {{adminKey}}
   ]
 }
 
-### The valid action wasn't applied either → 404
+### [AZURE] A valid action and an invalid one: nothing is written → 400
+POST {{azureBaseUrl}}/indexes/document-sample/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "value": [
+    { "@search.action": "upload", "id": "4", "name": "Not written" },
+    { "@search.action": "upload", "id": "5", "rooms": "many" }
+  ]
+}
+
+### [SIM] The valid action wasn't applied either → 404
 GET {{baseUrl}}/indexes/document-sample/docs/4?api-version={{apiVersion}}
 api-key: {{queryKey}}
 
-### A key with a character other than letters, digits, _, - and = → 400
+### [AZURE] The valid action wasn't applied either → 404
+GET {{azureBaseUrl}}/indexes/document-sample/docs/4?api-version={{apiVersion}}
+Authorization: Bearer {{azureToken}}
+
+### [SIM] A key with a character other than letters, digits, _, - and = → 400
 POST {{baseUrl}}/indexes/document-sample/docs/index?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{adminKey}}
@@ -174,7 +311,16 @@ api-key: {{adminKey}}
   "value": [{ "@search.action": "upload", "id": "a.b" }]
 }
 
-### A key starting with an underscore → 400
+### [AZURE] A key with a character other than letters, digits, _, - and = → 400
+POST {{azureBaseUrl}}/indexes/document-sample/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "value": [{ "@search.action": "upload", "id": "a.b" }]
+}
+
+### [SIM] A key starting with an underscore → 400
 POST {{baseUrl}}/indexes/document-sample/docs/index?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{adminKey}}
@@ -183,7 +329,16 @@ api-key: {{adminKey}}
   "value": [{ "@search.action": "upload", "id": "_a" }]
 }
 
-### A missing key → 400
+### [AZURE] A key starting with an underscore → 400
+POST {{azureBaseUrl}}/indexes/document-sample/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "value": [{ "@search.action": "upload", "id": "_a" }]
+}
+
+### [SIM] A missing key → 400
 POST {{baseUrl}}/indexes/document-sample/docs/index?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{adminKey}}
@@ -192,7 +347,16 @@ api-key: {{adminKey}}
   "value": [{ "@search.action": "upload", "name": "No key" }]
 }
 
-### A property the index doesn't define → 400
+### [AZURE] A missing key → 400
+POST {{azureBaseUrl}}/indexes/document-sample/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "value": [{ "@search.action": "upload", "name": "No key" }]
+}
+
+### [SIM] A property the index doesn't define → 400
 POST {{baseUrl}}/indexes/document-sample/docs/index?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{adminKey}}
@@ -201,7 +365,16 @@ api-key: {{adminKey}}
   "value": [{ "@search.action": "upload", "id": "6", "stars": 5 }]
 }
 
-### A sub-property a complex field doesn't define → 400
+### [AZURE] A property the index doesn't define → 400
+POST {{azureBaseUrl}}/indexes/document-sample/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "value": [{ "@search.action": "upload", "id": "6", "stars": 5 }]
+}
+
+### [SIM] A sub-property a complex field doesn't define → 400
 POST {{baseUrl}}/indexes/document-sample/docs/index?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{adminKey}}
@@ -210,7 +383,16 @@ api-key: {{adminKey}}
   "value": [{ "@search.action": "upload", "id": "6", "address": { "floor": 3 } }]
 }
 
-### A fraction in an integer field → 400
+### [AZURE] A sub-property a complex field doesn't define → 400
+POST {{azureBaseUrl}}/indexes/document-sample/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "value": [{ "@search.action": "upload", "id": "6", "address": { "floor": 3 } }]
+}
+
+### [SIM] A fraction in an integer field → 400
 POST {{baseUrl}}/indexes/document-sample/docs/index?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{adminKey}}
@@ -219,7 +401,16 @@ api-key: {{adminKey}}
   "value": [{ "@search.action": "upload", "id": "6", "rooms": 1.5 }]
 }
 
-### An Edm.Int32 takes integers only, so even 5.0 → 400
+### [AZURE] A fraction in an integer field → 400
+POST {{azureBaseUrl}}/indexes/document-sample/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "value": [{ "@search.action": "upload", "id": "6", "rooms": 1.5 }]
+}
+
+### [SIM] An Edm.Int32 takes integers only, so even 5.0 → 400
 POST {{baseUrl}}/indexes/document-sample/docs/index?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{adminKey}}
@@ -228,7 +419,16 @@ api-key: {{adminKey}}
   "value": [{ "@search.action": "upload", "id": "6", "rooms": 5.0 }]
 }
 
-### An Edm.Int64 can't be a string, unlike the other numeric types → 400
+### [AZURE] An Edm.Int32 takes integers only, so even 5.0 → 400
+POST {{azureBaseUrl}}/indexes/document-sample/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "value": [{ "@search.action": "upload", "id": "6", "rooms": 5.0 }]
+}
+
+### [SIM] An Edm.Int64 can't be a string, unlike the other numeric types → 400
 POST {{baseUrl}}/indexes/document-sample/docs/index?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{adminKey}}
@@ -237,7 +437,16 @@ api-key: {{adminKey}}
   "value": [{ "@search.action": "upload", "id": "6", "views": "5" }]
 }
 
-### A number out of the field's range (Edm.Int32) → 400
+### [AZURE] An Edm.Int64 can't be a string, unlike the other numeric types → 400
+POST {{azureBaseUrl}}/indexes/document-sample/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "value": [{ "@search.action": "upload", "id": "6", "views": "5" }]
+}
+
+### [SIM] A number out of the field's range (Edm.Int32) → 400
 POST {{baseUrl}}/indexes/document-sample/docs/index?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{adminKey}}
@@ -246,7 +455,16 @@ api-key: {{adminKey}}
   "value": [{ "@search.action": "upload", "id": "6", "rooms": 3000000000 }]
 }
 
-### null inside a collection → 400
+### [AZURE] A number out of the field's range (Edm.Int32) → 400
+POST {{azureBaseUrl}}/indexes/document-sample/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "value": [{ "@search.action": "upload", "id": "6", "rooms": 3000000000 }]
+}
+
+### [SIM] null inside a collection → 400
 POST {{baseUrl}}/indexes/document-sample/docs/index?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{adminKey}}
@@ -255,7 +473,16 @@ api-key: {{adminKey}}
   "value": [{ "@search.action": "upload", "id": "6", "tags": ["pool", null] }]
 }
 
-### A date without a Z or an offset → 400
+### [AZURE] null inside a collection → 400
+POST {{azureBaseUrl}}/indexes/document-sample/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "value": [{ "@search.action": "upload", "id": "6", "tags": ["pool", null] }]
+}
+
+### [SIM] A date without a Z or an offset → 400
 POST {{baseUrl}}/indexes/document-sample/docs/index?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{adminKey}}
@@ -264,7 +491,16 @@ api-key: {{adminKey}}
   "value": [{ "@search.action": "upload", "id": "6", "updated": "2024-03-05T10:20:30" }]
 }
 
-### A geography point that isn't a GeoJSON point → 400
+### [AZURE] A date without a Z or an offset → 400
+POST {{azureBaseUrl}}/indexes/document-sample/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "value": [{ "@search.action": "upload", "id": "6", "updated": "2024-03-05T10:20:30" }]
+}
+
+### [SIM] A geography point that isn't a GeoJSON point → 400
 POST {{baseUrl}}/indexes/document-sample/docs/index?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{adminKey}}
@@ -273,7 +509,16 @@ api-key: {{adminKey}}
   "value": [{ "@search.action": "upload", "id": "6", "location": { "lat": 48.85, "lon": 2.35 } }]
 }
 
-### A string that isn't a number in an Edm.Double → 400
+### [AZURE] A geography point that isn't a GeoJSON point → 400
+POST {{azureBaseUrl}}/indexes/document-sample/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "value": [{ "@search.action": "upload", "id": "6", "location": { "lat": 48.85, "lon": 2.35 } }]
+}
+
+### [SIM] A string that isn't a number in an Edm.Double → 400
 POST {{baseUrl}}/indexes/document-sample/docs/index?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{adminKey}}
@@ -282,10 +527,28 @@ api-key: {{adminKey}}
   "value": [{ "@search.action": "upload", "id": "6", "rating": "five" }]
 }
 
-### An unknown @search.action → 400
+### [AZURE] A string that isn't a number in an Edm.Double → 400
+POST {{azureBaseUrl}}/indexes/document-sample/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "value": [{ "@search.action": "upload", "id": "6", "rating": "five" }]
+}
+
+### [SIM] An unknown @search.action → 400
 POST {{baseUrl}}/indexes/document-sample/docs/index?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{adminKey}}
+
+{
+  "value": [{ "@search.action": "replace", "id": "6" }]
+}
+
+### [AZURE] An unknown @search.action → 400
+POST {{azureBaseUrl}}/indexes/document-sample/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
 
 {
   "value": [{ "@search.action": "replace", "id": "6" }]
@@ -295,6 +558,10 @@ api-key: {{adminKey}}
 # 4. CLEANUP
 # =====================================================
 
-### Delete the index
+### [SIM] Delete the index
 DELETE {{baseUrl}}/indexes/document-sample?api-version={{apiVersion}}
 api-key: {{adminKey}}
+
+### [AZURE] Delete the index
+DELETE {{azureBaseUrl}}/indexes/document-sample?api-version={{apiVersion}}
+Authorization: Bearer {{azureToken}}

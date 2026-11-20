@@ -562,27 +562,27 @@ All `.http` sample files use environment variables via `$dotenv`. To get started
 | [pull-mode-test.http](samples/pull-mode-test.http) | REST Client file for testing indexer pull mode workflow |
 | [local-embedding-sample.http](samples/local-embedding-sample.http) | REST Client file demonstrating local ONNX embedding skill (no Azure OpenAI required) |
 | [index-projection-sample.http](samples/index-projection-sample.http) | REST Client file demonstrating index projections (one-to-many chunking into a secondary index) |
-| [scoring-profile-sample.http](samples/scoring-profile-sample.http) | REST Client file demonstrating scoring profiles (text weights, magnitude, freshness, tag, combined), and boosts applying before sorting and paging |
+| [scoring-profile-sample.http](samples/scoring-profile-sample.http) | REST Client file demonstrating scoring profiles (text weights, magnitude, freshness, tag, combined), and boosts applying before sorting and paging, with `[SIM]` / `[AZURE]` pairs |
 | [similarity-sample.http](samples/similarity-sample.http) | REST Client file demonstrating similarity algorithms (default BM25, custom BM25 k1/b, ClassicSimilarity TF-IDF) |
 | [custom-analyzer-sample.http](samples/custom-analyzer-sample.http) | REST Client file demonstrating custom analyzers (English stemmer, word delimiter, per-field analyzer) |
-| [filter-sample.http](samples/filter-sample.http) | REST Client file demonstrating `$filter`: `and`/`or`/`not`, `null`, complex paths, correlated and nested `any()`/`all()`, `search.in`, `search.ismatch`, dates, doubles, normalizers, and the filters that return 400 |
-| [orderby-sample.http](samples/orderby-sample.http) | REST Client file demonstrating `$orderby`: complex sub-fields, missing values, `search.score()`, tie-breaking, and the clauses that return 400 |
-| [facet-sample.http](samples/facet-sample.http) | REST Client file demonstrating facets: exact values, normalizers, collections, complex-collection sub-fields, dates, `count` and `sort`, interval, range and metric facets, and the facets that return 400 |
-| [paging-sample.http](samples/paging-sample.http) | REST Client file demonstrating paging with `@search.nextPageParameters` (POST) and `@odata.nextLink` (GET) |
-| [document-sample.http](samples/document-sample.http) | REST Client file demonstrating batch validation, how values are converted to their field's type, merges into complex fields, and the shape of looked-up documents |
-| [vector-search-sample.http](samples/vector-search-sample.http) | REST Client file demonstrating vector filter modes, exact search, ranking by each field's metric, hybrid counts and facets, and the vector requests that return 400 |
-| [search-text-sample.http](samples/search-text-sample.http) | REST Client file demonstrating `searchMode`, synonyms expanded in place and analyzed like the field, phrase synonyms, and `featuresMode` |
-| [index-definition-sample.http](samples/index-definition-sample.http) | REST Client file demonstrating analyzers on complex sub-fields, and suggesters over sub-fields, string collections and fields that aren't searchable |
-| [index-update-sample.http](samples/index-update-sample.http) | REST Client file demonstrating which index updates are applied in place and which are refused |
-| [indexer-field-sample.http](samples/indexer-field-sample.http) | REST Client file demonstrating indexers leaving out fields the index doesn't define and indexing `Edm.Int64` exactly |
+| [filter-sample.http](samples/filter-sample.http) | REST Client file demonstrating `$filter`: `and`/`or`/`not`, `null`, complex paths, correlated and nested `any()`/`all()`, `search.in`, `search.ismatch`, dates, doubles, normalizers, and the filters that return 400, with `[SIM]` / `[AZURE]` pairs |
+| [orderby-sample.http](samples/orderby-sample.http) | REST Client file demonstrating `$orderby`: complex sub-fields, missing values, `search.score()`, tie-breaking, and the clauses that return 400, with `[SIM]` / `[AZURE]` pairs |
+| [facet-sample.http](samples/facet-sample.http) | REST Client file demonstrating facets: exact values, normalizers, collections, complex-collection sub-fields, dates, `count` and `sort`, interval, range and metric facets, and the facets that return 400, with `[SIM]` / `[AZURE]` pairs |
+| [paging-sample.http](samples/paging-sample.http) | REST Client file demonstrating paging with `@search.nextPageParameters` (POST) and `@odata.nextLink` (GET), with `[SIM]` / `[AZURE]` pairs |
+| [document-sample.http](samples/document-sample.http) | REST Client file demonstrating batch validation, how values are converted to their field's type, merges into complex fields, and the shape of looked-up documents, with `[SIM]` / `[AZURE]` pairs |
+| [vector-search-sample.http](samples/vector-search-sample.http) | REST Client file demonstrating vector filter modes, exact search, ranking by each field's metric, hybrid counts and facets, and the vector requests that return 400, with `[SIM]` / `[AZURE]` pairs |
+| [search-text-sample.http](samples/search-text-sample.http) | REST Client file demonstrating `searchMode`, synonyms expanded in place and analyzed like the field, phrase synonyms, and `featuresMode`, with `[SIM]` / `[AZURE]` pairs |
+| [index-definition-sample.http](samples/index-definition-sample.http) | REST Client file demonstrating analyzers on complex sub-fields, and suggesters over sub-fields, string collections and fields that aren't searchable, with `[SIM]` / `[AZURE]` pairs |
+| [index-update-sample.http](samples/index-update-sample.http) | REST Client file demonstrating which index updates are applied in place and which are refused, with `[SIM]` / `[AZURE]` pairs |
+| [indexer-field-sample.http](samples/indexer-field-sample.http) | REST Client file demonstrating indexers leaving out fields the index doesn't define and indexing `Edm.Int64` exactly (simulator only: it reads a local folder) |
 | [Download-EmbeddingModel.ps1](scripts/Download-EmbeddingModel.ps1) | PowerShell script to download ONNX embedding models from HuggingFace |
 
 ### Comparing Simulator vs Real Azure AI Search
 
 You can run the same queries against both the local simulator and a real Azure AI Search service to verify behavioral parity:
 
-1. In `.env`, set `BASE_URL` / `ADMIN_KEY` / `QUERY_KEY` (simulator) **and** `AZURE_BASE_URL` / `AZURE_ADMIN_KEY` / `AZURE_QUERY_KEY` (real service).
-2. **Interactive** — Open [compare-requests.http](samples/compare-requests.http) and click "Send Request" on matched `[SIM]` / `[AZURE]` pairs. Use VS Code split tabs to view both responses.
+1. In `.env`, set `BASE_URL` / `ADMIN_KEY` / `QUERY_KEY` (simulator) **and** `AZURE_BASE_URL` / `AZURE_ADMIN_KEY` / `AZURE_QUERY_KEY` (real service). The feature samples (`filter-sample.http` to `index-update-sample.http`, and `scoring-profile-sample.http`) authenticate to the real service with an Entra ID token in `ENTRA_TOKEN` instead.
+2. **Interactive** — Open [compare-requests.http](samples/compare-requests.http), or one of the feature samples, and click "Send Request" on matched `[SIM]` / `[AZURE]` pairs. Use VS Code split tabs to view both responses.
 3. **Automated** — Run the PowerShell comparison script:
 
 ```powershell

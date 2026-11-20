@@ -15,21 +15,66 @@
 ### Prerequisites:
 ### - The simulator running at https://localhost:7250
 ### - REST Client extension for VS Code
+### - For the [AZURE] requests: an Azure AI Search service with role-based
+###   access, the Search Service Contributor and Search Index Data Contributor
+###   roles, and AZURE_BASE_URL and ENTRA_TOKEN in .env (see .env.example).
+###   To use keys instead, replace "Authorization: Bearer {{azureToken}}"
+###   with an api-key header.
+### - Each request is a [SIM]/[AZURE] pair; run the steps in order on each.
 ### =====================================================
 
 @baseUrl = {{$dotenv BASE_URL}}
 @apiVersion = {{$dotenv API_VERSION}}
 @adminKey = {{$dotenv ADMIN_KEY}}
 @queryKey = {{$dotenv QUERY_KEY}}
+@azureBaseUrl = {{$dotenv AZURE_BASE_URL}}
+@azureToken = {{$dotenv ENTRA_TOKEN}}
 
 # =====================================================
 # 1. CREATE THE INDEX
 # =====================================================
 
-### Create an index with simple, collection and complex fields
+### [SIM] Create an index with simple, collection and complex fields
 POST {{baseUrl}}/indexes?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{adminKey}}
+
+{
+  "name": "filter-sample",
+  "fields": [
+    { "name": "id", "type": "Edm.String", "key": true, "filterable": true },
+    { "name": "name", "type": "Edm.String", "searchable": true, "filterable": true, "sortable": true },
+    { "name": "category", "type": "Edm.String", "filterable": true, "facetable": true },
+    { "name": "rating", "type": "Edm.Double", "filterable": true, "sortable": true },
+    { "name": "distanceKm", "type": "Edm.Double", "filterable": true },
+    { "name": "opened", "type": "Edm.DateTimeOffset", "filterable": true, "sortable": true },
+    { "name": "isActive", "type": "Edm.Boolean", "filterable": true },
+    { "name": "notes", "type": "Edm.String", "searchable": true, "filterable": false },
+    { "name": "tags", "type": "Collection(Edm.String)", "filterable": true },
+    { "name": "roomNumbers", "type": "Collection(Edm.Int32)", "filterable": true },
+    {
+      "name": "address", "type": "Edm.ComplexType",
+      "fields": [
+        { "name": "city", "type": "Edm.String", "filterable": true, "normalizer": "lowercase" },
+        { "name": "country", "type": "Edm.String", "filterable": true }
+      ]
+    },
+    {
+      "name": "rooms", "type": "Collection(Edm.ComplexType)",
+      "fields": [
+        { "name": "type", "type": "Edm.String", "filterable": true },
+        { "name": "beds", "type": "Edm.Int32", "filterable": true },
+        { "name": "smoking", "type": "Edm.Boolean", "filterable": true },
+        { "name": "amenities", "type": "Collection(Edm.String)", "filterable": true }
+      ]
+    }
+  ]
+}
+
+### [AZURE] Create an index with simple, collection and complex fields
+POST {{azureBaseUrl}}/indexes?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
 
 {
   "name": "filter-sample",
@@ -67,10 +112,58 @@ api-key: {{adminKey}}
 # 2. UPLOAD THE DOCUMENTS
 # =====================================================
 
-### Upload four hotels (hotel 3 has no rating; distanceKm holds "INF" and "NaN")
+### [SIM] Upload four hotels (hotel 3 has no rating; distanceKm holds "INF" and "NaN")
 POST {{baseUrl}}/indexes/filter-sample/docs/index?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{adminKey}}
+
+{
+  "value": [
+    {
+      "@search.action": "upload",
+      "id": "1", "name": "Ocean View Hotel", "category": "Resort", "rating": 4.5, "distanceKm": 2.5,
+      "opened": "2019-05-01T10:00:00.123Z", "isActive": true, "notes": "Renovated lobby",
+      "tags": ["pool", "spa"], "roomNumbers": [101, 102],
+      "address": { "city": "Paris", "country": "France" },
+      "rooms": [
+        { "type": "Deluxe", "beds": 2, "smoking": false, "amenities": ["tv", "minibar"] },
+        { "type": "Standard", "beds": 1, "smoking": true, "amenities": ["tv"] }
+      ]
+    },
+    {
+      "@search.action": "upload",
+      "id": "2", "name": "City Budget Inn", "category": "Budget", "rating": 3.0, "distanceKm": "INF",
+      "opened": "2021-01-01T00:00:00Z", "isActive": false,
+      "tags": ["wifi"], "roomNumbers": [201],
+      "address": { "city": "PARIS", "country": "France" },
+      "rooms": [{ "type": "Standard", "beds": 2, "smoking": false, "amenities": [] }]
+    },
+    {
+      "@search.action": "upload",
+      "id": "3", "name": "Mountain Lodge", "category": "Resort", "distanceKm": "NaN",
+      "opened": "2015-07-15T08:30:00Z", "isActive": true,
+      "tags": [], "roomNumbers": [301, 302],
+      "address": { "city": "Lyon", "country": "France" },
+      "rooms": [
+        { "type": "Deluxe", "beds": 1, "smoking": false, "amenities": ["fireplace"] },
+        { "type": "Suite", "beds": 4, "smoking": false, "amenities": ["tv"] }
+      ]
+    },
+    {
+      "@search.action": "upload",
+      "id": "4", "name": "Harbor Suites", "category": "Luxury", "rating": 5.0, "distanceKm": 0,
+      "opened": "2023-03-10T12:00:00Z", "isActive": true,
+      "tags": ["pool"], "roomNumbers": [],
+      "address": { "city": "Nice", "country": "France" },
+      "rooms": []
+    }
+  ]
+}
+
+### [AZURE] Upload four hotels (hotel 3 has no rating; distanceKm holds "INF" and "NaN")
+POST {{azureBaseUrl}}/indexes/filter-sample/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
 
 {
   "value": [
@@ -121,7 +214,7 @@ api-key: {{adminKey}}
 # Each filter is evaluated exactly against every document. Conditions inside
 # one any()/all() hold for the same element of the collection.
 
-### Lambda over a complex collection: one room that is Deluxe AND has 2+ beds → 1
+### [SIM] Lambda over a complex collection: one room that is Deluxe AND has 2+ beds → 1
 # Hotel 3 has a Deluxe room and a 4-bed room, but not one room that is both.
 POST {{baseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
@@ -133,7 +226,18 @@ api-key: {{queryKey}}
   "select": "id"
 }
 
-### Nested lambdas: a room with a minibar → 1
+### [AZURE] Lambda over a complex collection: one room that is Deluxe AND has 2+ beds → 1
+POST {{azureBaseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "*",
+  "filter": "rooms/any(r: r/type eq 'Deluxe' and r/beds ge 2)",
+  "select": "id"
+}
+
+### [SIM] Nested lambdas: a room with a minibar → 1
 POST {{baseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -144,7 +248,18 @@ api-key: {{queryKey}}
   "select": "id"
 }
 
-### all() over a complex collection: every room is non-smoking → 2, 3, 4
+### [AZURE] Nested lambdas: a room with a minibar → 1
+POST {{azureBaseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "*",
+  "filter": "rooms/any(r: r/amenities/any(a: a eq 'minibar'))",
+  "select": "id"
+}
+
+### [SIM] all() over a complex collection: every room is non-smoking → 2, 3, 4
 # all() over an empty collection is true, so hotel 4 (no rooms) matches.
 POST {{baseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
@@ -156,7 +271,18 @@ api-key: {{queryKey}}
   "select": "id"
 }
 
-### any() without a lambda: hotels that have rooms → 1, 2, 3
+### [AZURE] all() over a complex collection: every room is non-smoking → 2, 3, 4
+POST {{azureBaseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "*",
+  "filter": "rooms/all(r: not r/smoking)",
+  "select": "id"
+}
+
+### [SIM] any() without a lambda: hotels that have rooms → 1, 2, 3
 POST {{baseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -167,7 +293,18 @@ api-key: {{queryKey}}
   "select": "id"
 }
 
-### and, or and parentheses → 1, 4
+### [AZURE] any() without a lambda: hotels that have rooms → 1, 2, 3
+POST {{azureBaseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "*",
+  "filter": "rooms/any()",
+  "select": "id"
+}
+
+### [SIM] and, or and parentheses → 1, 4
 POST {{baseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -178,7 +315,18 @@ api-key: {{queryKey}}
   "select": "id"
 }
 
-### A missing value is null → 3
+### [AZURE] and, or and parentheses → 1, 4
+POST {{azureBaseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "*",
+  "filter": "(category eq 'Resort' and rating ge 4) or category eq 'Luxury'",
+  "select": "id"
+}
+
+### [SIM] A missing value is null → 3
 POST {{baseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -189,7 +337,18 @@ api-key: {{queryKey}}
   "select": "id"
 }
 
-### A boolean field on its own, negated → 2
+### [AZURE] A missing value is null → 3
+POST {{azureBaseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "*",
+  "filter": "rating eq null",
+  "select": "id"
+}
+
+### [SIM] A boolean field on its own, negated → 2
 POST {{baseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -200,7 +359,18 @@ api-key: {{queryKey}}
   "select": "id"
 }
 
-### A complex sub-field with a lowercase normalizer, applied to both sides → 1, 2
+### [AZURE] A boolean field on its own, negated → 2
+POST {{azureBaseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "*",
+  "filter": "not isActive",
+  "select": "id"
+}
+
+### [SIM] A complex sub-field with a lowercase normalizer, applied to both sides → 1, 2
 POST {{baseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -211,7 +381,18 @@ api-key: {{queryKey}}
   "select": "id"
 }
 
-### search.in with a custom delimiter → 1, 3, 4
+### [AZURE] A complex sub-field with a lowercase normalizer, applied to both sides → 1, 2
+POST {{azureBaseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "*",
+  "filter": "address/city eq 'PARIS' and address/country eq 'France'",
+  "select": "id"
+}
+
+### [SIM] search.in with a custom delimiter → 1, 3, 4
 POST {{baseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -222,7 +403,18 @@ api-key: {{queryKey}}
   "select": "id"
 }
 
-### String collection, any(): equality joined with or → 1, 4
+### [AZURE] search.in with a custom delimiter → 1, 3, 4
+POST {{azureBaseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "*",
+  "filter": "search.in(category, 'Resort|Luxury', '|')",
+  "select": "id"
+}
+
+### [SIM] String collection, any(): equality joined with or → 1, 4
 POST {{baseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -233,7 +425,18 @@ api-key: {{queryKey}}
   "select": "id"
 }
 
-### String collection, all(): inequality joined with and → 1, 3, 4
+### [AZURE] String collection, any(): equality joined with or → 1, 4
+POST {{azureBaseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "*",
+  "filter": "tags/any(t: t eq 'pool' or t eq 'spa')",
+  "select": "id"
+}
+
+### [SIM] String collection, all(): inequality joined with and → 1, 3, 4
 POST {{baseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -244,7 +447,18 @@ api-key: {{queryKey}}
   "select": "id"
 }
 
-### Number collection, any(): a range on one element → 3
+### [AZURE] String collection, all(): inequality joined with and → 1, 3, 4
+POST {{azureBaseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "*",
+  "filter": "tags/all(t: t ne 'wifi')",
+  "select": "id"
+}
+
+### [SIM] Number collection, any(): a range on one element → 3
 POST {{baseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -255,7 +469,18 @@ api-key: {{queryKey}}
   "select": "id"
 }
 
-### Dates need a time and a Z or an offset → 2, 4
+### [AZURE] Number collection, any(): a range on one element → 3
+POST {{azureBaseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "*",
+  "filter": "roomNumbers/any(n: n ge 300 and n lt 400)",
+  "select": "id"
+}
+
+### [SIM] Dates need a time and a Z or an offset → 2, 4
 POST {{baseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -266,7 +491,18 @@ api-key: {{queryKey}}
   "select": "id"
 }
 
-### Dates compare to the millisecond, as Azure stores them → 1
+### [AZURE] Dates need a time and a Z or an offset → 2, 4
+POST {{azureBaseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "*",
+  "filter": "opened ge 2020-01-01T00:00:00Z",
+  "select": "id"
+}
+
+### [SIM] Dates compare to the millisecond, as Azure stores them → 1
 POST {{baseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -277,7 +513,18 @@ api-key: {{queryKey}}
   "select": "id"
 }
 
-### Stored "INF" compares as infinity → 2
+### [AZURE] Dates compare to the millisecond, as Azure stores them → 1
+POST {{azureBaseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "*",
+  "filter": "opened eq 2019-05-01T10:00:00.1239999Z",
+  "select": "id"
+}
+
+### [SIM] Stored "INF" compares as infinity → 2
 POST {{baseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -288,7 +535,18 @@ api-key: {{queryKey}}
   "select": "id"
 }
 
-### Stored "NaN" compares unequal to everything, so only ne matches it → 1, 2, 3
+### [AZURE] Stored "INF" compares as infinity → 2
+POST {{azureBaseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "*",
+  "filter": "distanceKm gt 1e300",
+  "select": "id"
+}
+
+### [SIM] Stored "NaN" compares unequal to everything, so only ne matches it → 1, 2, 3
 POST {{baseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -299,7 +557,18 @@ api-key: {{queryKey}}
   "select": "id"
 }
 
-### search.ismatch runs a text query; comparing it with false negates it → 2, 3, 4
+### [AZURE] Stored "NaN" compares unequal to everything, so only ne matches it → 1, 2, 3
+POST {{azureBaseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "*",
+  "filter": "distanceKm ne 0",
+  "select": "id"
+}
+
+### [SIM] search.ismatch runs a text query; comparing it with false negates it → 2, 3, 4
 POST {{baseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -310,7 +579,18 @@ api-key: {{queryKey}}
   "select": "id"
 }
 
-### A filter narrows the results without changing their scores → 1
+### [AZURE] search.ismatch runs a text query; comparing it with false negates it → 2, 3, 4
+POST {{azureBaseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "*",
+  "filter": "search.ismatch('ocean', 'name') eq false",
+  "select": "id"
+}
+
+### [SIM] A filter narrows the results without changing their scores → 1
 # @search.score is the same as for the search without the filter.
 POST {{baseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
@@ -322,10 +602,32 @@ api-key: {{queryKey}}
   "select": "id, name"
 }
 
-### Strings compare ordinally, so "Mountain Lodge" and "Ocean View Hotel" come after "M" → 1, 3
+### [AZURE] A filter narrows the results without changing their scores → 1
+POST {{azureBaseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "hotel",
+  "filter": "category eq 'Resort'",
+  "select": "id, name"
+}
+
+### [SIM] Strings compare ordinally, so "Mountain Lodge" and "Ocean View Hotel" come after "M" → 1, 3
 POST {{baseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
+
+{
+  "search": "*",
+  "filter": "name gt 'M'",
+  "select": "id, name"
+}
+
+### [AZURE] Strings compare ordinally, so "Mountain Lodge" and "Ocean View Hotel" come after "M" → 1, 3
+POST {{azureBaseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
 
 {
   "search": "*",
@@ -339,7 +641,7 @@ api-key: {{queryKey}}
 # A filter the service can't evaluate exactly is an error, never a clause
 # that is silently ignored.
 
-### Ordering comparisons on booleans → 400
+### [SIM] Ordering comparisons on booleans → 400
 POST {{baseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -349,7 +651,17 @@ api-key: {{queryKey}}
   "filter": "isActive gt false"
 }
 
-### A field that isn't filterable → 400
+### [AZURE] Ordering comparisons on booleans → 400
+POST {{azureBaseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "*",
+  "filter": "isActive gt false"
+}
+
+### [SIM] A field that isn't filterable → 400
 POST {{baseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -359,7 +671,17 @@ api-key: {{queryKey}}
   "filter": "notes eq 'Renovated lobby'"
 }
 
-### A constant of the wrong type → 400
+### [AZURE] A field that isn't filterable → 400
+POST {{azureBaseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "*",
+  "filter": "notes eq 'Renovated lobby'"
+}
+
+### [SIM] A constant of the wrong type → 400
 POST {{baseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -369,7 +691,17 @@ api-key: {{queryKey}}
   "filter": "rating eq '4.5'"
 }
 
-### A date without a time → 400
+### [AZURE] A constant of the wrong type → 400
+POST {{azureBaseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "*",
+  "filter": "rating eq '4.5'"
+}
+
+### [SIM] A date without a time → 400
 POST {{baseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -379,7 +711,17 @@ api-key: {{queryKey}}
   "filter": "opened ge 2020-01-01"
 }
 
-### A date that doesn't exist → 400
+### [AZURE] A date without a time → 400
+POST {{azureBaseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "*",
+  "filter": "opened ge 2020-01-01"
+}
+
+### [SIM] A date that doesn't exist → 400
 POST {{baseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -389,7 +731,17 @@ api-key: {{queryKey}}
   "filter": "opened ge 2025-02-30T00:00:00Z"
 }
 
-### Navigating into a collection without any()/all() → 400
+### [AZURE] A date that doesn't exist → 400
+POST {{azureBaseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "*",
+  "filter": "opened ge 2025-02-30T00:00:00Z"
+}
+
+### [SIM] Navigating into a collection without any()/all() → 400
 POST {{baseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -399,7 +751,17 @@ api-key: {{queryKey}}
   "filter": "rooms/type eq 'Deluxe'"
 }
 
-### Upper-case operators → 400
+### [AZURE] Navigating into a collection without any()/all() → 400
+POST {{azureBaseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "*",
+  "filter": "rooms/type eq 'Deluxe'"
+}
+
+### [SIM] Upper-case operators → 400
 POST {{baseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -409,7 +771,17 @@ api-key: {{queryKey}}
   "filter": "category EQ 'Resort'"
 }
 
-### not binds tighter than comparisons, so this needs parentheses → 400
+### [AZURE] Upper-case operators → 400
+POST {{azureBaseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "*",
+  "filter": "category EQ 'Resort'"
+}
+
+### [SIM] not binds tighter than comparisons, so this needs parentheses → 400
 POST {{baseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -419,7 +791,17 @@ api-key: {{queryKey}}
   "filter": "not rating gt 4"
 }
 
-### String collection, any(): only eq and search.in are allowed → 400
+### [AZURE] not binds tighter than comparisons, so this needs parentheses → 400
+POST {{azureBaseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "*",
+  "filter": "not rating gt 4"
+}
+
+### [SIM] String collection, any(): only eq and search.in are allowed → 400
 POST {{baseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -429,7 +811,17 @@ api-key: {{queryKey}}
   "filter": "tags/any(t: t ne 'pool')"
 }
 
-### Number collection, any(): ne is only allowed on its own → 400
+### [AZURE] String collection, any(): only eq and search.in are allowed → 400
+POST {{azureBaseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "*",
+  "filter": "tags/any(t: t ne 'pool')"
+}
+
+### [SIM] Number collection, any(): ne is only allowed on its own → 400
 POST {{baseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -439,7 +831,17 @@ api-key: {{queryKey}}
   "filter": "roomNumbers/any(n: n ne 101 and n gt 100)"
 }
 
-### A lambda can only use its own range variable → 400
+### [AZURE] Number collection, any(): ne is only allowed on its own → 400
+POST {{azureBaseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "*",
+  "filter": "roomNumbers/any(n: n ne 101 and n gt 100)"
+}
+
+### [SIM] A lambda can only use its own range variable → 400
 POST {{baseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -449,7 +851,18 @@ api-key: {{queryKey}}
   "filter": "rooms/any(r: r/beds gt 1 and rating gt 4)"
 }
 
-### Functions the simulator doesn't support, such as geo.distance → 400
+### [AZURE] A lambda can only use its own range variable → 400
+POST {{azureBaseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "*",
+  "filter": "rooms/any(r: r/beds gt 1 and rating gt 4)"
+}
+
+### [SIM] Functions the simulator doesn't support, such as geo.distance → 400
+# Simulator only: Azure supports geo.distance, so there the 400 is for the missing location field.
 POST {{baseUrl}}/indexes/filter-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -463,6 +876,10 @@ api-key: {{queryKey}}
 # 5. CLEANUP
 # =====================================================
 
-### Delete the index
+### [SIM] Delete the index
 DELETE {{baseUrl}}/indexes/filter-sample?api-version={{apiVersion}}
 api-key: {{adminKey}}
+
+### [AZURE] Delete the index
+DELETE {{azureBaseUrl}}/indexes/filter-sample?api-version={{apiVersion}}
+Authorization: Bearer {{azureToken}}

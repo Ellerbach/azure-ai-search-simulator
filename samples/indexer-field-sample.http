@@ -17,6 +17,9 @@
 ### - REST Client extension for VS Code
 ### - @sampleDataPath set to this repo's samples/sample-data folder
 ###   (the source files are in samples/sample-data/indexer-fields/)
+###
+### Simulator only: Azure has no filesystem data source, so unlike the
+### other feature samples this file has no [AZURE] requests.
 ### =====================================================
 
 @baseUrl = {{$dotenv BASE_URL}}

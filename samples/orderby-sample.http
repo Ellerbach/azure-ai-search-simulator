@@ -14,21 +14,55 @@
 ### Prerequisites:
 ### - The simulator running at https://localhost:7250
 ### - REST Client extension for VS Code
+### - For the [AZURE] requests: an Azure AI Search service with role-based
+###   access, the Search Service Contributor and Search Index Data Contributor
+###   roles, and AZURE_BASE_URL and ENTRA_TOKEN in .env (see .env.example).
+###   To use keys instead, replace "Authorization: Bearer {{azureToken}}"
+###   with an api-key header.
+### - Each request is a [SIM]/[AZURE] pair; run the steps in order on each.
 ### =====================================================
 
 @baseUrl = {{$dotenv BASE_URL}}
 @apiVersion = {{$dotenv API_VERSION}}
 @adminKey = {{$dotenv ADMIN_KEY}}
 @queryKey = {{$dotenv QUERY_KEY}}
+@azureBaseUrl = {{$dotenv AZURE_BASE_URL}}
+@azureToken = {{$dotenv ENTRA_TOKEN}}
 
 # =====================================================
 # 1. CREATE THE INDEX
 # =====================================================
 
-### Create an index with sortable simple and complex sub-fields
+### [SIM] Create an index with sortable simple and complex sub-fields
 POST {{baseUrl}}/indexes?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{adminKey}}
+
+{
+  "name": "orderby-sample",
+  "fields": [
+    { "name": "id", "type": "Edm.String", "key": true, "filterable": true },
+    { "name": "name", "type": "Edm.String", "searchable": true, "sortable": true },
+    { "name": "description", "type": "Edm.String", "searchable": true, "sortable": false },
+    { "name": "category", "type": "Edm.String", "filterable": true, "sortable": true },
+    { "name": "rating", "type": "Edm.Double", "sortable": true },
+    { "name": "floors", "type": "Edm.Int32", "sortable": true },
+    { "name": "tags", "type": "Collection(Edm.String)", "filterable": true },
+    {
+      "name": "address", "type": "Edm.ComplexType",
+      "fields": [{ "name": "city", "type": "Edm.String", "sortable": true }]
+    },
+    {
+      "name": "rooms", "type": "Collection(Edm.ComplexType)",
+      "fields": [{ "name": "beds", "type": "Edm.Int32", "filterable": true }]
+    }
+  ]
+}
+
+### [AZURE] Create an index with sortable simple and complex sub-fields
+POST {{azureBaseUrl}}/indexes?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
 
 {
   "name": "orderby-sample",
@@ -55,10 +89,36 @@ api-key: {{adminKey}}
 # 2. UPLOAD THE DOCUMENTS
 # =====================================================
 
-### Upload four hotels (hotel 2 has no rating; hotel 4 has no floors; hotel 3 has int.MinValue floors)
+### [SIM] Upload four hotels (hotel 2 has no rating; hotel 4 has no floors; hotel 3 has int.MinValue floors)
 POST {{baseUrl}}/indexes/orderby-sample/docs/index?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{adminKey}}
+
+{
+  "value": [
+    {
+      "@search.action": "upload", "id": "1", "name": "Alpine", "category": "a", "rating": 4.0, "floors": 3,
+      "description": "A hotel in the mountains.", "address": { "city": "Zurich" }, "rooms": [{ "beds": 2 }]
+    },
+    {
+      "@search.action": "upload", "id": "2", "name": "Bay", "category": "a", "floors": 10,
+      "description": "A hotel by the bay, a quiet hotel with a hotel garden.", "address": { "city": "Amsterdam" }
+    },
+    {
+      "@search.action": "upload", "id": "3", "name": "Coast", "category": "a", "rating": 5.0, "floors": -2147483648,
+      "description": "A seaside hotel, the best hotel on the coast.", "address": { "city": "Lisbon" }
+    },
+    {
+      "@search.action": "upload", "id": "4", "name": "Dune", "category": "b", "rating": 3.5,
+      "description": "Rooms in the desert.", "address": { "city": "Berlin" }
+    }
+  ]
+}
+
+### [AZURE] Upload four hotels (hotel 2 has no rating; hotel 4 has no floors; hotel 3 has int.MinValue floors)
+POST {{azureBaseUrl}}/indexes/orderby-sample/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
 
 {
   "value": [
@@ -85,7 +145,7 @@ api-key: {{adminKey}}
 # 3. SORT
 # =====================================================
 
-### Ascending: documents without a value come first → in order: 2, 4, 1, 3
+### [SIM] Ascending: documents without a value come first → in order: 2, 4, 1, 3
 POST {{baseUrl}}/indexes/orderby-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -96,7 +156,18 @@ api-key: {{queryKey}}
   "select": "id, rating"
 }
 
-### Descending: documents without a value come last → in order: 3, 1, 4, 2
+### [AZURE] Ascending: documents without a value come first → in order: 2, 4, 1, 3
+POST {{azureBaseUrl}}/indexes/orderby-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "*",
+  "orderby": "rating asc",
+  "select": "id, rating"
+}
+
+### [SIM] Descending: documents without a value come last → in order: 3, 1, 4, 2
 POST {{baseUrl}}/indexes/orderby-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -107,7 +178,18 @@ api-key: {{queryKey}}
   "select": "id, rating"
 }
 
-### A missing number sorts before int.MinValue → in order: 4, 3, 1, 2
+### [AZURE] Descending: documents without a value come last → in order: 3, 1, 4, 2
+POST {{azureBaseUrl}}/indexes/orderby-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "*",
+  "orderby": "rating desc",
+  "select": "id, rating"
+}
+
+### [SIM] A missing number sorts before int.MinValue → in order: 4, 3, 1, 2
 POST {{baseUrl}}/indexes/orderby-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -118,7 +200,18 @@ api-key: {{queryKey}}
   "select": "id, floors"
 }
 
-### A sortable sub-field of a complex field → in order: 2, 4, 3, 1
+### [AZURE] A missing number sorts before int.MinValue → in order: 4, 3, 1, 2
+POST {{azureBaseUrl}}/indexes/orderby-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "*",
+  "orderby": "floors",
+  "select": "id, floors"
+}
+
+### [SIM] A sortable sub-field of a complex field → in order: 2, 4, 3, 1
 POST {{baseUrl}}/indexes/orderby-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -129,7 +222,18 @@ api-key: {{queryKey}}
   "select": "id, address/city"
 }
 
-### Several clauses → in order: 3, 2, 1, 4
+### [AZURE] A sortable sub-field of a complex field → in order: 2, 4, 3, 1
+POST {{azureBaseUrl}}/indexes/orderby-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "*",
+  "orderby": "address/city asc",
+  "select": "id, address/city"
+}
+
+### [SIM] Several clauses → in order: 3, 2, 1, 4
 POST {{baseUrl}}/indexes/orderby-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -140,7 +244,18 @@ api-key: {{queryKey}}
   "select": "id, category, name"
 }
 
-### search.score() descending: the best match first → in order: 2, 3, 1
+### [AZURE] Several clauses → in order: 3, 2, 1, 4
+POST {{azureBaseUrl}}/indexes/orderby-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "*",
+  "orderby": "category asc, name desc",
+  "select": "id, category, name"
+}
+
+### [SIM] search.score() descending: the best match first → in order: 2, 3, 1
 POST {{baseUrl}}/indexes/orderby-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -151,7 +266,18 @@ api-key: {{queryKey}}
   "select": "id"
 }
 
-### search.score() without a direction sorts ascending, like any field → in order: 1, 3, 2
+### [AZURE] search.score() descending: the best match first → in order: 2, 3, 1
+POST {{azureBaseUrl}}/indexes/orderby-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "hotel",
+  "orderby": "search.score() desc",
+  "select": "id"
+}
+
+### [SIM] search.score() without a direction sorts ascending, like any field → in order: 1, 3, 2
 POST {{baseUrl}}/indexes/orderby-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -162,10 +288,32 @@ api-key: {{queryKey}}
   "select": "id"
 }
 
-### Ties on the sort fields are broken by score, and results keep their @search.score → in order: 2, 3, 1
+### [AZURE] search.score() without a direction sorts ascending, like any field → in order: 1, 3, 2
+POST {{azureBaseUrl}}/indexes/orderby-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "hotel",
+  "orderby": "search.score()",
+  "select": "id"
+}
+
+### [SIM] Ties on the sort fields are broken by score, and results keep their @search.score → in order: 2, 3, 1
 POST {{baseUrl}}/indexes/orderby-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
+
+{
+  "search": "hotel",
+  "orderby": "category asc",
+  "select": "id, category"
+}
+
+### [AZURE] Ties on the sort fields are broken by score, and results keep their @search.score → in order: 2, 3, 1
+POST {{azureBaseUrl}}/indexes/orderby-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
 
 {
   "search": "hotel",
@@ -177,7 +325,7 @@ api-key: {{queryKey}}
 # 4. CLAUSES AZURE REJECTS (HTTP 400)
 # =====================================================
 
-### A field that isn't sortable → 400
+### [SIM] A field that isn't sortable → 400
 POST {{baseUrl}}/indexes/orderby-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -187,7 +335,17 @@ api-key: {{queryKey}}
   "orderby": "description asc"
 }
 
-### A collection → 400
+### [AZURE] A field that isn't sortable → 400
+POST {{azureBaseUrl}}/indexes/orderby-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "*",
+  "orderby": "description asc"
+}
+
+### [SIM] A collection → 400
 POST {{baseUrl}}/indexes/orderby-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -197,7 +355,17 @@ api-key: {{queryKey}}
   "orderby": "tags asc"
 }
 
-### A complex field → 400
+### [AZURE] A collection → 400
+POST {{azureBaseUrl}}/indexes/orderby-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "*",
+  "orderby": "tags asc"
+}
+
+### [SIM] A complex field → 400
 POST {{baseUrl}}/indexes/orderby-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -207,7 +375,17 @@ api-key: {{queryKey}}
   "orderby": "address asc"
 }
 
-### A path through a complex collection → 400
+### [AZURE] A complex field → 400
+POST {{azureBaseUrl}}/indexes/orderby-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "*",
+  "orderby": "address asc"
+}
+
+### [SIM] A path through a complex collection → 400
 POST {{baseUrl}}/indexes/orderby-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -217,7 +395,17 @@ api-key: {{queryKey}}
   "orderby": "rooms/beds asc"
 }
 
-### An unknown field → 400
+### [AZURE] A path through a complex collection → 400
+POST {{azureBaseUrl}}/indexes/orderby-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "*",
+  "orderby": "rooms/beds asc"
+}
+
+### [SIM] An unknown field → 400
 POST {{baseUrl}}/indexes/orderby-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -227,7 +415,17 @@ api-key: {{queryKey}}
   "orderby": "stars desc"
 }
 
-### A direction other than asc or desc → 400
+### [AZURE] An unknown field → 400
+POST {{azureBaseUrl}}/indexes/orderby-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "*",
+  "orderby": "stars desc"
+}
+
+### [SIM] A direction other than asc or desc → 400
 POST {{baseUrl}}/indexes/orderby-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -237,7 +435,17 @@ api-key: {{queryKey}}
   "orderby": "rating up"
 }
 
-### An empty clause → 400
+### [AZURE] A direction other than asc or desc → 400
+POST {{azureBaseUrl}}/indexes/orderby-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "*",
+  "orderby": "rating up"
+}
+
+### [SIM] An empty clause → 400
 POST {{baseUrl}}/indexes/orderby-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -247,10 +455,30 @@ api-key: {{queryKey}}
   "orderby": "rating asc,"
 }
 
-### More than 32 clauses → 400
+### [AZURE] An empty clause → 400
+POST {{azureBaseUrl}}/indexes/orderby-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "*",
+  "orderby": "rating asc,"
+}
+
+### [SIM] More than 32 clauses → 400
 POST {{baseUrl}}/indexes/orderby-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
+
+{
+  "search": "*",
+  "orderby": "name, name, name, name, name, name, name, name, name, name, name, name, name, name, name, name, name, name, name, name, name, name, name, name, name, name, name, name, name, name, name, name, name"
+}
+
+### [AZURE] More than 32 clauses → 400
+POST {{azureBaseUrl}}/indexes/orderby-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
 
 {
   "search": "*",
@@ -261,6 +489,10 @@ api-key: {{queryKey}}
 # 5. CLEANUP
 # =====================================================
 
-### Delete the index
+### [SIM] Delete the index
 DELETE {{baseUrl}}/indexes/orderby-sample?api-version={{apiVersion}}
 api-key: {{adminKey}}
+
+### [AZURE] Delete the index
+DELETE {{azureBaseUrl}}/indexes/orderby-sample?api-version={{apiVersion}}
+Authorization: Bearer {{azureToken}}

@@ -16,12 +16,20 @@
 ### Prerequisites:
 ### - The simulator running at https://localhost:7250
 ### - REST Client extension for VS Code
+### - For the [AZURE] requests: an Azure AI Search service with role-based
+###   access, the Search Service Contributor and Search Index Data Contributor
+###   roles, and AZURE_BASE_URL and ENTRA_TOKEN in .env (see .env.example).
+###   To use keys instead, replace "Authorization: Bearer {{azureToken}}"
+###   with an api-key header.
+### - Each request is a [SIM]/[AZURE] pair; run the steps in order on each.
 ### =====================================================
 
 @baseUrl = {{$dotenv BASE_URL}}
 @apiVersion = {{$dotenv API_VERSION}}
 @adminKey = {{$dotenv ADMIN_KEY}}
 @queryKey = {{$dotenv QUERY_KEY}}
+@azureBaseUrl = {{$dotenv AZURE_BASE_URL}}
+@azureToken = {{$dotenv ENTRA_TOKEN}}
 # featuresMode needs a preview API version in Azure.
 @previewApiVersion = 2025-11-01-preview
 
@@ -29,7 +37,7 @@
 # 1. CREATE THE SYNONYM MAP AND THE INDEX
 # =====================================================
 
-### Create a synonym map
+### [SIM] Create a synonym map
 POST {{baseUrl}}/synonymmaps?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{adminKey}}
@@ -40,10 +48,35 @@ api-key: {{adminKey}}
   "synonyms": "penthouse, suite\nrunning, sprint\nfish gold, aquarium\nunited states, usa"
 }
 
-### Create an index whose title uses the English analyzer and the synonym map
+### [AZURE] Create a synonym map
+POST {{azureBaseUrl}}/synonymmaps?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "name": "search-text-synonyms",
+  "format": "solr",
+  "synonyms": "penthouse, suite\nrunning, sprint\nfish gold, aquarium\nunited states, usa"
+}
+
+### [SIM] Create an index whose title uses the English analyzer and the synonym map
 POST {{baseUrl}}/indexes?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{adminKey}}
+
+{
+  "name": "search-text-sample",
+  "fields": [
+    { "name": "id", "type": "Edm.String", "key": true },
+    { "name": "title", "type": "Edm.String", "searchable": true, "analyzer": "en.lucene", "synonymMaps": ["search-text-synonyms"] },
+    { "name": "description", "type": "Edm.String", "searchable": true }
+  ]
+}
+
+### [AZURE] Create an index whose title uses the English analyzer and the synonym map
+POST {{azureBaseUrl}}/indexes?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
 
 {
   "name": "search-text-sample",
@@ -58,10 +91,26 @@ api-key: {{adminKey}}
 # 2. UPLOAD THE DOCUMENTS
 # =====================================================
 
-### Upload six documents
+### [SIM] Upload six documents
 POST {{baseUrl}}/indexes/search-text-sample/docs/index?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{adminKey}}
+
+{
+  "value": [
+    { "@search.action": "upload", "id": "1", "title": "Harbor suite with a view", "description": "Top floor" },
+    { "@search.action": "upload", "id": "2", "title": "Harbor room with a balcony", "description": "Second floor" },
+    { "@search.action": "upload", "id": "3", "title": "The morning sprint", "description": "A race" },
+    { "@search.action": "upload", "id": "4", "title": "The fish of gold", "description": "A fable" },
+    { "@search.action": "upload", "id": "5", "title": "Aquarium tour", "description": "A visit" },
+    { "@search.action": "upload", "id": "6", "title": "Road trips across the USA", "description": "A guide" }
+  ]
+}
+
+### [AZURE] Upload six documents
+POST {{azureBaseUrl}}/indexes/search-text-sample/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
 
 {
   "value": [
@@ -78,7 +127,7 @@ api-key: {{adminKey}}
 # 3. SEARCH
 # =====================================================
 
-### searchMode decides how terms combine, whatever the queryType: any (the default) ORs them → 1, 2
+### [SIM] searchMode decides how terms combine, whatever the queryType: any (the default) ORs them → 1, 2
 POST {{baseUrl}}/indexes/search-text-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -89,7 +138,18 @@ api-key: {{queryKey}}
   "select": "id, title"
 }
 
-### searchMode all ANDs them → 1
+### [AZURE] searchMode decides how terms combine, whatever the queryType: any (the default) ORs them → 1, 2
+POST {{azureBaseUrl}}/indexes/search-text-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "harbor view",
+  "queryType": "full",
+  "select": "id, title"
+}
+
+### [SIM] searchMode all ANDs them → 1
 POST {{baseUrl}}/indexes/search-text-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -101,7 +161,19 @@ api-key: {{queryKey}}
   "select": "id, title"
 }
 
-### A synonym replaces its term in place, so searchMode all still needs the other terms → 1
+### [AZURE] searchMode all ANDs them → 1
+POST {{azureBaseUrl}}/indexes/search-text-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "harbor view",
+  "queryType": "full",
+  "searchMode": "all",
+  "select": "id, title"
+}
+
+### [SIM] A synonym replaces its term in place, so searchMode all still needs the other terms → 1
 # "penthouse" matches "suite"; hotel 1 has a suite and "harbor".
 POST {{baseUrl}}/indexes/search-text-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
@@ -113,7 +185,18 @@ api-key: {{queryKey}}
   "select": "id, title"
 }
 
-### A synonym can't stand in for a different term → none
+### [AZURE] A synonym replaces its term in place, so searchMode all still needs the other terms → 1
+POST {{azureBaseUrl}}/indexes/search-text-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "penthouse harbor",
+  "searchMode": "all",
+  "select": "id, title"
+}
+
+### [SIM] A synonym can't stand in for a different term → none
 # Hotel 2 has "harbor" and "balcony" but no suite.
 POST {{baseUrl}}/indexes/search-text-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
@@ -125,7 +208,18 @@ api-key: {{queryKey}}
   "select": "id, title"
 }
 
-### Rules are analyzed like the field: on en.lucene "running" is "run", and so is the rule's "running" → 3
+### [AZURE] A synonym can't stand in for a different term → none
+POST {{azureBaseUrl}}/indexes/search-text-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "penthouse balcony",
+  "searchMode": "all",
+  "select": "id, title"
+}
+
+### [SIM] Rules are analyzed like the field: on en.lucene "running" is "run", and so is the rule's "running" → 3
 POST {{baseUrl}}/indexes/search-text-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -135,7 +229,17 @@ api-key: {{queryKey}}
   "select": "id, title"
 }
 
-### A quoted phrase matches a multi-word rule as a whole → 6
+### [AZURE] Rules are analyzed like the field: on en.lucene "running" is "run", and so is the rule's "running" → 3
+POST {{azureBaseUrl}}/indexes/search-text-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "running",
+  "select": "id, title"
+}
+
+### [SIM] A quoted phrase matches a multi-word rule as a whole → 6
 POST {{baseUrl}}/indexes/search-text-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -145,7 +249,17 @@ api-key: {{queryKey}}
   "select": "id, title"
 }
 
-### A multi-word rule expands a matching phrase → 5
+### [AZURE] A quoted phrase matches a multi-word rule as a whole → 6
+POST {{azureBaseUrl}}/indexes/search-text-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "\"united states\"",
+  "select": "id, title"
+}
+
+### [SIM] A multi-word rule expands a matching phrase → 5
 POST {{baseUrl}}/indexes/search-text-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -155,7 +269,17 @@ api-key: {{queryKey}}
   "select": "id, title"
 }
 
-### A phrase keeps the gap of a dropped stopword, so "fish of gold" isn't the rule "fish gold" → 4
+### [AZURE] A multi-word rule expands a matching phrase → 5
+POST {{azureBaseUrl}}/indexes/search-text-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "\"fish gold\"",
+  "select": "id, title"
+}
+
+### [SIM] A phrase keeps the gap of a dropped stopword, so "fish of gold" isn't the rule "fish gold" → 4
 POST {{baseUrl}}/indexes/search-text-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -165,7 +289,17 @@ api-key: {{queryKey}}
   "select": "id, title"
 }
 
-### featuresMode scores each field from the terms it matches, even when it matches only some → 1, 2
+### [AZURE] A phrase keeps the gap of a dropped stopword, so "fish of gold" isn't the rule "fish gold" → 4
+POST {{azureBaseUrl}}/indexes/search-text-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "\"fish of gold\"",
+  "select": "id, title"
+}
+
+### [SIM] featuresMode scores each field from the terms it matches, even when it matches only some → 1, 2
 # @search.features.title has a similarityScore above 0 for both hotels, though each matches one term.
 POST {{baseUrl}}/indexes/search-text-sample/docs/search?api-version={{previewApiVersion}}
 Content-Type: application/json
@@ -178,14 +312,34 @@ api-key: {{queryKey}}
   "select": "id, title"
 }
 
+### [AZURE] featuresMode scores each field from the terms it matches, even when it matches only some → 1, 2
+POST {{azureBaseUrl}}/indexes/search-text-sample/docs/search?api-version={{previewApiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "suite balcony",
+  "queryType": "full",
+  "featuresMode": "enabled",
+  "select": "id, title"
+}
+
 # =====================================================
 # 4. CLEANUP
 # =====================================================
 
-### Delete the index
+### [SIM] Delete the index
 DELETE {{baseUrl}}/indexes/search-text-sample?api-version={{apiVersion}}
 api-key: {{adminKey}}
 
-### Delete the synonym map
+### [AZURE] Delete the index
+DELETE {{azureBaseUrl}}/indexes/search-text-sample?api-version={{apiVersion}}
+Authorization: Bearer {{azureToken}}
+
+### [SIM] Delete the synonym map
 DELETE {{baseUrl}}/synonymmaps/search-text-synonyms?api-version={{apiVersion}}
 api-key: {{adminKey}}
+
+### [AZURE] Delete the synonym map
+DELETE {{azureBaseUrl}}/synonymmaps/search-text-synonyms?api-version={{apiVersion}}
+Authorization: Bearer {{azureToken}}

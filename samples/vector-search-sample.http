@@ -16,12 +16,20 @@
 ### Prerequisites:
 ### - The simulator running at https://localhost:7250
 ### - REST Client extension for VS Code
+### - For the [AZURE] requests: an Azure AI Search service with role-based
+###   access, the Search Service Contributor and Search Index Data Contributor
+###   roles, and AZURE_BASE_URL and ENTRA_TOKEN in .env (see .env.example).
+###   To use keys instead, replace "Authorization: Bearer {{azureToken}}"
+###   with an api-key header.
+### - Each request is a [SIM]/[AZURE] pair; run the steps in order on each.
 ### =====================================================
 
 @baseUrl = {{$dotenv BASE_URL}}
 @apiVersion = {{$dotenv API_VERSION}}
 @adminKey = {{$dotenv ADMIN_KEY}}
 @queryKey = {{$dotenv QUERY_KEY}}
+@azureBaseUrl = {{$dotenv AZURE_BASE_URL}}
+@azureToken = {{$dotenv ENTRA_TOKEN}}
 # strictPostFilter needs a preview API version in Azure.
 @previewApiVersion = 2025-11-01-preview
 
@@ -29,10 +37,36 @@
 # 1. CREATE THE INDEX
 # =====================================================
 
-### Create an index with a cosine HNSW field and a euclidean exhaustive KNN field
+### [SIM] Create an index with a cosine HNSW field and a euclidean exhaustive KNN field
 POST {{baseUrl}}/indexes?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{adminKey}}
+
+{
+  "name": "vector-sample",
+  "fields": [
+    { "name": "id", "type": "Edm.String", "key": true, "filterable": true },
+    { "name": "title", "type": "Edm.String", "searchable": true },
+    { "name": "category", "type": "Edm.String", "filterable": true, "facetable": true },
+    { "name": "embedding", "type": "Collection(Edm.Single)", "searchable": true, "dimensions": 2, "vectorSearchProfile": "cosine-profile" },
+    { "name": "position", "type": "Collection(Edm.Single)", "searchable": true, "dimensions": 2, "vectorSearchProfile": "euclidean-profile" }
+  ],
+  "vectorSearch": {
+    "algorithms": [
+      { "name": "hnsw-cosine", "kind": "hnsw", "hnswParameters": { "metric": "cosine" } },
+      { "name": "exact-euclidean", "kind": "exhaustiveKnn", "exhaustiveKnnParameters": { "metric": "euclidean" } }
+    ],
+    "profiles": [
+      { "name": "cosine-profile", "algorithm": "hnsw-cosine" },
+      { "name": "euclidean-profile", "algorithm": "exact-euclidean" }
+    ]
+  }
+}
+
+### [AZURE] Create an index with a cosine HNSW field and a euclidean exhaustive KNN field
+POST {{azureBaseUrl}}/indexes?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
 
 {
   "name": "vector-sample",
@@ -59,10 +93,24 @@ api-key: {{adminKey}}
 # 2. UPLOAD THE DOCUMENTS
 # =====================================================
 
-### Upload four documents (by cosine to [1, 0]: 1, 3, 2, 4; by euclidean distance to [1, 0] on position: 2, 1, 4, 3)
+### [SIM] Upload four documents (by cosine to [1, 0]: 1, 3, 2, 4; by euclidean distance to [1, 0] on position: 2, 1, 4, 3)
 POST {{baseUrl}}/indexes/vector-sample/docs/index?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{adminKey}}
+
+{
+  "value": [
+    { "@search.action": "upload", "id": "1", "title": "red apple", "category": "fruit", "embedding": [1, 0], "position": [3, 0] },
+    { "@search.action": "upload", "id": "2", "title": "green apple", "category": "fruit", "embedding": [0.8, 0.6], "position": [1, 1] },
+    { "@search.action": "upload", "id": "3", "title": "red car", "category": "vehicle", "embedding": [0.95, 0.31], "position": [5, 5] },
+    { "@search.action": "upload", "id": "4", "title": "blue car", "category": "vehicle", "embedding": [0, 1], "position": [0, 4] }
+  ]
+}
+
+### [AZURE] Upload four documents (by cosine to [1, 0]: 1, 3, 2, 4; by euclidean distance to [1, 0] on position: 2, 1, 4, 3)
+POST {{azureBaseUrl}}/indexes/vector-sample/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
 
 {
   "value": [
@@ -77,7 +125,7 @@ api-key: {{adminKey}}
 # 3. VECTOR QUERIES
 # =====================================================
 
-### A vector query without search text returns only its k nearest neighbours → 1, 3
+### [SIM] A vector query without search text returns only its k nearest neighbours → 1, 3
 POST {{baseUrl}}/indexes/vector-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -87,7 +135,17 @@ api-key: {{queryKey}}
   "select": "id, title"
 }
 
-### With a filter, the k nearest neighbours are taken among the documents that pass it (preFilter, the default) → 3, 4
+### [AZURE] A vector query without search text returns only its k nearest neighbours → 1, 3
+POST {{azureBaseUrl}}/indexes/vector-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "vectorQueries": [{ "kind": "vector", "vector": [1, 0], "fields": "embedding", "k": 2 }],
+  "select": "id, title"
+}
+
+### [SIM] With a filter, the k nearest neighbours are taken among the documents that pass it (preFilter, the default) → 3, 4
 POST {{baseUrl}}/indexes/vector-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -98,7 +156,18 @@ api-key: {{queryKey}}
   "select": "id, title"
 }
 
-### postFilter takes the k nearest neighbours first, then drops those that don't pass the filter → 3
+### [AZURE] With a filter, the k nearest neighbours are taken among the documents that pass it (preFilter, the default) → 3, 4
+POST {{azureBaseUrl}}/indexes/vector-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "vectorQueries": [{ "kind": "vector", "vector": [1, 0], "fields": "embedding", "k": 2 }],
+  "filter": "category eq 'vehicle'",
+  "select": "id, title"
+}
+
+### [SIM] postFilter takes the k nearest neighbours first, then drops those that don't pass the filter → 3
 # The simulator has one shard. Azure takes k neighbours from each shard of the index, so it can also return 4.
 POST {{baseUrl}}/indexes/vector-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
@@ -111,7 +180,19 @@ api-key: {{queryKey}}
   "select": "id, title"
 }
 
-### strictPostFilter takes the k nearest neighbours of the whole index, then filters them → 3
+### [AZURE] postFilter takes the k nearest neighbours first, then drops those that don't pass the filter → 3, and 4 when another shard holds it
+POST {{azureBaseUrl}}/indexes/vector-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "vectorQueries": [{ "kind": "vector", "vector": [1, 0], "fields": "embedding", "k": 2 }],
+  "filter": "category eq 'vehicle'",
+  "vectorFilterMode": "postFilter",
+  "select": "id, title"
+}
+
+### [SIM] strictPostFilter takes the k nearest neighbours of the whole index, then filters them → 3
 POST {{baseUrl}}/indexes/vector-sample/docs/search?api-version={{previewApiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -123,7 +204,19 @@ api-key: {{queryKey}}
   "select": "id, title"
 }
 
-### exhaustive: true searches every vector exactly instead of the HNSW graph → 1, 3
+### [AZURE] strictPostFilter takes the k nearest neighbours of the whole index, then filters them → 3
+POST {{azureBaseUrl}}/indexes/vector-sample/docs/search?api-version={{previewApiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "vectorQueries": [{ "kind": "vector", "vector": [1, 0], "fields": "embedding", "k": 2 }],
+  "filter": "category eq 'vehicle'",
+  "vectorFilterMode": "strictPostFilter",
+  "select": "id, title"
+}
+
+### [SIM] exhaustive: true searches every vector exactly instead of the HNSW graph → 1, 3
 POST {{baseUrl}}/indexes/vector-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -133,7 +226,17 @@ api-key: {{queryKey}}
   "select": "id, title"
 }
 
-### A field on an exhaustiveKnn algorithm ranks by its metric, here euclidean distance → 2
+### [AZURE] exhaustive: true searches every vector exactly instead of the HNSW graph → 1, 3
+POST {{azureBaseUrl}}/indexes/vector-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "vectorQueries": [{ "kind": "vector", "vector": [1, 0], "fields": "embedding", "k": 2, "exhaustive": true }],
+  "select": "id, title"
+}
+
+### [SIM] A field on an exhaustiveKnn algorithm ranks by its metric, here euclidean distance → 2
 POST {{baseUrl}}/indexes/vector-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -143,7 +246,17 @@ api-key: {{queryKey}}
   "select": "id, title"
 }
 
-### Hybrid: the text matches plus the vector neighbours; @odata.count and facets cover them all → 1, 3, 4
+### [AZURE] A field on an exhaustiveKnn algorithm ranks by its metric, here euclidean distance → 2
+POST {{azureBaseUrl}}/indexes/vector-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "vectorQueries": [{ "kind": "vector", "vector": [1, 0], "fields": "position", "k": 1 }],
+  "select": "id, title"
+}
+
+### [SIM] Hybrid: the text matches plus the vector neighbours; @odata.count and facets cover them all → 1, 3, 4
 POST {{baseUrl}}/indexes/vector-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -156,10 +269,34 @@ api-key: {{queryKey}}
   "select": "id, title"
 }
 
-### A vector-only query's facets count its k neighbours (buckets: fruit 1, vehicle 1) → 1, 3
+### [AZURE] Hybrid: the text matches plus the vector neighbours; @odata.count and facets cover them all → 1, 3, 4
+POST {{azureBaseUrl}}/indexes/vector-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "car",
+  "vectorQueries": [{ "kind": "vector", "vector": [1, 0], "fields": "embedding", "k": 1 }],
+  "count": true,
+  "facets": ["category"],
+  "select": "id, title"
+}
+
+### [SIM] A vector-only query's facets count its k neighbours (buckets: fruit 1, vehicle 1) → 1, 3
 POST {{baseUrl}}/indexes/vector-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
+
+{
+  "vectorQueries": [{ "kind": "vector", "vector": [1, 0], "fields": "embedding", "k": 2 }],
+  "facets": ["category"],
+  "select": "id"
+}
+
+### [AZURE] A vector-only query's facets count its k neighbours (buckets: fruit 1, vehicle 1) → 1, 3
+POST {{azureBaseUrl}}/indexes/vector-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
 
 {
   "vectorQueries": [{ "kind": "vector", "vector": [1, 0], "fields": "embedding", "k": 2 }],
@@ -171,7 +308,7 @@ api-key: {{queryKey}}
 # 4. REQUESTS AZURE REJECTS (HTTP 400)
 # =====================================================
 
-### An unknown vectorFilterMode → 400
+### [SIM] An unknown vectorFilterMode → 400
 POST {{baseUrl}}/indexes/vector-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -182,7 +319,18 @@ api-key: {{queryKey}}
   "vectorFilterMode": "midFilter"
 }
 
-### An unknown field → 400
+### [AZURE] An unknown vectorFilterMode → 400
+POST {{azureBaseUrl}}/indexes/vector-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "vectorQueries": [{ "kind": "vector", "vector": [1, 0], "fields": "embedding", "k": 2 }],
+  "filter": "category eq 'vehicle'",
+  "vectorFilterMode": "midFilter"
+}
+
+### [SIM] An unknown field → 400
 POST {{baseUrl}}/indexes/vector-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -191,7 +339,16 @@ api-key: {{queryKey}}
   "vectorQueries": [{ "kind": "vector", "vector": [1, 0], "fields": "contentVector", "k": 2 }]
 }
 
-### A field that isn't a vector field → 400
+### [AZURE] An unknown field → 400
+POST {{azureBaseUrl}}/indexes/vector-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "vectorQueries": [{ "kind": "vector", "vector": [1, 0], "fields": "contentVector", "k": 2 }]
+}
+
+### [SIM] A field that isn't a vector field → 400
 POST {{baseUrl}}/indexes/vector-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -200,7 +357,16 @@ api-key: {{queryKey}}
   "vectorQueries": [{ "kind": "vector", "vector": [1, 0], "fields": "category", "k": 2 }]
 }
 
-### A vector of the wrong length → 400
+### [AZURE] A field that isn't a vector field → 400
+POST {{azureBaseUrl}}/indexes/vector-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "vectorQueries": [{ "kind": "vector", "vector": [1, 0], "fields": "category", "k": 2 }]
+}
+
+### [SIM] A vector of the wrong length → 400
 POST {{baseUrl}}/indexes/vector-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -209,7 +375,16 @@ api-key: {{queryKey}}
   "vectorQueries": [{ "kind": "vector", "vector": [1, 0, 0], "fields": "embedding", "k": 2 }]
 }
 
-### A vector query without a vector → 400
+### [AZURE] A vector of the wrong length → 400
+POST {{azureBaseUrl}}/indexes/vector-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "vectorQueries": [{ "kind": "vector", "vector": [1, 0, 0], "fields": "embedding", "k": 2 }]
+}
+
+### [SIM] A vector query without a vector → 400
 POST {{baseUrl}}/indexes/vector-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -218,7 +393,16 @@ api-key: {{queryKey}}
   "vectorQueries": [{ "kind": "vector", "fields": "embedding", "k": 2 }]
 }
 
-### A text vector query needs a vectorizer, which the simulator doesn't have → 400
+### [AZURE] A vector query without a vector → 400
+POST {{azureBaseUrl}}/indexes/vector-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "vectorQueries": [{ "kind": "vector", "fields": "embedding", "k": 2 }]
+}
+
+### [SIM] A text vector query needs a vectorizer, which the simulator doesn't have → 400
 POST {{baseUrl}}/indexes/vector-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -227,7 +411,16 @@ api-key: {{queryKey}}
   "vectorQueries": [{ "kind": "text", "text": "red fruit", "fields": "embedding", "k": 2 }]
 }
 
-### $orderby is validated for vector-only queries too: a vector field isn't sortable → 400
+### [AZURE] A text vector query needs a vectorizer, which the simulator doesn't have → 400
+POST {{azureBaseUrl}}/indexes/vector-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "vectorQueries": [{ "kind": "text", "text": "red fruit", "fields": "embedding", "k": 2 }]
+}
+
+### [SIM] $orderby is validated for vector-only queries too: a vector field isn't sortable → 400
 POST {{baseUrl}}/indexes/vector-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -237,10 +430,29 @@ api-key: {{queryKey}}
   "orderby": "embedding"
 }
 
-### Uploading a vector of the wrong length → 400
+### [AZURE] $orderby is validated for vector-only queries too: a vector field isn't sortable → 400
+POST {{azureBaseUrl}}/indexes/vector-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "vectorQueries": [{ "kind": "vector", "vector": [1, 0], "fields": "embedding", "k": 2 }],
+  "orderby": "embedding"
+}
+
+### [SIM] Uploading a vector of the wrong length → 400
 POST {{baseUrl}}/indexes/vector-sample/docs/index?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{adminKey}}
+
+{
+  "value": [{ "@search.action": "upload", "id": "5", "title": "short vector", "embedding": [1, 0, 0] }]
+}
+
+### [AZURE] Uploading a vector of the wrong length → 400
+POST {{azureBaseUrl}}/indexes/vector-sample/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
 
 {
   "value": [{ "@search.action": "upload", "id": "5", "title": "short vector", "embedding": [1, 0, 0] }]
@@ -250,6 +462,10 @@ api-key: {{adminKey}}
 # 5. CLEANUP
 # =====================================================
 
-### Delete the index
+### [SIM] Delete the index
 DELETE {{baseUrl}}/indexes/vector-sample?api-version={{apiVersion}}
 api-key: {{adminKey}}
+
+### [AZURE] Delete the index
+DELETE {{azureBaseUrl}}/indexes/vector-sample?api-version={{apiVersion}}
+Authorization: Bearer {{azureToken}}

@@ -15,21 +15,42 @@
 ### Prerequisites:
 ### - The simulator running at https://localhost:7250
 ### - REST Client extension for VS Code
+### - For the [AZURE] requests: an Azure AI Search service with role-based
+###   access, the Search Service Contributor and Search Index Data Contributor
+###   roles, and AZURE_BASE_URL and ENTRA_TOKEN in .env (see .env.example).
+###   To use keys instead, replace "Authorization: Bearer {{azureToken}}"
+###   with an api-key header.
+### - Each request is a [SIM]/[AZURE] pair; run the steps in order on each.
 ### =====================================================
 
 @baseUrl = {{$dotenv BASE_URL}}
 @apiVersion = {{$dotenv API_VERSION}}
 @adminKey = {{$dotenv ADMIN_KEY}}
 @queryKey = {{$dotenv QUERY_KEY}}
+@azureBaseUrl = {{$dotenv AZURE_BASE_URL}}
+@azureToken = {{$dotenv ENTRA_TOKEN}}
 
 # =====================================================
 # 1. CREATE THE INDEX
 # =====================================================
 
-### Create the index
+### [SIM] Create the index
 POST {{baseUrl}}/indexes?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{adminKey}}
+
+{
+  "name": "paging-sample",
+  "fields": [
+    { "name": "id", "type": "Edm.String", "key": true, "sortable": true },
+    { "name": "title", "type": "Edm.String", "searchable": true }
+  ]
+}
+
+### [AZURE] Create the index
+POST {{azureBaseUrl}}/indexes?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
 
 {
   "name": "paging-sample",
@@ -43,10 +64,75 @@ api-key: {{adminKey}}
 # 2. UPLOAD 55 DOCUMENTS
 # =====================================================
 
-### Upload p01 to p55
+### [SIM] Upload p01 to p55
 POST {{baseUrl}}/indexes/paging-sample/docs/index?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{adminKey}}
+
+{
+  "value": [
+    {"@search.action": "upload", "id": "p01", "title": "Paging document 1"},
+    {"@search.action": "upload", "id": "p02", "title": "Paging document 2"},
+    {"@search.action": "upload", "id": "p03", "title": "Paging document 3"},
+    {"@search.action": "upload", "id": "p04", "title": "Paging document 4"},
+    {"@search.action": "upload", "id": "p05", "title": "Paging document 5"},
+    {"@search.action": "upload", "id": "p06", "title": "Paging document 6"},
+    {"@search.action": "upload", "id": "p07", "title": "Paging document 7"},
+    {"@search.action": "upload", "id": "p08", "title": "Paging document 8"},
+    {"@search.action": "upload", "id": "p09", "title": "Paging document 9"},
+    {"@search.action": "upload", "id": "p10", "title": "Paging document 10"},
+    {"@search.action": "upload", "id": "p11", "title": "Paging document 11"},
+    {"@search.action": "upload", "id": "p12", "title": "Paging document 12"},
+    {"@search.action": "upload", "id": "p13", "title": "Paging document 13"},
+    {"@search.action": "upload", "id": "p14", "title": "Paging document 14"},
+    {"@search.action": "upload", "id": "p15", "title": "Paging document 15"},
+    {"@search.action": "upload", "id": "p16", "title": "Paging document 16"},
+    {"@search.action": "upload", "id": "p17", "title": "Paging document 17"},
+    {"@search.action": "upload", "id": "p18", "title": "Paging document 18"},
+    {"@search.action": "upload", "id": "p19", "title": "Paging document 19"},
+    {"@search.action": "upload", "id": "p20", "title": "Paging document 20"},
+    {"@search.action": "upload", "id": "p21", "title": "Paging document 21"},
+    {"@search.action": "upload", "id": "p22", "title": "Paging document 22"},
+    {"@search.action": "upload", "id": "p23", "title": "Paging document 23"},
+    {"@search.action": "upload", "id": "p24", "title": "Paging document 24"},
+    {"@search.action": "upload", "id": "p25", "title": "Paging document 25"},
+    {"@search.action": "upload", "id": "p26", "title": "Paging document 26"},
+    {"@search.action": "upload", "id": "p27", "title": "Paging document 27"},
+    {"@search.action": "upload", "id": "p28", "title": "Paging document 28"},
+    {"@search.action": "upload", "id": "p29", "title": "Paging document 29"},
+    {"@search.action": "upload", "id": "p30", "title": "Paging document 30"},
+    {"@search.action": "upload", "id": "p31", "title": "Paging document 31"},
+    {"@search.action": "upload", "id": "p32", "title": "Paging document 32"},
+    {"@search.action": "upload", "id": "p33", "title": "Paging document 33"},
+    {"@search.action": "upload", "id": "p34", "title": "Paging document 34"},
+    {"@search.action": "upload", "id": "p35", "title": "Paging document 35"},
+    {"@search.action": "upload", "id": "p36", "title": "Paging document 36"},
+    {"@search.action": "upload", "id": "p37", "title": "Paging document 37"},
+    {"@search.action": "upload", "id": "p38", "title": "Paging document 38"},
+    {"@search.action": "upload", "id": "p39", "title": "Paging document 39"},
+    {"@search.action": "upload", "id": "p40", "title": "Paging document 40"},
+    {"@search.action": "upload", "id": "p41", "title": "Paging document 41"},
+    {"@search.action": "upload", "id": "p42", "title": "Paging document 42"},
+    {"@search.action": "upload", "id": "p43", "title": "Paging document 43"},
+    {"@search.action": "upload", "id": "p44", "title": "Paging document 44"},
+    {"@search.action": "upload", "id": "p45", "title": "Paging document 45"},
+    {"@search.action": "upload", "id": "p46", "title": "Paging document 46"},
+    {"@search.action": "upload", "id": "p47", "title": "Paging document 47"},
+    {"@search.action": "upload", "id": "p48", "title": "Paging document 48"},
+    {"@search.action": "upload", "id": "p49", "title": "Paging document 49"},
+    {"@search.action": "upload", "id": "p50", "title": "Paging document 50"},
+    {"@search.action": "upload", "id": "p51", "title": "Paging document 51"},
+    {"@search.action": "upload", "id": "p52", "title": "Paging document 52"},
+    {"@search.action": "upload", "id": "p53", "title": "Paging document 53"},
+    {"@search.action": "upload", "id": "p54", "title": "Paging document 54"},
+    {"@search.action": "upload", "id": "p55", "title": "Paging document 55"}
+  ]
+}
+
+### [AZURE] Upload p01 to p55
+POST {{azureBaseUrl}}/indexes/paging-sample/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
 
 {
   "value": [
@@ -112,7 +198,7 @@ api-key: {{adminKey}}
 # 3. PAGE THROUGH THE RESULTS
 # =====================================================
 
-### POST without top: the first 50 results, @search.nextPageParameters and @odata.nextLink
+### [SIM] POST without top: the first 50 results, @search.nextPageParameters and @odata.nextLink
 # @search.nextPageParameters is this request with "skip": 50; @odata.nextLink is this endpoint,
 # to be called with POST and that body.
 POST {{baseUrl}}/indexes/paging-sample/docs/search?api-version={{apiVersion}}
@@ -126,7 +212,19 @@ api-key: {{queryKey}}
   "select": "id"
 }
 
-### POST the next page's parameters: the last 5 results, and no further page → in order: p51, p52, p53, p54, p55
+### [AZURE] POST without top: the first 50 results, @search.nextPageParameters and @odata.nextLink
+POST {{azureBaseUrl}}/indexes/paging-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "*",
+  "orderby": "id",
+  "count": true,
+  "select": "id"
+}
+
+### [SIM] POST the next page's parameters: the last 5 results, and no further page → in order: p51, p52, p53, p54, p55
 POST {{baseUrl}}/indexes/paging-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -139,7 +237,20 @@ api-key: {{queryKey}}
   "skip": 50
 }
 
-### With top, the client pages itself, so there is no next page → in order: p01, p02, p03
+### [AZURE] POST the next page's parameters: the last 5 results, and no further page → in order: p51, p52, p53, p54, p55
+POST {{azureBaseUrl}}/indexes/paging-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "*",
+  "orderby": "id",
+  "count": true,
+  "select": "id",
+  "skip": 50
+}
+
+### [SIM] With top, the client pages itself, so there is no next page → in order: p01, p02, p03
 POST {{baseUrl}}/indexes/paging-sample/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -151,18 +262,42 @@ api-key: {{queryKey}}
   "top": 3
 }
 
-### GET without $top: the first 50 results and an @odata.nextLink with $skip=50 (and no @search.nextPageParameters)
+### [AZURE] With top, the client pages itself, so there is no next page → in order: p01, p02, p03
+POST {{azureBaseUrl}}/indexes/paging-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "*",
+  "orderby": "id",
+  "select": "id",
+  "top": 3
+}
+
+### [SIM] GET without $top: the first 50 results and an @odata.nextLink with $skip=50 (and no @search.nextPageParameters)
 GET {{baseUrl}}/indexes/paging-sample/docs?api-version={{apiVersion}}&search=*&$orderby=id&$select=id
 api-key: {{queryKey}}
 
-### GET the next link: the last 5 results → in order: p51, p52, p53, p54, p55
+### [AZURE] GET without $top: the first 50 results and an @odata.nextLink with $skip=50 (and no @search.nextPageParameters)
+GET {{azureBaseUrl}}/indexes/paging-sample/docs?api-version={{apiVersion}}&search=*&$orderby=id&$select=id
+Authorization: Bearer {{azureToken}}
+
+### [SIM] GET the next link: the last 5 results → in order: p51, p52, p53, p54, p55
 GET {{baseUrl}}/indexes/paging-sample/docs?api-version={{apiVersion}}&search=*&$orderby=id&$select=id&$skip=50
 api-key: {{queryKey}}
+
+### [AZURE] GET the next link: the last 5 results → in order: p51, p52, p53, p54, p55
+GET {{azureBaseUrl}}/indexes/paging-sample/docs?api-version={{apiVersion}}&search=*&$orderby=id&$select=id&$skip=50
+Authorization: Bearer {{azureToken}}
 
 # =====================================================
 # 4. CLEANUP
 # =====================================================
 
-### Delete the index
+### [SIM] Delete the index
 DELETE {{baseUrl}}/indexes/paging-sample?api-version={{apiVersion}}
 api-key: {{adminKey}}
+
+### [AZURE] Delete the index
+DELETE {{azureBaseUrl}}/indexes/paging-sample?api-version={{apiVersion}}
+Authorization: Bearer {{azureToken}}
