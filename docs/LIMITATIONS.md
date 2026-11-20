@@ -14,6 +14,8 @@ The simulator is designed for **development, learning, and testing purposes only
 | `2024-07-01` | ✅ Full | Primary development target |
 | `2023-11-01` | ⚠️ Partial | Basic compatibility |
 
+The simulator doesn't check which API version a request needs: options Azure only accepts with a preview `api-version` (such as `featuresMode`, `strictPostFilter`, and facet metrics and `default`) work with any version.
+
 ### 2025-09-01 Features Status
 
 | Feature | Status |
@@ -371,7 +373,7 @@ A facet on a field that isn't facetable returns 400, as in Azure.
 
 ### Vector Query Limitations
 
-- `vectorFilterMode` `preFilter` (the default), `postFilter` and `strictPostFilter` are supported; with a single shard the two post-filter modes behave the same
+- `vectorFilterMode` `preFilter` (the default), `postFilter` and `strictPostFilter` are supported. The simulator has a single shard, so `postFilter` takes the k nearest neighbours of the whole index, as `strictPostFilter` does; Azure takes k from each of its shards, so it can return more
 - Only `kind: vector` queries are supported (no vectorizers); other kinds return 400
 - Unfiltered queries on HNSW fields with the cosine metric use the approximate HNSW index; filtered queries, `exhaustiveKnn` algorithms, other metrics and `exhaustive: true` are searched exactly
 - A vector-only query validates `$orderby` but always returns its neighbours by similarity

@@ -1,0 +1,332 @@
+### =====================================================
+### Facet Sample Requests
+### Demonstrates how facets count documents: exact, case-sensitive
+### values (not analysed terms), the field's normalizer, collections
+### and complex-collection sub-fields counted once per document,
+### dates in UTC, doubles, count and sort, interval, range and metric
+### facets, and the facet requests Azure AI Search rejects.
+### =====================================================
+###
+### SETUP ORDER:
+### 1. Create the index
+### 2. Upload the documents
+### 3. Facet (each title gives the expected buckets, or the status)
+### 4. Cleanup
+###
+### Prerequisites:
+### - The simulator running at https://localhost:7250
+### - REST Client extension for VS Code
+### =====================================================
+
+@baseUrl = {{$dotenv BASE_URL}}
+@apiVersion = {{$dotenv API_VERSION}}
+@adminKey = {{$dotenv ADMIN_KEY}}
+@queryKey = {{$dotenv QUERY_KEY}}
+# Metric facets need a preview API version in Azure.
+@previewApiVersion = 2025-11-01-preview
+
+# =====================================================
+# 1. CREATE THE INDEX
+# =====================================================
+
+### Create an index with facetable simple, collection and complex-collection fields
+POST {{baseUrl}}/indexes?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "name": "facet-sample",
+  "fields": [
+    { "name": "id", "type": "Edm.String", "key": true, "filterable": true },
+    { "name": "category", "type": "Edm.String", "searchable": true, "filterable": true, "facetable": true },
+    { "name": "city", "type": "Edm.String", "filterable": true, "facetable": true, "normalizer": "lowercase" },
+    { "name": "description", "type": "Edm.String", "searchable": true, "facetable": false },
+    { "name": "tags", "type": "Collection(Edm.String)", "filterable": true, "facetable": true },
+    { "name": "rating", "type": "Edm.Double", "filterable": true, "facetable": true },
+    { "name": "views", "type": "Edm.Double", "facetable": true },
+    { "name": "opened", "type": "Edm.DateTimeOffset", "facetable": true },
+    {
+      "name": "rooms", "type": "Collection(Edm.ComplexType)",
+      "fields": [
+        { "name": "type", "type": "Edm.String", "facetable": true },
+        { "name": "baseRate", "type": "Edm.Double", "facetable": true }
+      ]
+    }
+  ]
+}
+
+# =====================================================
+# 2. UPLOAD THE DOCUMENTS
+# =====================================================
+
+### Upload four hotels
+POST {{baseUrl}}/indexes/facet-sample/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "value": [
+    {
+      "@search.action": "upload", "id": "1", "category": "Luxury Resort", "city": "Paris", "tags": ["pool", "spa"],
+      "rating": 4.5, "views": 9007199254740992, "opened": "2024-03-05T09:20:30.1234567+01:00",
+      "description": "Luxury rooms by the river.",
+      "rooms": [{ "type": "Deluxe", "baseRate": 200 }, { "type": "Deluxe", "baseRate": 250 }, { "type": "Standard", "baseRate": 100 }]
+    },
+    {
+      "@search.action": "upload", "id": "2", "category": "luxury resort", "city": "PARIS", "tags": ["pool"],
+      "rating": 4.5, "views": 9007199254740993, "opened": "2024-03-05T08:20:30.123Z",
+      "description": "A quiet resort.",
+      "rooms": [{ "type": "Standard", "baseRate": 90 }]
+    },
+    {
+      "@search.action": "upload", "id": "3", "category": "Budget", "city": "Lyon", "tags": [],
+      "rating": 3.0, "views": 10, "description": "Simple rooms.",
+      "rooms": [{ "type": "Suite", "baseRate": 400 }]
+    },
+    {
+      "@search.action": "upload", "id": "4", "category": "Luxury Resort", "city": "paris", "tags": ["spa", "spa"],
+      "rating": 5.0, "views": 20, "description": "Luxury on the coast."
+    }
+  ]
+}
+
+# =====================================================
+# 3. FACETS
+# =====================================================
+
+### Exact, case-sensitive values, even on a searchable field (buckets: "Luxury Resort" 2, "Budget" 1, "luxury resort" 1)
+POST {{baseUrl}}/indexes/facet-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "*",
+  "facets": ["category"],
+  "top": 0
+}
+
+### The field's normalizer applies, and the bucket holds the normalized value (buckets: "paris" 3, "lyon" 1)
+POST {{baseUrl}}/indexes/facet-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "*",
+  "facets": ["city"],
+  "top": 0
+}
+
+### A collection counts each document once per value (buckets: "pool" 2, "spa" 2)
+POST {{baseUrl}}/indexes/facet-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "*",
+  "facets": ["tags"],
+  "top": 0
+}
+
+### A sub-field of a complex collection counts each document once per value (buckets: "Standard" 2, "Deluxe" 1, "Suite" 1)
+POST {{baseUrl}}/indexes/facet-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "*",
+  "facets": ["rooms/type"],
+  "top": 0
+}
+
+### Dates come back in UTC to the millisecond (buckets: "2024-03-05T08:20:30.123Z" 2)
+POST {{baseUrl}}/indexes/facet-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "*",
+  "facets": ["opened"],
+  "top": 0
+}
+
+### Doubles are counted as doubles: 2^53 and 2^53 + 1 are the same double (buckets: 9007199254740992 2, 10 1, 20 1)
+POST {{baseUrl}}/indexes/facet-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "*",
+  "facets": ["views"],
+  "top": 0
+}
+
+### count limits the buckets, and count:0 returns them all (buckets: rating 1, rooms/type 3)
+POST {{baseUrl}}/indexes/facet-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "*",
+  "facets": ["rating,count:1", "rooms/type,count:0"],
+  "top": 0
+}
+
+### sort orders the buckets by value or count, either way round (buckets: "Budget" 1, "Luxury Resort" 2, "luxury resort" 1)
+POST {{baseUrl}}/indexes/facet-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "*",
+  "facets": ["category,sort:value"],
+  "top": 0
+}
+
+### Interval buckets are each value's lower bound, all of them in order (buckets: 3 1, 4 2, 5 1)
+POST {{baseUrl}}/indexes/facet-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "*",
+  "facets": ["rating,interval:1"],
+  "top": 0
+}
+
+### On a complex collection, each document counts once per interval (buckets: 0 1, 100 1, 200 1, 400 1)
+POST {{baseUrl}}/indexes/facet-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "*",
+  "facets": ["rooms/baseRate,interval:100"],
+  "top": 0
+}
+
+### Dates take a unit as their interval, in UTC (buckets: "2024-03-05T00:00:00Z" 2)
+POST {{baseUrl}}/indexes/facet-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "*",
+  "facets": ["opened,interval:day"],
+  "top": 0
+}
+
+### values counts the ranges between its bounds, from and to as doubles (buckets: to 4.0 1, 4.0 to 5.0 2, from 5.0 1)
+POST {{baseUrl}}/indexes/facet-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "*",
+  "facets": ["rating,values:4|5"],
+  "top": 0
+}
+
+### Metrics aggregate every element of a complex collection (buckets: sum 1040.0, max 400.0, cardinality of category 3)
+POST {{baseUrl}}/indexes/facet-sample/docs/search?api-version={{previewApiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "*",
+  "facets": ["rooms/baseRate,metric:sum", "rooms/baseRate,metric:max", "category,metric:cardinality"],
+  "top": 0
+}
+
+### Facets count only the documents that match the search and filter (buckets: "Luxury Resort" 2, "luxury resort" 1)
+POST {{baseUrl}}/indexes/facet-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "luxury resort",
+  "filter": "rating ge 4",
+  "facets": ["category"],
+  "top": 0
+}
+
+# =====================================================
+# 4. FACETS AZURE REJECTS (HTTP 400)
+# =====================================================
+
+### A field that isn't facetable → 400
+POST {{baseUrl}}/indexes/facet-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "*",
+  "facets": ["description"]
+}
+
+### An unknown field → 400
+POST {{baseUrl}}/indexes/facet-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "*",
+  "facets": ["stars"]
+}
+
+### An invalid count → 400
+POST {{baseUrl}}/indexes/facet-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "*",
+  "facets": ["category,count:-1"]
+}
+
+### An interval must be a whole number above 0 → 400
+POST {{baseUrl}}/indexes/facet-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "*",
+  "facets": ["rating,interval:0.5"]
+}
+
+### count and sort can't be combined with an interval → 400
+POST {{baseUrl}}/indexes/facet-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "*",
+  "facets": ["rating,interval:1,count:5"]
+}
+
+### Parameter names are case-sensitive → 400
+POST {{baseUrl}}/indexes/facet-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "*",
+  "facets": ["category,Count:1"]
+}
+
+### A field faceted twice, other than by different metrics → 400
+POST {{baseUrl}}/indexes/facet-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "*",
+  "facets": ["category", "category,count:1"]
+}
+
+# =====================================================
+# 5. CLEANUP
+# =====================================================
+
+### Delete the index
+DELETE {{baseUrl}}/indexes/facet-sample?api-version={{apiVersion}}
+api-key: {{adminKey}}

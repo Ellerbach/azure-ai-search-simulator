@@ -1,0 +1,7 @@
+{
+  "id": "p1",
+  "name": "Trail running shoes",
+  "views": 9007199254740993,
+  "warehouseNotes": "Aisle 4, top shelf",
+  "supplier": { "name": "Northwind", "country": "Canada" }
+}

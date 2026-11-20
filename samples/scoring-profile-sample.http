@@ -17,7 +17,8 @@
 ### 10. Error cases
 ### 11. Search via GET with scoring params
 ### 12. Negative boost / scoringStatistics
-### 13. Cleanup
+### 13. Boosts before sorting and paging
+### 14. Cleanup
 ###
 ### Prerequisites:
 ### - The simulator running at https://localhost:7250
@@ -367,7 +368,57 @@ api-key: {{queryKey}}
 }
 
 # ============================================
-# 13. CLEANUP
+# 13. BOOSTS BEFORE SORTING AND PAGING
+# ============================================
+# Function boosts apply within the scoring, so the top hits, search.score()
+# sorts and ties on a field sort all use the boosted score.
+
+### Sort by the boosted score: @search.score never increases → in order: 2, 4
+# By text alone hotel 4 matches "hotel" best, in its name and description; the boosted tag puts hotel 2 first.
+POST {{baseUrl}}/indexes/hotels-scored/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "hotel",
+  "filter": "hotelId ne '3'",
+  "scoringProfile": "boost-tags",
+  "scoringParameters": ["userTags-parking"],
+  "orderby": "search.score() desc",
+  "select": "hotelId, tags",
+  "top": 5
+}
+
+### The top hit is the best boosted match, not the best text match → 2
+POST {{baseUrl}}/indexes/hotels-scored/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "hotel",
+  "scoringProfile": "boost-tags",
+  "scoringParameters": ["userTags-parking"],
+  "select": "hotelId, tags",
+  "top": 1
+}
+
+### Ties on a field sort are broken by the boosted score → in order: 2, 5
+# Both are Budget hotels; hotel 5 matches "budget" best, but only hotel 2 has the boosted tag.
+POST {{baseUrl}}/indexes/hotels-scored/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "budget",
+  "scoringProfile": "boost-tags",
+  "scoringParameters": ["userTags-parking"],
+  "orderby": "category asc",
+  "select": "hotelId, category, tags",
+  "top": 5
+}
+
+# ============================================
+# 14. CLEANUP
 # ============================================
 
 ### Delete the index

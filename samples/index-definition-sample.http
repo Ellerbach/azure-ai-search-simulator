@@ -1,0 +1,206 @@
+### =====================================================
+### Index Definition Sample Requests
+### Demonstrates analyzers on sub-fields of complex fields, and
+### suggesters over complex sub-fields, string collections and
+### fields that aren't searchable, with the suggester definitions
+### Azure AI Search rejects.
+### =====================================================
+###
+### SETUP ORDER:
+### 1. Create the index
+### 2. Upload the documents
+### 3. Search and suggest (each title gives the expected ids)
+### 4. Index definitions Azure rejects
+### 5. Cleanup
+###
+### Prerequisites:
+### - The simulator running at https://localhost:7250
+### - REST Client extension for VS Code
+### =====================================================
+
+@baseUrl = {{$dotenv BASE_URL}}
+@apiVersion = {{$dotenv API_VERSION}}
+@adminKey = {{$dotenv ADMIN_KEY}}
+@queryKey = {{$dotenv QUERY_KEY}}
+
+# =====================================================
+# 1. CREATE THE INDEX
+# =====================================================
+
+### Create an index with a language analyzer on each sub-field, and a suggester over a sub-field, a collection and a field that isn't searchable
+POST {{baseUrl}}/indexes?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "name": "index-definition-sample",
+  "fields": [
+    { "name": "id", "type": "Edm.String", "key": true },
+    {
+      "name": "name", "type": "Edm.ComplexType",
+      "fields": [
+        { "name": "en", "type": "Edm.String", "searchable": true, "analyzer": "en.lucene" },
+        { "name": "fr", "type": "Edm.String", "searchable": true, "analyzer": "fr.lucene" }
+      ]
+    },
+    { "name": "tags", "type": "Collection(Edm.String)", "searchable": true },
+    { "name": "brand", "type": "Edm.String", "searchable": false, "filterable": true }
+  ],
+  "suggesters": [
+    { "name": "sg", "searchMode": "analyzingInfixMatching", "sourceFields": ["name/en", "tags", "brand"] }
+  ]
+}
+
+# =====================================================
+# 2. UPLOAD THE DOCUMENTS
+# =====================================================
+
+### Upload two products
+POST {{baseUrl}}/indexes/index-definition-sample/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "value": [
+    { "@search.action": "upload", "id": "1", "name": { "en": "Running shoes", "fr": "Chaussures de course" }, "tags": ["sport", "outdoor"], "brand": "Trail Masters" },
+    { "@search.action": "upload", "id": "2", "name": { "en": "Coffee cups", "fr": "Tasses à café" }, "tags": ["kitchen"], "brand": "Cafe Royal" }
+  ]
+}
+
+# =====================================================
+# 3. SEARCH AND SUGGEST
+# =====================================================
+
+### The English analyzer on name/en stems "runs" and "running" alike → 1
+POST {{baseUrl}}/indexes/index-definition-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "runs",
+  "searchFields": "name/en",
+  "select": "id, name"
+}
+
+### The French analyzer on name/fr stems "tasse" and "tasses" alike → 2
+POST {{baseUrl}}/indexes/index-definition-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "tasse",
+  "searchFields": "name/fr",
+  "select": "id, name"
+}
+
+### Suggest from a complex sub-field → 1
+POST {{baseUrl}}/indexes/index-definition-sample/docs/suggest?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "sho",
+  "suggesterName": "sg"
+}
+
+### Suggest from a string collection → 2
+POST {{baseUrl}}/indexes/index-definition-sample/docs/suggest?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "kitch",
+  "suggesterName": "sg"
+}
+
+### Suggest from a field that isn't searchable, matching any of its words → 1
+POST {{baseUrl}}/indexes/index-definition-sample/docs/suggest?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "mast",
+  "suggesterName": "sg"
+}
+
+### Searches don't match that field → none
+POST {{baseUrl}}/indexes/index-definition-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "masters",
+  "select": "id"
+}
+
+# =====================================================
+# 4. INDEX DEFINITIONS AZURE REJECTS (HTTP 400)
+# =====================================================
+
+### An index can have only one suggester → 400
+POST {{baseUrl}}/indexes?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "name": "index-definition-two-suggesters",
+  "fields": [
+    { "name": "id", "type": "Edm.String", "key": true },
+    { "name": "title", "type": "Edm.String", "searchable": true },
+    { "name": "summary", "type": "Edm.String", "searchable": true }
+  ],
+  "suggesters": [
+    { "name": "sg1", "searchMode": "analyzingInfixMatching", "sourceFields": ["title"] },
+    { "name": "sg2", "searchMode": "analyzingInfixMatching", "sourceFields": ["summary"] }
+  ]
+}
+
+### A suggester's source fields must be strings → 400
+POST {{baseUrl}}/indexes?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "name": "index-definition-numeric-source",
+  "fields": [
+    { "name": "id", "type": "Edm.String", "key": true },
+    { "name": "stock", "type": "Edm.Int32", "filterable": true }
+  ],
+  "suggesters": [{ "name": "sg", "searchMode": "analyzingInfixMatching", "sourceFields": ["stock"] }]
+}
+
+### A suggester names each source field once → 400
+POST {{baseUrl}}/indexes?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "name": "index-definition-duplicate-source",
+  "fields": [
+    { "name": "id", "type": "Edm.String", "key": true },
+    { "name": "title", "type": "Edm.String", "searchable": true }
+  ],
+  "suggesters": [{ "name": "sg", "searchMode": "analyzingInfixMatching", "sourceFields": ["title", "title"] }]
+}
+
+### A suggester's source fields must use the default analyzer or a language analyzer → 400
+POST {{baseUrl}}/indexes?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "name": "index-definition-keyword-source",
+  "fields": [
+    { "name": "id", "type": "Edm.String", "key": true },
+    { "name": "code", "type": "Edm.String", "searchable": true, "analyzer": "keyword" }
+  ],
+  "suggesters": [{ "name": "sg", "searchMode": "analyzingInfixMatching", "sourceFields": ["code"] }]
+}
+
+# =====================================================
+# 5. CLEANUP
+# =====================================================
+
+### Delete the index
+DELETE {{baseUrl}}/indexes/index-definition-sample?api-version={{apiVersion}}
+api-key: {{adminKey}}
