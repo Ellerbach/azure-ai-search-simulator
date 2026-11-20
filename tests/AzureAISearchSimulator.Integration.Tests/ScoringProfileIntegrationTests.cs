@@ -19,6 +19,63 @@ public class ScoringProfileIntegrationTests
 
     private static string UniqueId(string prefix) => $"{prefix}-{Guid.NewGuid():N}";
 
+    // ─── Boosts before sorting and paging ────────────────────────────
+
+    [Theory]
+    [InlineData(null, 1)]
+    [InlineData("search.score() desc", 3)]
+    [InlineData("category asc", 3)]
+    public async Task Search_WithFunctionBoosts_SortsAndPagesByTheBoostedScore(string? orderBy, int top)
+    {
+        // Arrange: "plain" matches "pool" best, but the rating boost puts "rated" first; both share a category.
+        var indexName = UniqueId("boost-order");
+        _fixture.RegisterIndex(new SearchIndex
+        {
+            Name = indexName,
+            Fields = new List<SearchField>
+            {
+                new() { Name = "id", Type = "Edm.String", Key = true },
+                new() { Name = "title", Type = "Edm.String", Searchable = true },
+                new() { Name = "category", Type = "Edm.String", Sortable = true },
+                new() { Name = "rating", Type = "Edm.Double", Filterable = true }
+            },
+            ScoringProfiles = new List<ScoringProfile>
+            {
+                new()
+                {
+                    Name = "boost-rating",
+                    Functions = new List<ScoringFunction>
+                    {
+                        new()
+                        {
+                            Type = "magnitude",
+                            FieldName = "rating",
+                            Boost = 10.0,
+                            Interpolation = "linear",
+                            Magnitude = new MagnitudeFunction { BoostingRangeStart = 0, BoostingRangeEnd = 5 }
+                        }
+                    }
+                }
+            }
+        });
+        await _fixture.UploadDocuments(indexName,
+            new Dictionary<string, object?> { ["id"] = "plain", ["title"] = "pool pool pool", ["category"] = "a", ["rating"] = 0.0 },
+            new Dictionary<string, object?> { ["id"] = "rated", ["title"] = "a quiet garden hotel with a pool by the sea", ["category"] = "a", ["rating"] = 5.0 });
+
+        // Act
+        var response = await _fixture.SearchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "pool",
+            ScoringProfile = "boost-rating",
+            OrderBy = orderBy,
+            Top = top
+        });
+
+        // Assert
+        Assert.Equal("rated", response.Value[0]["id"]?.ToString());
+        Assert.Equal(response.Value.Select(r => r.Score).OrderDescending(), response.Value.Select(r => r.Score));
+    }
+
     // ─── Text Weights ────────────────────────────────────────────────
 
     [Fact]

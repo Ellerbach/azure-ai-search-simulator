@@ -175,28 +175,35 @@ public class SearchService : ISearchService
         // Validated for every query, including vector-only ones, whose neighbours keep their similarity order.
         var sort = BuildSort(request.OrderBy, index);
         TopDocs? topDocs = null;
+
+        // As in Azure, function boosts apply before the top hits are taken, sorted by score and ties broken.
+        var boostInLucene = vectorScores == null && scoringProfile?.Functions is { Count: > 0 };
+        Query Boosted(Query query) => boostInLucene
+            ? new ScoringProfileBoostQuery(query, document => _scoringProfileService.CalculateDocumentBoost(
+                scoringProfile!, LuceneDocumentMapper.FromLuceneDocument(document, null), scoringParameters))
+            : query;
         
         textSearchStopwatch.Start();
         if (effectiveTextQuery != null)
         {
             topDocs = sort != null
-                ? searcher.Search(effectiveTextQuery, null, topN, sort, doDocScores: true, doMaxScore: false)
-                : searcher.Search(effectiveTextQuery, topN);
+                ? searcher.Search(Boosted(effectiveTextQuery), null, topN, sort, doDocScores: true, doMaxScore: false)
+                : searcher.Search(Boosted(effectiveTextQuery), topN);
         }
         else if (filterQuery != null && vectorScores == null)
         {
             // Filter-only search
             topDocs = sort != null
-                ? searcher.Search(filterQuery, null, topN, sort, doDocScores: true, doMaxScore: false)
-                : searcher.Search(filterQuery, topN);
+                ? searcher.Search(Boosted(filterQuery), null, topN, sort, doDocScores: true, doMaxScore: false)
+                : searcher.Search(Boosted(filterQuery), topN);
         }
         else if (vectorScores == null)
         {
             // Match all documents (a vector query without text returns only its nearest neighbours, as in Azure)
             var matchAllQuery = new MatchAllDocsQuery();
             topDocs = sort != null
-                ? searcher.Search(matchAllQuery, null, topN, sort, doDocScores: true, doMaxScore: false)
-                : searcher.Search(matchAllQuery, topN);
+                ? searcher.Search(Boosted(matchAllQuery), null, topN, sort, doDocScores: true, doMaxScore: false)
+                : searcher.Search(Boosted(matchAllQuery), topN);
         }
         textSearchStopwatch.Stop();
 
@@ -242,7 +249,8 @@ public class SearchService : ISearchService
             scoringProfile,
             scoringParameters,
             index,
-            keepTextOrder: sort != null && vectorScores == null);
+            keepTextOrder: sort != null && vectorScores == null,
+            boostsApplied: boostInLucene);
 
         // Apply skip and top
         var finalResults = combinedResults.Results
@@ -393,7 +401,8 @@ public class SearchService : ISearchService
         ScoringProfile? scoringProfile = null,
         Dictionary<string, string>? scoringParameters = null,
         SearchIndex? index = null,
-        bool keepTextOrder = false)
+        bool keepTextOrder = false,
+        bool boostsApplied = false)
     {
         var combined = new Dictionary<string, (int DocId, double TextScore, double VectorScore)>();
         var textRanks = new Dictionary<string, int>();
@@ -481,13 +490,16 @@ public class SearchService : ISearchService
 
                 // Apply scoring profile function boosts
                 double documentBoost = 1.0;
-                if (scoringProfile?.Functions != null && scoringProfile.Functions.Count > 0 && docId >= 0)
+                if (scoringProfile?.Functions != null && scoringProfile.Functions.Count > 0 && docId >= 0 && (!boostsApplied || debugVector))
                 {
                     var luceneDoc = searcher.Doc(docId);
                     var docFields = LuceneDocumentMapper.FromLuceneDocument(luceneDoc, null);
                     documentBoost = _scoringProfileService.CalculateDocumentBoost(
                         scoringProfile, docFields, scoringParameters ?? new Dictionary<string, string>());
-                    finalScore *= documentBoost;
+                    if (!boostsApplied)
+                    {
+                        finalScore *= documentBoost;
+                    }
                 }
 
                 // Build per-document debug info matching official structure
