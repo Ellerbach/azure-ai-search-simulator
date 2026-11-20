@@ -631,11 +631,8 @@ public partial class IndexerService : IIndexerService
     }
 
     /// <summary>
-    /// Prepares a document for indexing: downloads content, cracks, runs skillset, maps fields.
-    /// Returns one or more IndexActions ready for bulk upload (JSON array produces multiple).
-    /// Does NOT upload to the index.
+    /// Removes the source and enrichment fields the target index doesn't define, which Azure doesn't index.
     /// </summary>
-    // As in Azure, source and enrichment fields that the target index doesn't define aren't indexed.
     private static void RemoveFieldsNotInIndex(SearchIndex? index, List<IndexAction> actions)
     {
         if (index is null)
@@ -653,6 +650,11 @@ public partial class IndexerService : IIndexerService
         }
     }
 
+    /// <summary>
+    /// Prepares a document for indexing: downloads content, cracks, runs skillset, maps fields.
+    /// Returns one or more IndexActions ready for bulk upload (JSON array produces multiple).
+    /// Does NOT upload to the index.
+    /// </summary>
     private async Task<List<IndexAction>> PrepareDocumentAsync(
         Indexer indexer, DataSourceDocument sourceDoc,
         IDataSourceConnector connector, DataSource dataSource)

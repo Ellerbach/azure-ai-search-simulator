@@ -4,13 +4,20 @@ using Lucene.Net.Util;
 
 namespace AzureAISearchSimulator.Search;
 
-// Sorts a numeric doc-values field with documents that have no value before every value, as Azure sorts nulls
-// ascending. A placeholder missing value can't, since a document may hold the placeholder itself (e.g. int.MinValue).
+/// <summary>
+/// Sorts a numeric doc-values field with documents that have no value before every value, as Azure sorts nulls
+/// ascending. A placeholder missing value can't, since a document may hold the placeholder itself (e.g. <c>int.MinValue</c>).
+/// </summary>
+/// <param name="isDouble">Whether the field holds doubles rather than integers.</param>
 internal sealed class MissingFirstComparerSource(bool isDouble) : FieldComparerSource
 {
+    /// <inheritdoc />
     public override FieldComparer NewComparer(string fieldname, int numHits, int sortPos, bool reversed) =>
         new Comparer(fieldname, numHits, isDouble);
 
+    /// <summary>
+    /// Compares documents by whether they have a value, then by the value (doubles as sortable longs).
+    /// </summary>
     private sealed class Comparer(string field, int numHits, bool isDouble) : FieldComparer<object>
     {
         private readonly long[] _values = new long[numHits];

@@ -4,15 +4,28 @@ using Lucene.Net.Search;
 
 namespace AzureAISearchSimulator.Search;
 
-// Azure behaviours the simulator adds around upstream's search pipeline.
+/// <summary>
+/// Azure AI Search behaviours that the simulator adds around its search pipeline: paging, <c>$orderby</c> validation,
+/// value facets, and vector query validation and exact search.
+/// </summary>
 internal static class SearchCompat
 {
     private const int DefaultPageSize = 50;
 
-    // Azure's default hybridSearch.maxTextRecallSize: how many text matches a hybrid query fuses with its vector neighbours.
+    /// <summary>
+    /// Azure's default <c>hybridSearch.maxTextRecallSize</c>: how many text matches a hybrid query fuses with its vector neighbours.
+    /// </summary>
     public const int MaxTextRecallSize = 1000;
 
-    // One search per thousand keys (Lucene's clause limit), not one per key: the query may carry an expensive filter.
+    /// <summary>
+    /// Counts the keys whose documents don't match a query, with one search per thousand keys (Lucene's clause limit)
+    /// rather than one per key, since the query may carry an expensive filter.
+    /// </summary>
+    /// <param name="searcher">The index searcher.</param>
+    /// <param name="keyField">The name of the index's key field.</param>
+    /// <param name="query">The query the documents are checked against.</param>
+    /// <param name="keys">The document keys to check.</param>
+    /// <returns>How many of the keys don't match the query.</returns>
     public static int CountNotMatching(IndexSearcher searcher, string keyField, Query query, IReadOnlyCollection<string> keys)
     {
         var matching = 0;
@@ -30,8 +43,14 @@ internal static class SearchCompat
         return keys.Count - matching;
     }
 
-    // Without top, Azure returns 50 results and the request for the next 50 (followed by the SDKs' paged iterables);
-    // the API adds @odata.nextLink, which depends on the HTTP request.
+    /// <summary>
+    /// Without <c>top</c>, Azure returns 50 results and, when more remain, the request for the next 50
+    /// (<c>@search.nextPageParameters</c>), which the SDKs' paged iterables follow. The API adds <c>@odata.nextLink</c>,
+    /// which depends on the HTTP request.
+    /// </summary>
+    /// <param name="response">The response to add the next page to.</param>
+    /// <param name="request">The request that produced the response.</param>
+    /// <param name="available">How many results the request can return in total.</param>
     public static void AddNextPage(SearchResponse response, SearchRequest request, long available)
     {
         var skip = request.Skip ?? 0;
@@ -45,7 +64,13 @@ internal static class SearchCompat
         response.NextPageParameters = next;
     }
 
-    // The sortable field a $orderby clause sorts on, or null for search.score().
+    /// <summary>
+    /// Validates one <c>$orderby</c> clause as Azure does.
+    /// </summary>
+    /// <param name="index">The index being searched.</param>
+    /// <param name="tokens">The clause, split on spaces: a field path or <c>search.score()</c>, then optionally <c>asc</c> or <c>desc</c>.</param>
+    /// <returns>The sortable field the clause sorts on, or <see langword="null"/> for <c>search.score()</c>.</returns>
+    /// <exception cref="ArgumentException">The clause is malformed or the field isn't sortable.</exception>
     public static SearchField? ValidateOrderBy(SearchIndex index, string[] tokens)
     {
         if (tokens.Length is 0 or > 2 || (tokens.Length == 2 && tokens[1] is not ("asc" or "desc")))
@@ -80,7 +105,17 @@ internal static class SearchCompat
         return field;
     }
 
-    // Value facets from each matching document's source: exact, case-sensitive values (after the field's normalizer), as Azure counts them.
+    /// <summary>
+    /// Counts a value facet from each matching document's source: exact, case-sensitive values (after the field's
+    /// normalizer), each counted once per document, as Azure counts them.
+    /// </summary>
+    /// <param name="searcher">The index searcher.</param>
+    /// <param name="schema">The index definition.</param>
+    /// <param name="field">The facetable field.</param>
+    /// <param name="path">The field's path, e.g. <c>Rooms/Type</c>.</param>
+    /// <param name="maxCount">The most buckets to return; 0 returns them all.</param>
+    /// <param name="docs">The matching documents.</param>
+    /// <returns>The buckets, by descending count and then by value.</returns>
     public static List<FacetResult> ValueFacet(IndexSearcher searcher, SearchIndex schema, SearchField field, string path, int maxCount, IEnumerable<int> docs)
     {
         var counts = new Dictionary<string, (object Value, long Count)>(StringComparer.Ordinal);
@@ -116,6 +151,9 @@ internal static class SearchCompat
             .ToList();
     }
 
+    /// <summary>
+    /// The non-null values at a path in a document's source, through any arrays on the way.
+    /// </summary>
     private static IEnumerable<JsonElement> Values(JsonElement element, string[] path, int depth)
     {
         if (element.ValueKind == JsonValueKind.Array)
@@ -141,6 +179,9 @@ internal static class SearchCompat
         }
     }
 
+    /// <summary>
+    /// A facet bucket's key and returned value for one source value, typed by the field, or null if it can't be faceted.
+    /// </summary>
     private static (string Key, object Value)? FacetValue(SearchIndex schema, SearchField field, JsonElement value)
     {
         var type = field.Type.StartsWith("Collection(", StringComparison.Ordinal) ? field.Type["Collection(".Length..^1] : field.Type;
@@ -159,7 +200,13 @@ internal static class SearchCompat
         };
     }
 
-    // Azure rejects vector queries without a vector or fields, on fields that aren't vector fields, vectors of the wrong length and unknown filter modes.
+    /// <summary>
+    /// Rejects what Azure rejects: vector queries without a vector or fields, of a kind other than <c>vector</c>, on
+    /// fields that aren't vector fields or with a vector of the wrong length, and unknown filter modes.
+    /// </summary>
+    /// <param name="index">The index being searched.</param>
+    /// <param name="request">The search request, which has vector queries.</param>
+    /// <exception cref="ArgumentException">A vector query or the filter mode is invalid.</exception>
     public static void ValidateVectorQueries(SearchIndex index, SearchRequest request)
     {
         if (request.VectorFilterMode is not (null or "preFilter" or "postFilter" or "strictPostFilter"))
@@ -197,15 +244,32 @@ internal static class SearchCompat
         }
     }
 
-    // Whether an unfiltered vector query must be searched exactly: only cosine fields can use the approximate search, and only when it is cosine too.
+    /// <summary>
+    /// Whether an unfiltered vector query must be searched exactly: only cosine fields can use the approximate
+    /// search, and only when it is cosine too.
+    /// </summary>
+    /// <param name="index">The index being searched.</param>
+    /// <param name="query">The vector query.</param>
+    /// <param name="approximateMetric">The metric the approximate search ranks by.</param>
+    /// <returns><see langword="true"/> if the query needs <see cref="ExactVectorSearch"/>.</returns>
     public static bool NeedsExactSearch(SearchIndex index, VectorQuery query, string? approximateMetric) =>
         query.Exhaustive == true
         || !string.Equals(approximateMetric ?? "cosine", "cosine", StringComparison.OrdinalIgnoreCase)
         || VectorFields(query).Select(field => AlgorithmFor(index, field)).Any(a => a?.Kind == "exhaustiveKnn" || MetricOf(a) != "cosine");
 
-    // Exact k nearest neighbours, over all documents or, with a filter, by its mode. preFilter (Azure's default) takes
-    // them among the documents that pass the filter; postFilter and strictPostFilter (the same on one shard) take them
-    // among all documents, then drop those that don't pass.
+    /// <summary>
+    /// Finds the exact k nearest neighbours of each vector query, ranked by its field's metric. Without a filter,
+    /// or with <c>preFilter</c> (Azure's default), they're taken among the documents that pass the filter;
+    /// <c>postFilter</c> and <c>strictPostFilter</c> (the same on one shard) take them among all documents, then drop
+    /// those that don't pass.
+    /// </summary>
+    /// <param name="searcher">The index searcher.</param>
+    /// <param name="index">The index being searched.</param>
+    /// <param name="keyField">The name of the index's key field.</param>
+    /// <param name="filterQuery">The filter, if any.</param>
+    /// <param name="filterMode">The request's <c>vectorFilterMode</c>.</param>
+    /// <param name="queries">The vector queries to search exactly.</param>
+    /// <returns>Each neighbour's key and its best score across the queries.</returns>
     public static Dictionary<string, double> ExactVectorSearch(
         IndexSearcher searcher,
         SearchIndex index,
@@ -262,9 +326,17 @@ internal static class SearchCompat
         return result;
     }
 
+    /// <summary>
+    /// The field names in a vector query's comma-separated <c>fields</c>.
+    /// </summary>
+    /// <param name="query">The vector query.</param>
+    /// <returns>The trimmed field names.</returns>
     public static IEnumerable<string> VectorFields(VectorQuery query) =>
         (query.Fields ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
+    /// <summary>
+    /// The vector search algorithm a field uses through its profile, if any.
+    /// </summary>
     private static VectorSearchAlgorithm? AlgorithmFor(SearchIndex index, string fieldName)
     {
         var profile = index.Fields.FirstOrDefault(f => f.Name == fieldName)?.VectorSearchProfile;
@@ -272,10 +344,16 @@ internal static class SearchCompat
         return index.VectorSearch?.Algorithms?.FirstOrDefault(a => a.Name == algorithm);
     }
 
+    /// <summary>
+    /// An algorithm's metric, cosine by default.
+    /// </summary>
     private static string MetricOf(VectorSearchAlgorithm? definition) =>
         (definition?.Kind == "exhaustiveKnn" ? definition.ExhaustiveKnnParameters?.Metric : definition?.HnswParameters?.Metric) ?? "cosine";
 
-    // Ranked by distance (lower is nearer); scored 1 / (1 + distance) like the simulator's HNSW search.
+    /// <summary>
+    /// The distance between two vectors under a metric (lower is nearer) and its score, 1 / (1 + distance) like the
+    /// simulator's HNSW search.
+    /// </summary>
     private static (double Distance, double Score) Measure(string metric, float[] a, float[] b)
     {
         double dot = 0, aa = 0, bb = 0, l2 = 0;

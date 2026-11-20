@@ -765,7 +765,9 @@ public static class LuceneDocumentMapper
         return value is string text ? ParseDouble(text) : Convert.ToDouble(value);
     }
 
-    // Azure's JSON spells the special values NaN, INF and -INF.
+    /// <summary>
+    /// Parses a double, including the special values Azure's JSON spells NaN, INF and -INF.
+    /// </summary>
     private static double ParseDouble(string? text) => text switch
     {
         "NaN" => double.NaN,

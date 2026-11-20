@@ -3,11 +3,20 @@ using AzureAISearchSimulator.Core.Models;
 
 namespace AzureAISearchSimulator.Api.Services;
 
-// Azure's rules for updating an existing index, with Azure's messages: fields can be added but not deleted or changed
-// (except retrievable, searchAnalyzer and synonymMaps), suggesters only gain new fields, analysis components can't
-// change and are only added with downtime, and vector algorithms in use can't change.
+/// <summary>
+/// Azure's rules for updating an existing index, with Azure's messages: fields can be added but not deleted or changed
+/// (except <c>retrievable</c>, <c>searchAnalyzer</c> and <c>synonymMaps</c>), suggesters only gain new fields, analysis
+/// components can't change and are only added with downtime, and vector algorithms in use can't change.
+/// </summary>
 internal static class IndexUpdateRules
 {
+    /// <summary>
+    /// Refuses an index update that Azure would refuse.
+    /// </summary>
+    /// <param name="existing">The current index definition.</param>
+    /// <param name="updated">The requested index definition.</param>
+    /// <param name="allowIndexDowntime">The request's <c>allowIndexDowntime</c> parameter.</param>
+    /// <exception cref="InvalidOperationException">Azure would refuse the update.</exception>
     public static void Validate(SearchIndex existing, SearchIndex updated, bool allowIndexDowntime)
     {
         var before = Flatten(existing.Fields, "");
@@ -32,6 +41,9 @@ internal static class IndexUpdateRules
         ValidateVectorSearch(existing, updated, before, after);
     }
 
+    /// <summary>
+    /// Suggesters can't be removed or lose fields, and can only gain fields added in the same update.
+    /// </summary>
     private static void ValidateSuggesters(SearchIndex existing, SearchIndex updated, Dictionary<string, SearchField> before)
     {
         var current = (existing.Suggesters ?? []).ToDictionary(s => s.Name, StringComparer.Ordinal);
@@ -68,6 +80,9 @@ internal static class IndexUpdateRules
         }
     }
 
+    /// <summary>
+    /// Analysis components can't change, and new ones need <c>allowIndexDowntime</c>.
+    /// </summary>
     private static void ValidateAnalysis(SearchIndex existing, SearchIndex updated, bool allowIndexDowntime)
     {
         var added = false;
@@ -82,7 +97,9 @@ internal static class IndexUpdateRules
         }
     }
 
-    // Existing components can't be changed or removed; returns whether any were added.
+    /// <summary>
+    /// Refuses changing or removing existing components of one kind, and returns whether any were added.
+    /// </summary>
     private static bool ValidateComponents<T>(string kind, List<T>? existing, List<T>? updated, Func<T, string> name)
     {
         var next = (updated ?? []).ToDictionary(name, StringComparer.Ordinal);
@@ -97,6 +114,9 @@ internal static class IndexUpdateRules
         return next.Count > (existing?.Count ?? 0);
     }
 
+    /// <summary>
+    /// Algorithms used by existing vector fields can't change, and those fields can't move to another algorithm.
+    /// </summary>
     private static void ValidateVectorSearch(SearchIndex existing, SearchIndex updated, Dictionary<string, SearchField> before, Dictionary<string, SearchField> after)
     {
         var used = before.Values
@@ -121,9 +141,15 @@ internal static class IndexUpdateRules
         }
     }
 
+    /// <summary>
+    /// The algorithm a vector search profile uses, if any.
+    /// </summary>
     private static string? AlgorithmOf(SearchIndex index, string? profile) =>
         profile is null ? null : index.VectorSearch?.Profiles?.FirstOrDefault(p => p.Name == profile)?.Algorithm;
 
+    /// <summary>
+    /// Every field and sub-field by its path, e.g. <c>Rooms/Type</c>.
+    /// </summary>
     private static Dictionary<string, SearchField> Flatten(IEnumerable<SearchField>? fields, string prefix)
     {
         var result = new Dictionary<string, SearchField>(StringComparer.Ordinal);
@@ -139,6 +165,9 @@ internal static class IndexUpdateRules
         return result;
     }
 
+    /// <summary>
+    /// Whether two definitions of a field agree on everything Azure won't let an update change.
+    /// </summary>
     private static bool SameImmutableAttributes(SearchField a, SearchField b) =>
         a.Type == b.Type
         && a.Key == b.Key
@@ -153,8 +182,13 @@ internal static class IndexUpdateRules
         && a.Dimensions == b.Dimensions
         && a.VectorEncoding == b.VectorEncoding;
 
-    // Structural: an unchanged component can list its parameters in another order.
+    /// <summary>
+    /// Compares two definitions by content, so an unchanged component can list its parameters in another order.
+    /// </summary>
     private static bool SameJson<T>(T a, T b) => JsonElement.DeepEquals(JsonSerializer.SerializeToElement(a), JsonSerializer.SerializeToElement(b));
 
+    /// <summary>
+    /// The exception the API turns into Azure's 400 for a refused update.
+    /// </summary>
     private static InvalidOperationException Refused(string message) => new(message);
 }

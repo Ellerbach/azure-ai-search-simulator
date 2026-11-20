@@ -4,41 +4,112 @@ using AzureAISearchSimulator.Core.Models;
 
 namespace AzureAISearchSimulator.Search.Filtering;
 
+/// <summary>
+/// The type of a literal in a filter.
+/// </summary>
 internal enum LiteralKind { Null, Boolean, Number, String, DateTimeOffset }
 
+/// <summary>
+/// A literal in a filter: <see langword="null"/>, a boolean, a <see cref="NumberLiteral"/>, a string or a date.
+/// </summary>
+/// <param name="Kind">The literal's type.</param>
+/// <param name="Value">The literal's value.</param>
 internal sealed record Literal(LiteralKind Kind, object? Value);
 
-// A number literal: exact for integer fields (null if decimal can't hold it), and parsed directly as a double for Edm.Double.
+/// <summary>
+/// A number literal, exact for integer fields and parsed directly as a double for <c>Edm.Double</c>.
+/// </summary>
+/// <param name="Exact">The exact value, or <see langword="null"/> if <see cref="decimal"/> can't hold it.</param>
+/// <param name="Approximate">The value as a double.</param>
 internal sealed record NumberLiteral(decimal? Exact, double Approximate);
 
-// A field path from the document root (Variable null) or from a lambda's range variable.
+/// <summary>
+/// A field path, from the document root or from a lambda's range variable.
+/// </summary>
+/// <param name="Variable">The range variable the path starts from, or <see langword="null"/> for the document root.</param>
+/// <param name="Segments">The field names after the root or the range variable.</param>
+/// <param name="Path">The path as written, for error messages.</param>
+/// <param name="Type">The type of the field the path ends at.</param>
+/// <param name="Field">The field the path ends at, or the collection field a range variable iterates.</param>
+/// <param name="SubFields">The sub-fields of a complex field the path ends at.</param>
 internal sealed record FieldRef(string? Variable, string[] Segments, string Path, string Type, SearchField? Field, List<SearchField>? SubFields)
 {
+    /// <summary>
+    /// Whether the path ends at a collection.
+    /// </summary>
     public bool IsCollection => Type.StartsWith("Collection(", StringComparison.Ordinal);
 
+    /// <summary>
+    /// The type of the collection's elements, or of the field itself if it isn't a collection.
+    /// </summary>
     public string ElementType => IsCollection ? Type["Collection(".Length..^1] : Type;
 }
 
+/// <summary>
+/// A node of a parsed filter.
+/// </summary>
 internal abstract record FilterNode;
 
+/// <summary>
+/// Both operands hold.
+/// </summary>
 internal sealed record AndNode(FilterNode Left, FilterNode Right) : FilterNode;
 
+/// <summary>
+/// Either operand holds.
+/// </summary>
 internal sealed record OrNode(FilterNode Left, FilterNode Right) : FilterNode;
 
+/// <summary>
+/// The operand doesn't hold.
+/// </summary>
 internal sealed record NotNode(FilterNode Operand) : FilterNode;
 
+/// <summary>
+/// <c>true</c> or <c>false</c>.
+/// </summary>
 internal sealed record ConstantNode(bool Value) : FilterNode;
 
+/// <summary>
+/// A boolean field used on its own, e.g. <c>IsActive</c>.
+/// </summary>
 internal sealed record BooleanFieldNode(FieldRef Field) : FilterNode;
 
+/// <summary>
+/// A comparison of a field with a literal; the literal is always on the right.
+/// </summary>
+/// <param name="Field">The field.</param>
+/// <param name="Operator">The operator: <c>eq</c>, <c>ne</c>, <c>lt</c>, <c>le</c>, <c>gt</c> or <c>ge</c>.</param>
+/// <param name="Value">The literal, normalized like the field for strings.</param>
 internal sealed record ComparisonNode(FieldRef Field, string Operator, Literal Value) : FilterNode;
 
+/// <summary>
+/// <c>any</c> or <c>all</c> over a collection.
+/// </summary>
+/// <param name="Collection">The collection.</param>
+/// <param name="All">Whether it's <c>all</c> rather than <c>any</c>.</param>
+/// <param name="Variable">The range variable, or <see langword="null"/> for <c>any()</c> without a lambda.</param>
+/// <param name="Body">The lambda's body, or <see langword="null"/> for <c>any()</c> without a lambda.</param>
 internal sealed record LambdaNode(FieldRef Collection, bool All, string? Variable, FilterNode? Body) : FilterNode;
 
+/// <summary>
+/// <c>search.in</c>: the field equals one of the values (normalized like the field).
+/// </summary>
 internal sealed record SearchInNode(FieldRef Field, HashSet<string> Values) : FilterNode;
 
+/// <summary>
+/// <c>search.ismatch</c>, evaluated with the index's own text query.
+/// </summary>
+/// <param name="Index">The call's position among the filter's <c>search.ismatch</c> calls.</param>
+/// <param name="Search">The search text.</param>
+/// <param name="SearchFields">The fields to search, or <see langword="null"/> for all searchable fields.</param>
+/// <param name="QueryType"><c>simple</c> or <c>full</c>.</param>
+/// <param name="SearchMode"><c>any</c> or <c>all</c>.</param>
 internal sealed record IsMatchNode(int Index, string Search, string? SearchFields, string QueryType, string SearchMode) : FilterNode;
 
+/// <summary>
+/// A parsed filter and its <c>search.ismatch</c> calls, which are run as separate text queries.
+/// </summary>
 internal sealed record ParsedFilter(FilterNode Root, IReadOnlyList<IsMatchNode> IsMatches);
 
 /// <summary>
@@ -50,8 +121,14 @@ internal sealed class ODataFilterParser
 {
     private enum TokenKind { Identifier, String, Number, DateTimeOffset, OpenParen, CloseParen, Comma, Colon, Slash, End }
 
+    /// <summary>
+    /// A token and its position in the filter, for error messages.
+    /// </summary>
     private readonly record struct Token(TokenKind Kind, string Text, int Position);
 
+    /// <summary>
+    /// One side of a comparison, before it's known which side is the field.
+    /// </summary>
     private abstract record Operand;
 
     private sealed record FieldOperand(FieldRef Field) : Operand;
@@ -81,7 +158,9 @@ internal sealed class ODataFilterParser
     private int _clauses;
     private int _depth;
 
-    // Azure rejects filters with too many clauses ("hundreds" risk it); both limits keep the recursion safe.
+    /// <summary>
+    /// Azure rejects filters with too many clauses ("hundreds" risk it); both limits keep the recursion safe.
+    /// </summary>
     private const int MaxClauses = 1000;
     private const int MaxDepth = 100;
 
@@ -92,6 +171,13 @@ internal sealed class ODataFilterParser
         _tokens = Tokenize(filter);
     }
 
+    /// <summary>
+    /// Parses a <c>$filter</c> against an index definition.
+    /// </summary>
+    /// <param name="schema">The index definition.</param>
+    /// <param name="filter">The <c>$filter</c> expression.</param>
+    /// <returns>The parsed filter.</returns>
+    /// <exception cref="ArgumentException">The filter is invalid or can't be evaluated exactly.</exception>
     public static ParsedFilter Parse(SearchIndex schema, string filter)
     {
         var parser = new ODataFilterParser(schema, filter);
@@ -104,18 +190,33 @@ internal sealed class ODataFilterParser
         return new ParsedFilter(root, parser._isMatches);
     }
 
+    /// <summary>
+    /// The next token, without consuming it.
+    /// </summary>
     private Token Peek => _tokens[_position];
 
+    /// <summary>
+    /// Consumes the next token.
+    /// </summary>
     private Token Next() => _tokens[_position++];
 
+    /// <summary>
+    /// Whether the next token is the given keyword.
+    /// </summary>
     private bool PeekKeyword(string keyword) => Peek.Kind == TokenKind.Identifier && Peek.Text == keyword;
 
+    /// <summary>
+    /// Consumes the next token, which must be of the given kind.
+    /// </summary>
     private Token Expect(TokenKind kind, string description)
     {
         var token = Next();
         return token.Kind == kind ? token : throw Error($"expected {description} but found '{token.Text}'", token);
     }
 
+    /// <summary>
+    /// <c>or</c>-separated terms (the lowest precedence).
+    /// </summary>
     private FilterNode ParseOr()
     {
         var left = ParseAnd();
@@ -128,6 +229,9 @@ internal sealed class ODataFilterParser
         return left;
     }
 
+    /// <summary>
+    /// <c>and</c>-separated terms.
+    /// </summary>
     private FilterNode ParseAnd()
     {
         var left = ParseBooleanTerm();
@@ -140,6 +244,9 @@ internal sealed class ODataFilterParser
         return left;
     }
 
+    /// <summary>
+    /// A <c>not</c>, a comparison or a boolean operand; counts towards the clause limit.
+    /// </summary>
     private FilterNode ParseBooleanTerm()
     {
         if (++_clauses > MaxClauses)
@@ -163,7 +270,9 @@ internal sealed class ODataFilterParser
         return ToBoolean(left);
     }
 
-    // As in Azure, "not" binds tighter than comparisons, so "not Rating gt 5" is an error.
+    /// <summary>
+    /// The operand of <c>not</c>. As in Azure, <c>not</c> binds tighter than comparisons, so <c>not Rating gt 5</c> is an error.
+    /// </summary>
     private FilterNode ParseNotOperand()
     {
         if (PeekKeyword("not"))
@@ -178,8 +287,14 @@ internal sealed class ODataFilterParser
             : node;
     }
 
+    /// <summary>
+    /// Whether the next token is a comparison operator.
+    /// </summary>
     private bool PeekComparisonOperator() => Peek.Kind == TokenKind.Identifier && ComparisonOperators.Contains(Peek.Text);
 
+    /// <summary>
+    /// Parses a nested expression, refusing nesting beyond <see cref="MaxDepth"/>.
+    /// </summary>
     private T Nested<T>(Func<T> parse)
     {
         if (++_depth > MaxDepth)
@@ -197,6 +312,9 @@ internal sealed class ODataFilterParser
         }
     }
 
+    /// <summary>
+    /// A parenthesized expression, a literal, a function call or a field path.
+    /// </summary>
     private Operand ParseOperand()
     {
         var token = Peek;
@@ -249,6 +367,9 @@ internal sealed class ODataFilterParser
         }
     }
 
+    /// <summary>
+    /// A field path, which may end in a lambda (<c>Rooms/any(r: ...)</c>).
+    /// </summary>
     private Operand ParsePath()
     {
         var first = Next();
@@ -310,6 +431,9 @@ internal sealed class ODataFilterParser
         return new FieldOperand(current);
     }
 
+    /// <summary>
+    /// <c>any</c> or <c>all</c> over a collection, with its range variable in scope for the body.
+    /// </summary>
     private LambdaNode ParseLambda(FieldRef collection, Token kind)
     {
         if (!collection.IsCollection)
@@ -360,7 +484,9 @@ internal sealed class ODataFilterParser
         return new LambdaNode(collection, all, name.Text, body);
     }
 
-    // Azure's rules for lambdas over primitive collections; anything else is a 400 there.
+    /// <summary>
+    /// Applies Azure's rules for lambdas over primitive collections; anything else is a 400 there.
+    /// </summary>
     private void ValidatePrimitiveLambda(FieldRef collection, bool all, string variable, FilterNode body, Token at)
     {
         bool IsRangeVariable(FieldRef field) => field.Variable == variable && field.Segments.Length == 0;
@@ -416,6 +542,9 @@ internal sealed class ODataFilterParser
         }
     }
 
+    /// <summary>
+    /// The operands of a chain of <c>or</c>s (or of <c>and</c>s).
+    /// </summary>
     private static IEnumerable<FilterNode> Terms(FilterNode node, bool or) => node switch
     {
         OrNode either when or => Terms(either.Left, or).Concat(Terms(either.Right, or)),
@@ -423,6 +552,9 @@ internal sealed class ODataFilterParser
         _ => [node],
     };
 
+    /// <summary>
+    /// <c>search.in(field, 'values'[, 'delimiters'])</c>.
+    /// </summary>
     private SearchInNode ParseSearchIn()
     {
         var open = Expect(TokenKind.OpenParen, "'('");
@@ -457,6 +589,9 @@ internal sealed class ODataFilterParser
         return new SearchInNode(field, set);
     }
 
+    /// <summary>
+    /// <c>search.ismatch(search[, fields[, queryType[, searchMode]]])</c>, which can't be used inside a lambda.
+    /// </summary>
     private IsMatchNode ParseIsMatch()
     {
         var open = Expect(TokenKind.OpenParen, "'('");
@@ -486,6 +621,9 @@ internal sealed class ODataFilterParser
         return node;
     }
 
+    /// <summary>
+    /// A comparison of a filterable field with a literal of its type, or of <c>search.ismatch</c> with a boolean.
+    /// </summary>
     private FilterNode BuildComparison(Operand left, Token op, Operand right)
     {
         // As in Azure, comparing search.ismatch with true or false is allowed (and optional).
@@ -542,6 +680,9 @@ internal sealed class ODataFilterParser
             : new ComparisonNode(field, @operator, literal);
     }
 
+    /// <summary>
+    /// An operand used as a condition on its own: a nested expression, <c>true</c>/<c>false</c> or a boolean field.
+    /// </summary>
     private FilterNode ToBoolean(Operand operand) => operand switch
     {
         NodeOperand n => n.Node,
@@ -551,20 +692,32 @@ internal sealed class ODataFilterParser
         _ => throw Error("expected a boolean expression", Peek),
     };
 
+    /// <summary>
+    /// Refuses a field marked <c>filterable: false</c>.
+    /// </summary>
     private FieldRef RequireFilterable(FieldRef field, Token at) =>
         field.Field?.Filterable == false ? throw Error($"'{field.Path}' isn't filterable", at) : field;
 
+    /// <summary>
+    /// Applies the field's normalizer to a literal, as Azure does.
+    /// </summary>
     private string Normalize(FieldRef field, string value) =>
         string.IsNullOrEmpty(field.Field?.Normalizer)
             ? value
             : NormalizerFactory.Normalize(value, field.Field.Normalizer, _schema.Normalizers, _schema.CharFilters);
 
-    // .NET parses at most 7 fraction digits; Azure accepts more (e.g. Java's Instant.toString() nanoseconds).
+    /// <summary>
+    /// Parses a date literal. .NET parses at most 7 fraction digits; Azure accepts more (e.g. Java's
+    /// <c>Instant.toString()</c> nanoseconds).
+    /// </summary>
     private DateTimeOffset ParseDate(Token token) =>
         DateTimeOffset.TryParse(Regex.Replace(token.Text, @"(\.\d{7})\d+", "$1"), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var date)
             ? date
             : throw Error($"'{token.Text}' isn't a valid date", token);
 
+    /// <summary>
+    /// The operator with its sides swapped, for a literal written on the left.
+    /// </summary>
     private static string Flip(string op) => op switch
     {
         "gt" => "lt",
@@ -574,6 +727,9 @@ internal sealed class ODataFilterParser
         _ => op,
     };
 
+    /// <summary>
+    /// A number literal, exactly where possible and as a double.
+    /// </summary>
     private Literal ParseNumber(Token token)
     {
         if (!double.TryParse(token.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out var approximate) || !double.IsFinite(approximate))
@@ -588,9 +744,15 @@ internal sealed class ODataFilterParser
         return new Literal(LiteralKind.Number, new NumberLiteral(exact, approximate));
     }
 
+    /// <summary>
+    /// The exception the API returns as 400, with the error's position in the filter.
+    /// </summary>
     private ArgumentException Error(string message, Token at) =>
         new($"Invalid expression: {message} (at position {at.Position} in '{_filter}').\r\nParameter name: $filter");
 
+    /// <summary>
+    /// Splits a filter into tokens; dates and numbers are recognised before identifiers.
+    /// </summary>
     private static List<Token> Tokenize(string filter)
     {
         var tokens = new List<Token>();

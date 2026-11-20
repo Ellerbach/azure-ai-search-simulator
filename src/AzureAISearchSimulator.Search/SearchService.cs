@@ -586,6 +586,14 @@ public class SearchService : ISearchService
         return modes;
     }
 
+    /// <summary>
+    /// Builds the Lucene query for the request's search text over its search fields.
+    /// </summary>
+    /// <param name="indexName">The index name.</param>
+    /// <param name="schema">The index definition.</param>
+    /// <param name="request">The request, for its search text, search fields, query type and search mode.</param>
+    /// <param name="textWeights">The scoring profile's field weights, if any.</param>
+    /// <param name="strict">Whether text that can't be parsed, or an index without searchable fields, is a 400 (as for <c>search.ismatch</c>) instead of matching every document.</param>
     private Query BuildTextQuery(string indexName, SearchIndex schema, SearchRequest request, Dictionary<string, double>? textWeights = null, bool strict = false)
     {
         var searchableFields = ResolveSearchFields(schema, request.SearchFields);
@@ -861,7 +869,9 @@ public class SearchService : ISearchService
         return hasExpansions ? expandedQuery : null;
     }
 
-    // A synonym analyzed like the field: one term, or a phrase for a multi-word synonym (keeping gaps left by stopwords).
+    /// <summary>
+    /// A synonym analyzed like the field: one term, or a phrase for a multi-word synonym (keeping gaps left by stopwords).
+    /// </summary>
     private static Query AnalyzedQuery(string field, string text, Lucene.Net.Analysis.Analyzer analyzer)
     {
         var terms = AnalyzeTerms(field, text, analyzer);
@@ -879,6 +889,9 @@ public class SearchService : ISearchService
         return phrase;
     }
 
+    /// <summary>
+    /// The tokens a field's analyzer produces for a text, with their positions.
+    /// </summary>
     private static List<(string Text, int Position)> AnalyzeTerms(string field, string text, Lucene.Net.Analysis.Analyzer analyzer)
     {
         var terms = new List<(string Text, int Position)>();
@@ -897,7 +910,10 @@ public class SearchService : ISearchService
         return terms;
     }
 
-    // One space per position step, so a gap left by a dropped stopword ("city of lights") isn't "city lights".
+    /// <summary>
+    /// Analyzed tokens as text, with one space per position step, so a gap left by a dropped stopword
+    /// ("city of lights") isn't "city lights".
+    /// </summary>
     private static string Signature(IReadOnlyList<(string Text, int Position)> terms)
     {
         var signature = new StringBuilder();
@@ -939,7 +955,10 @@ public class SearchService : ISearchService
         return escaped;
     }
 
-    // Fails closed: anything the filter parser can't evaluate exactly is a 400, never an ignored clause.
+    /// <summary>
+    /// Builds the query for a <c>$filter</c>. It fails closed: anything the filter parser can't evaluate exactly is a
+    /// 400, never an ignored clause.
+    /// </summary>
     private Query? BuildFilterQuery(SearchIndex schema, string filter) =>
         Filtering.ODataFilter.ToQuery(schema, filter, isMatch => BuildTextQuery(schema.Name, schema, new SearchRequest
         {
@@ -1605,6 +1624,9 @@ public class SearchService : ISearchService
         return sortFields.Any() ? new Sort(sortFields.ToArray()) : null;
     }
 
+    /// <summary>
+    /// The Lucene sort type for a sortable field's type.
+    /// </summary>
     private static SortFieldType GetSortFieldType(SearchField field)
     {
         // Map Azure Search field types to Lucene sort field types

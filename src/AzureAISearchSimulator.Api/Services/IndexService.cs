@@ -347,12 +347,18 @@ public partial class IndexService : IIndexService
             : IndexValidationResult.Failure(errors);
     }
 
-    // Azure disallows custom analyzers and the built-in ones other than standard Lucene (keyword, pattern, simple, ...).
+    /// <summary>
+    /// The analyzers a suggester source field can use: Azure disallows custom analyzers and the built-in ones other
+    /// than standard Lucene (keyword, pattern, simple, ...), leaving the language analyzers.
+    /// </summary>
     private static readonly HashSet<string> SuggesterAnalyzers = AnalyzerFactory.GetSupportedAnalyzers()
         .Where(name => name is not ("standardasciifolding.lucene" or "simple.lucene" or "whitespace.lucene" or "keyword.lucene" or "stop.lucene"))
         .Where(name => name.EndsWith(".lucene", StringComparison.Ordinal) || name.EndsWith(".microsoft", StringComparison.Ordinal))
         .ToHashSet(StringComparer.Ordinal);
 
+    /// <summary>
+    /// Whether a suggester source field can use the analyzer; no analyzer means standard Lucene.
+    /// </summary>
     private static bool IsSuggesterAnalyzer(string? name) => name is null or "standard" || SuggesterAnalyzers.Contains(name);
 
     /// <summary>

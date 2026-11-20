@@ -27,9 +27,13 @@ internal sealed class ScoringProfileBoostQuery : CustomScoreQuery
     protected override CustomScoreProvider GetCustomScoreProvider(AtomicReaderContext context) =>
         new BoostProvider(context, _boost);
 
+    /// <summary>
+    /// Multiplies each match's score by the boost of its stored document.
+    /// </summary>
     private sealed class BoostProvider(AtomicReaderContext context, Func<Lucene.Net.Documents.Document, double> boost)
         : CustomScoreProvider(context)
     {
+        /// <inheritdoc />
         public override float CustomScore(int doc, float subQueryScore, float valSrcScore) =>
             subQueryScore * (float)boost(m_context.AtomicReader.Document(doc));
     }

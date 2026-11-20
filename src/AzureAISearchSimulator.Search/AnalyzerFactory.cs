@@ -401,6 +401,12 @@ public static class AnalyzerFactory
         return new PerFieldAnalyzerWrapper(defaultAnalyzer, fieldAnalyzers);
     }
 
+    /// <summary>
+    /// Every leaf field and sub-field with its path, e.g. <c>ShortName/en</c>.
+    /// </summary>
+    /// <param name="fields">The fields to flatten.</param>
+    /// <param name="prefix">The path of their parent, ending in <c>/</c>, or empty at the top level.</param>
+    /// <returns>The leaf fields and their paths.</returns>
     internal static IEnumerable<(string Path, SearchField Field)> FlattenFields(IEnumerable<SearchField>? fields, string prefix) =>
         (fields ?? []).SelectMany(f => f.Fields is { Count: > 0 }
             ? FlattenFields(f.Fields, prefix + f.Name + "/")

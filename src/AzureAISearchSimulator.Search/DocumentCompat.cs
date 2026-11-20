@@ -6,19 +6,31 @@ using AzureAISearchSimulator.Core.Models;
 
 namespace AzureAISearchSimulator.Search;
 
-// Azure's document semantics that upstream doesn't model: batch validation, recursive merges and the shape of returned documents.
+/// <summary>
+/// Azure AI Search document semantics the simulator adds: batch validation, recursive merges and the shape of
+/// returned documents.
+/// </summary>
 internal static class DocumentCompat
 {
     private static readonly Regex ValidKey = new(@"\A[A-Za-z0-9_=-]+\z", RegexOptions.CultureInvariant);
 
-    // OData's DateTimeOffset: a date, a time and a Z or an offset.
+    /// <summary>
+    /// OData's DateTimeOffset: a date, a time and a Z or an offset.
+    /// </summary>
     private static readonly Regex OffsetDateTime = new(
         @"\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})\z", RegexOptions.CultureInvariant);
 
     private static readonly Regex JsonNumber = new(
         @"\A-?(?<int>\d+)(\.(?<frac>\d+))?([eE](?<exp>[+-]?\d+))?\z", RegexOptions.CultureInvariant);
 
-    // Azure rejects the whole batch (HTTP 400) when any action is invalid, before applying any of them.
+    /// <summary>
+    /// Validates a batch as Azure does, before any of its actions is applied: the action, the key, and every
+    /// property's name and type.
+    /// </summary>
+    /// <param name="schema">The index definition.</param>
+    /// <param name="keyField">The name of the index's key field.</param>
+    /// <param name="actions">The batch's actions.</param>
+    /// <exception cref="ArgumentException">An action is invalid; Azure rejects the whole batch with HTTP 400.</exception>
     public static void ValidateBatch(SearchIndex schema, string keyField, IReadOnlyList<IndexAction> actions)
     {
         for (var i = 0; i < actions.Count; i++)
@@ -54,6 +66,9 @@ internal static class DocumentCompat
         }
     }
 
+    /// <summary>
+    /// Checks that every property is a field of the (complex) type and has a value of the field's type.
+    /// </summary>
     private static void ValidateObject(List<SearchField>? fields, IEnumerable<(string Name, object? Value)> properties, string typeName)
     {
         foreach (var (name, value) in properties)
@@ -64,6 +79,9 @@ internal static class DocumentCompat
         }
     }
 
+    /// <summary>
+    /// Checks that a value has the field's type, recursing into collections and complex objects.
+    /// </summary>
     private static void ValidateValue(SearchField field, JsonElement value, string complexTypeName)
     {
         if (value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
@@ -117,6 +135,9 @@ internal static class DocumentCompat
         }
     }
 
+    /// <summary>
+    /// Whether a value is a GeoJSON point with a valid longitude and latitude.
+    /// </summary>
     private static bool IsGeoJsonPoint(JsonElement value) =>
         value.ValueKind == JsonValueKind.Object
         && value.TryGetProperty("type", out var type) && type.ValueKind == JsonValueKind.String && type.GetString() == "Point"
@@ -125,6 +146,9 @@ internal static class DocumentCompat
         && coordinates[0].ValueKind == JsonValueKind.Number && coordinates[0].GetDouble() is >= -180 and <= 180
         && coordinates[1].ValueKind == JsonValueKind.Number && coordinates[1].GetDouble() is >= -90 and <= 90;
 
+    /// <summary>
+    /// Whether a value is a whole number within a range, read exactly from its JSON text.
+    /// </summary>
     private static bool IsWhole(JsonElement value, long min, long max)
     {
         if (value.ValueKind != JsonValueKind.Number)
@@ -164,11 +188,20 @@ internal static class DocumentCompat
         return signed >= min && signed <= max;
     }
 
+    /// <summary>
+    /// Azure's error for a value of the wrong type.
+    /// </summary>
     private static ArgumentException Invalid(JsonElement value, string type) =>
         new($"The request is invalid. Details: Cannot convert the literal '{(value.ValueKind == JsonValueKind.String ? value.GetString() : value.GetRawText())}' to the expected type '{type}'.");
 
-    // Merge (and mergeOrUpload on an existing document) sets only the given values; complex objects merge
-    // recursively, collections are replaced.
+    /// <summary>
+    /// Merges a <c>merge</c> (or <c>mergeOrUpload</c> on an existing document) into the existing document: only the
+    /// given values are set, complex objects merge recursively and collections are replaced.
+    /// </summary>
+    /// <param name="schema">The index definition.</param>
+    /// <param name="existing">The stored document.</param>
+    /// <param name="update">The values to merge.</param>
+    /// <returns>The merged document.</returns>
     public static Dictionary<string, object?> Merge(SearchIndex schema, Dictionary<string, object?> existing, Dictionary<string, object?> update)
     {
         var merged = new Dictionary<string, object?>(existing);
@@ -181,6 +214,9 @@ internal static class DocumentCompat
         return merged;
     }
 
+    /// <summary>
+    /// Merges one value: complex objects recursively, anything else replaced.
+    /// </summary>
     private static object? MergeValue(SearchField field, object? existing, object? update)
     {
         var updated = ToElement(update);
@@ -200,8 +236,14 @@ internal static class DocumentCompat
         return JsonSerializer.SerializeToElement(result);
     }
 
-    // Azure returns every retrievable (or selected) field: missing values are null, missing collections are empty,
-    // and dates are UTC to the millisecond.
+    /// <summary>
+    /// Shapes a stored document as Azure returns it: every retrievable (or selected) field, with <see langword="null"/>
+    /// for missing values, empty collections for missing collections, and dates in UTC to the millisecond.
+    /// </summary>
+    /// <param name="schema">The index definition.</param>
+    /// <param name="document">The stored document.</param>
+    /// <param name="select">The <c>$select</c> paths (which can name sub-fields), or <see langword="null"/> for all fields.</param>
+    /// <returns>The document as Azure returns it.</returns>
     public static Dictionary<string, object?> Shape(SearchIndex schema, Dictionary<string, object?> document, IEnumerable<string>? select)
     {
         var selection = select is null ? null : BuildSelection(select);
@@ -219,6 +261,9 @@ internal static class DocumentCompat
         return shaped;
     }
 
+    /// <summary>
+    /// A tree of the selected paths (a null leaf selects the whole field), or null when <c>*</c> selects everything.
+    /// </summary>
     private static Dictionary<string, object?> BuildSelection(IEnumerable<string> paths)
     {
         var root = new Dictionary<string, object?>(StringComparer.Ordinal);
@@ -258,6 +303,9 @@ internal static class DocumentCompat
         return root;
     }
 
+    /// <summary>
+    /// Shapes one field's value, recursing into collections and complex objects.
+    /// </summary>
     private static object? ShapeValue(SearchField field, JsonElement value, object? selection)
     {
         var missing = value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined;
@@ -305,6 +353,11 @@ internal static class DocumentCompat
                 : value;
     }
 
+    /// <summary>
+    /// Formats a date as Azure returns it: UTC, to the millisecond, without trailing zeros.
+    /// </summary>
+    /// <param name="value">The date.</param>
+    /// <returns>The date, e.g. <c>2024-03-05T08:20:30.123Z</c>.</returns>
     internal static string FormatDate(DateTimeOffset value)
     {
         var utc = Filtering.ODataFilter.ToAzurePrecision(value).UtcDateTime;
@@ -312,6 +365,9 @@ internal static class DocumentCompat
         return utc.Millisecond == 0 ? text + "Z" : text + "." + utc.Millisecond.ToString("000", CultureInfo.InvariantCulture).TrimEnd('0') + "Z";
     }
 
+    /// <summary>
+    /// A field describing one element of a collection field.
+    /// </summary>
     private static SearchField ElementOf(SearchField collection) => new()
     {
         Name = collection.Name,
@@ -320,6 +376,9 @@ internal static class DocumentCompat
         Retrievable = collection.Retrievable,
     };
 
+    /// <summary>
+    /// A document value as JSON; values set from code (not parsed from JSON) are serialized first.
+    /// </summary>
     private static JsonElement ToElement(object? value) => value switch
     {
         null => default,
@@ -327,6 +386,9 @@ internal static class DocumentCompat
         _ => JsonSerializer.SerializeToElement(value),
     };
 
+    /// <summary>
+    /// A value as text, for keys, actions and error messages.
+    /// </summary>
     private static string? AsString(object? value) => value switch
     {
         null => null,

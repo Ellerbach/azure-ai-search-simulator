@@ -123,8 +123,10 @@ public class DocumentService : IDocumentService
         return response;
     }
 
-    // Which uploaded keys are already in the index, from one reader snapshot. Reopening a near-real-time reader per
-    // document is slow and disposes the shared reader under concurrent requests, so the batch avoids it.
+    /// <summary>
+    /// Which uploaded keys are already in the index, from one reader snapshot. Reopening a near-real-time reader per
+    /// document is slow and disposes the shared reader under concurrent requests, so the batch avoids it.
+    /// </summary>
     private HashSet<string> UploadKeysThatExist(string indexName, string keyField, IEnumerable<IndexAction> actions)
     {
         var keys = actions
@@ -492,9 +494,13 @@ public class DocumentService : IDocumentService
         return document is null ? null : DocumentCompat.Shape((await _indexService.GetIndexAsync(indexName))!, document, selectedFields);
     }
 
+    /// <inheritdoc />
     public Task<Dictionary<string, object?>?> GetStoredDocumentAsync(string indexName, string key) =>
         LoadDocumentAsync(indexName, key);
 
+    /// <summary>
+    /// Loads a stored document as it was indexed, without shaping it for a response.
+    /// </summary>
     private async Task<Dictionary<string, object?>?> LoadDocumentAsync(
         string indexName,
         string key,

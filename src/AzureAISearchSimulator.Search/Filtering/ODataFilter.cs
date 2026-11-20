@@ -17,10 +17,24 @@ internal static class ODataFilter
 {
     private const string SourceField = "_raw_json";
 
-    // Azure keeps DateTimeOffset values, and filter literals, to the millisecond in UTC.
+    /// <summary>
+    /// Truncates a date to the millisecond in UTC, the precision at which Azure keeps <c>Edm.DateTimeOffset</c> values
+    /// and filter literals.
+    /// </summary>
+    /// <param name="value">The date.</param>
+    /// <returns>The date in UTC, to the millisecond.</returns>
     internal static DateTimeOffset ToAzurePrecision(DateTimeOffset value) =>
         new(value.UtcTicks - value.UtcTicks % TimeSpan.TicksPerMillisecond, TimeSpan.Zero);
 
+    /// <summary>
+    /// Parses a <c>$filter</c> and returns a Lucene query that matches exactly the documents it selects, without
+    /// changing their scores.
+    /// </summary>
+    /// <param name="schema">The index definition.</param>
+    /// <param name="filter">The <c>$filter</c> expression.</param>
+    /// <param name="buildTextQuery">Builds the text query for a <c>search.ismatch</c> call.</param>
+    /// <returns>A constant-score query for the filter.</returns>
+    /// <exception cref="ArgumentException">The filter is invalid or can't be evaluated exactly.</exception>
     public static Query ToQuery(SearchIndex schema, string filter, Func<IsMatchNode, Query> buildTextQuery)
     {
         var parsed = ODataFilterParser.Parse(schema, filter);
@@ -28,8 +42,10 @@ internal static class ODataFilter
         return new ConstantScoreQuery(new SourceFilter(schema, filter, parsed.Root, isMatchQueries, BuildCandidateQuery(parsed.Root)));
     }
 
-    // Exact Lucene terms for top-level string equality, so only documents that can match are evaluated.
-    // A clause that would exceed Lucene's clause limit is left to the exact evaluation instead.
+    /// <summary>
+    /// Exact Lucene terms for top-level string equality, so only documents that can match are evaluated. A clause
+    /// that would exceed Lucene's clause limit is left to the exact evaluation instead.
+    /// </summary>
     private static Query? BuildCandidateQuery(FilterNode root)
     {
         var candidates = new BooleanQuery();
@@ -60,17 +76,27 @@ internal static class ODataFilter
         return candidates.Clauses.Count > 0 ? candidates : null;
     }
 
+    /// <summary>
+    /// Whether a field's raw string values are indexed as single terms, so equality can narrow through the index.
+    /// </summary>
     private static bool IndexedExactly(FieldRef field) =>
         field is { Variable: null, Segments.Length: 1, Type: SearchFieldDataType.String, Field: { } f }
         && string.IsNullOrEmpty(f.Normalizer) && (f.Key || f.Filterable == true);
 
+    /// <summary>
+    /// The clauses joined by top-level <c>and</c>s.
+    /// </summary>
     private static IEnumerable<FilterNode> Conjuncts(FilterNode node) =>
         node is AndNode both ? Conjuncts(both.Left).Concat(Conjuncts(both.Right)) : [node];
 
+    /// <summary>
+    /// A Lucene filter that evaluates the parsed filter against each candidate document's source.
+    /// </summary>
     private sealed class SourceFilter(SearchIndex schema, string text, FilterNode root, Query[] isMatchQueries, Query? candidateQuery) : Lucene.Net.Search.Filter
     {
         private static readonly ISet<string> SourceOnly = new HashSet<string> { SourceField };
 
+        /// <inheritdoc />
         public override DocIdSet GetDocIdSet(AtomicReaderContext context, IBits acceptDocs)
         {
             var reader = context.AtomicReader;
@@ -106,8 +132,12 @@ internal static class ODataFilter
             return matches;
         }
 
+        /// <inheritdoc />
         public override string ToString() => $"ODataFilter({text})";
 
+        /// <summary>
+        /// The documents in a set, as bits.
+        /// </summary>
         private static FixedBitSet Collect(DocIdSet? set, int maxDoc)
         {
             var bits = new FixedBitSet(maxDoc);
@@ -120,11 +150,19 @@ internal static class ODataFilter
         }
     }
 
+    /// <summary>
+    /// What evaluating one document needs besides its source: the schema, the <c>search.ismatch</c> results and the document.
+    /// </summary>
     private readonly record struct Context(SearchIndex Schema, FixedBitSet[] IsMatches, int Doc);
 
-    // Range variables bound by enclosing lambdas, innermost first.
+    /// <summary>
+    /// Range variables bound by enclosing lambdas, innermost first.
+    /// </summary>
     private sealed record Binding(string Name, JsonElement Value, Binding? Outer);
 
+    /// <summary>
+    /// Whether a document satisfies a filter node.
+    /// </summary>
     private static bool Evaluate(FilterNode node, JsonElement document, Binding? bindings, Context context) => node switch
     {
         AndNode both => Evaluate(both.Left, document, bindings, context) && Evaluate(both.Right, document, bindings, context),
@@ -140,6 +178,9 @@ internal static class ODataFilter
         _ => throw new InvalidOperationException($"Unhandled filter node {node.GetType().Name}"),
     };
 
+    /// <summary>
+    /// Evaluates <c>any</c> or <c>all</c> by binding each element of the collection in turn.
+    /// </summary>
     private static bool EvaluateLambda(LambdaNode lambda, JsonElement document, Binding? bindings, Context context)
     {
         if (Resolve(lambda.Collection, document, bindings) is not { ValueKind: JsonValueKind.Array } collection)
@@ -164,7 +205,10 @@ internal static class ODataFilter
         return lambda.All;
     }
 
-    // Missing and null values both resolve to null, as in Azure.
+    /// <summary>
+    /// The value at a field path, from the document or a range variable; missing and null values both resolve to
+    /// null, as in Azure.
+    /// </summary>
     private static JsonElement? Resolve(FieldRef field, JsonElement document, Binding? bindings)
     {
         var current = document;
@@ -190,6 +234,9 @@ internal static class ODataFilter
         return current.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined ? null : current;
     }
 
+    /// <summary>
+    /// Whether a value satisfies a comparison; a missing value only satisfies <c>ne</c> and <c>eq null</c>.
+    /// </summary>
     private static bool Compare(ComparisonNode comparison, JsonElement? value, SearchIndex schema)
     {
         if (comparison.Value.Kind == LiteralKind.Null)
@@ -214,7 +261,9 @@ internal static class ODataFilter
         };
     }
 
-    // The document value's order relative to the literal, or null when it isn't of the field's type.
+    /// <summary>
+    /// The document value's order relative to the literal, or null when it isn't of the field's type or is <c>NaN</c>.
+    /// </summary>
     private static int? CompareTo(ComparisonNode comparison, JsonElement value, SearchIndex schema)
     {
         var literal = comparison.Value.Value;
@@ -243,6 +292,9 @@ internal static class ODataFilter
         }
     }
 
+    /// <summary>
+    /// Applies the field's normalizer, if it has one, as Azure does to both sides of a comparison.
+    /// </summary>
     private static string Normalize(FieldRef field, string value, SearchIndex schema) =>
         string.IsNullOrEmpty(field.Field?.Normalizer)
             ? value
