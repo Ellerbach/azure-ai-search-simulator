@@ -289,7 +289,12 @@ internal sealed class ODataFilterParser
             throw Error($"'{collection.Path}' isn't a collection, so it can't use {kind.Text}()", kind);
         }
 
-        RequireFilterable(collection, kind);
+        // A complex collection has no filterable flag of its own (the API sets it to false); its sub-fields are checked.
+        if (collection.ElementType != SearchFieldDataType.ComplexType)
+        {
+            RequireFilterable(collection, kind);
+        }
+
         var all = kind.Text == "all";
         Expect(TokenKind.OpenParen, "'('");
         if (Peek.Kind == TokenKind.CloseParen)

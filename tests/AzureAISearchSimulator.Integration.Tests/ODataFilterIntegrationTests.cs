@@ -196,12 +196,13 @@ public class ODataFilterIntegrationTests : IDisposable
         Assert.Contains("filter", error.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    // Complex fields get filterable: false, as the API's defaults give them.
     private static SearchField Field(string name, string type, bool filterable = true, bool searchable = false, params SearchField[] fields) =>
         new()
         {
             Name = name,
             Type = type,
-            Filterable = type.Contains("Complex") ? null : filterable,
+            Filterable = !type.Contains("Complex") && filterable,
             Searchable = searchable,
             Fields = fields.Length > 0 ? fields.ToList() : null,
         };
