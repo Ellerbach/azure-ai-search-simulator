@@ -244,7 +244,7 @@ public class SearchFieldsIntegrationTests : IDisposable
         var response = await _searchService.SearchAsync(indexName, new SearchRequest { Search = search, SearchMode = "all" });
 
         // Assert
-        Assert.Equal(expected, string.Join(',', response.Value.Select(r => r["hotelId"]?.ToString()).Order()));
+        Assert.Equal(expected, string.Join(',', response.Value.Select(r => r["hotelId"]?.ToString() ?? "(null)").Order()));
     }
 
     [Fact]
