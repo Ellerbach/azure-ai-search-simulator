@@ -169,6 +169,21 @@ docker run -p 7250:8443 -p 5250:8080 \
 # API available at https://localhost:7250 (HTTPS) or http://localhost:5250 (HTTP)
 ```
 
+The Dockerfile uses .NET 10 for both the build SDK and ASP.NET Core runtime, matching the application's `net10.0` target.
+
+To verify a local build in PowerShell (Docker must be running with Linux containers):
+
+```powershell
+docker compose up -d --build
+docker compose exec search-simulator dotnet --list-runtimes
+curl.exe --fail http://localhost:5250/health
+docker compose ps
+```
+
+The runtime list should include `Microsoft.NETCore.App 10.0.x` and `Microsoft.AspNetCore.App 10.0.x`. Once startup completes, the health endpoint should return HTTP 200 with `"status":"Healthy"`, and the container should become `healthy` after its health check runs.
+
+If startup fails, inspect `docker compose logs search-simulator`. Stop the test container with `docker compose down`; named data volumes are preserved.
+
 #### Docker Volume Mapping
 
 The Docker Compose file defines six mount points in total: five recommended for normal operation and one optional mount for sample data used in demos.
