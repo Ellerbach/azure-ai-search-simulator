@@ -31,6 +31,10 @@ public class HnswVectorSearchService : IVectorSearchService, IDisposable
     }
 
     /// <inheritdoc />
+    // The HNSW graph uses the configured metric; the brute-force store is always cosine.
+    public string ApproximateMetric => _settings.UseHnsw ? _settings.SimilarityMetric : "cosine";
+
+    /// <inheritdoc />
     public void InitializeIndex(string indexName, string fieldName, int dimensions)
     {
         if (_settings.UseHnsw)

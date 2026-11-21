@@ -25,6 +25,14 @@ public interface IDocumentService
     Task<Dictionary<string, object?>?> GetDocumentAsync(string indexName, string key, IEnumerable<string>? selectedFields = null);
 
     /// <summary>
+    /// Get a document by its key as it was stored, including fields that aren't retrievable, without Azure's response shape.
+    /// </summary>
+    /// <param name="indexName">Name of the index.</param>
+    /// <param name="key">The document key.</param>
+    /// <returns>The document or null if not found.</returns>
+    Task<Dictionary<string, object?>?> GetStoredDocumentAsync(string indexName, string key);
+
+    /// <summary>
     /// Get document count in an index.
     /// </summary>
     /// <param name="indexName">Name of the index.</param>

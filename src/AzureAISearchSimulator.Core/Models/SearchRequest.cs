@@ -123,6 +123,12 @@ public class SearchRequest
     public List<VectorQuery>? VectorQueries { get; set; }
 
     /// <summary>
+    /// When the filter applies to vector queries: "preFilter" (the default), "postFilter" or "strictPostFilter".
+    /// </summary>
+    [JsonPropertyName("vectorFilterMode")]
+    public string? VectorFilterMode { get; set; }
+
+    /// <summary>
     /// Enables a debugging tool that can be used to further explore your search results.
     /// Supported values: "disabled", "semantic", "vector", "queryRewrites", "innerHits", "all".
     /// Multiple modes can be combined with '|', e.g. "semantic|vector".
@@ -168,6 +174,12 @@ public class VectorQuery
     /// </summary>
     [JsonPropertyName("k")]
     public int K { get; set; } = 10;
+
+    /// <summary>
+    /// When true, searches all vectors exactly instead of the approximate index.
+    /// </summary>
+    [JsonPropertyName("exhaustive")]
+    public bool? Exhaustive { get; set; }
 
     /// <summary>
     /// Weight for this vector query in hybrid search.

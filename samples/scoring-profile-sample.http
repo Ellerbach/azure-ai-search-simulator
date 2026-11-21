@@ -17,26 +17,138 @@
 ### 10. Error cases
 ### 11. Search via GET with scoring params
 ### 12. Negative boost / scoringStatistics
-### 13. Cleanup
+### 13. Boosts before sorting and paging
+### 14. Cleanup
 ###
 ### Prerequisites:
 ### - The simulator running at https://localhost:7250
 ### - REST Client extension for VS Code
+### - For the [AZURE] requests: an Azure AI Search service with role-based
+###   access, the Search Service Contributor and Search Index Data Contributor
+###   roles, and AZURE_BASE_URL and ENTRA_TOKEN in .env (see .env.example).
+###   To use keys instead, replace "Authorization: Bearer {{azureToken}}"
+###   with an api-key header.
+### - Each request is a [SIM]/[AZURE] pair; run the steps in order on each.
 ### =====================================================
 
 @baseUrl = {{$dotenv BASE_URL}}
 @apiVersion = {{$dotenv API_VERSION}}
 @adminKey = {{$dotenv ADMIN_KEY}}
 @queryKey = {{$dotenv QUERY_KEY}}
+@azureBaseUrl = {{$dotenv AZURE_BASE_URL}}
+@azureToken = {{$dotenv ENTRA_TOKEN}}
 
 # ============================================
 # 1. CREATE INDEX WITH SCORING PROFILES
 # ============================================
 
-### Create an index with multiple scoring profiles
+### [SIM] Create an index with multiple scoring profiles
 PUT {{baseUrl}}/indexes/hotels-scored?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{adminKey}}
+
+{
+  "name": "hotels-scored",
+  "fields": [
+    { "name": "hotelId", "type": "Edm.String", "key": true, "filterable": true },
+    { "name": "hotelName", "type": "Edm.String", "searchable": true, "filterable": true, "sortable": true },
+    { "name": "description", "type": "Edm.String", "searchable": true },
+    { "name": "category", "type": "Edm.String", "searchable": true, "filterable": true },
+    { "name": "rating", "type": "Edm.Double", "filterable": true, "sortable": true },
+    { "name": "lastRenovationDate", "type": "Edm.DateTimeOffset", "filterable": true, "sortable": true },
+    { "name": "tags", "type": "Collection(Edm.String)", "searchable": true, "filterable": true }
+  ],
+  "scoringProfiles": [
+    {
+      "name": "boost-name",
+      "text": {
+        "weights": {
+          "hotelName": 5.0,
+          "description": 1.0
+        }
+      }
+    },
+    {
+      "name": "boost-rating",
+      "functions": [
+        {
+          "type": "magnitude",
+          "fieldName": "rating",
+          "boost": 10,
+          "interpolation": "linear",
+          "magnitude": {
+            "boostingRangeStart": 0,
+            "boostingRangeEnd": 5
+          }
+        }
+      ]
+    },
+    {
+      "name": "boost-recent",
+      "functions": [
+        {
+          "type": "freshness",
+          "fieldName": "lastRenovationDate",
+          "boost": 5,
+          "interpolation": "linear",
+          "freshness": {
+            "boostingDuration": "P730D"
+          }
+        }
+      ]
+    },
+    {
+      "name": "boost-tags",
+      "functions": [
+        {
+          "type": "tag",
+          "fieldName": "tags",
+          "boost": 5,
+          "tag": {
+            "tagsParameter": "userTags"
+          }
+        }
+      ]
+    },
+    {
+      "name": "combined",
+      "text": {
+        "weights": {
+          "hotelName": 3.0,
+          "description": 1.0
+        }
+      },
+      "functionAggregation": "sum",
+      "functions": [
+        {
+          "type": "magnitude",
+          "fieldName": "rating",
+          "boost": 5,
+          "interpolation": "linear",
+          "magnitude": {
+            "boostingRangeStart": 0,
+            "boostingRangeEnd": 5
+          }
+        },
+        {
+          "type": "freshness",
+          "fieldName": "lastRenovationDate",
+          "boost": 3,
+          "interpolation": "linear",
+          "freshness": {
+            "boostingDuration": "P365D"
+          }
+        }
+      ]
+    }
+  ],
+  "defaultScoringProfile": "boost-rating"
+}
+
+### [AZURE] Create an index with multiple scoring profiles
+PUT {{azureBaseUrl}}/indexes/hotels-scored?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
 
 {
   "name": "hotels-scored",
@@ -140,10 +252,70 @@ api-key: {{adminKey}}
 # 2. UPLOAD SAMPLE DOCUMENTS
 # ============================================
 
-### Upload hotel documents with varying ratings, dates, and tags
+### [SIM] Upload hotel documents with varying ratings, dates, and tags
 POST {{baseUrl}}/indexes/hotels-scored/docs/index?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{adminKey}}
+
+{
+  "value": [
+    {
+      "@search.action": "upload",
+      "hotelId": "1",
+      "hotelName": "Luxury Spa Resort",
+      "description": "A beautiful luxury resort with spa, pool, and ocean views. Recently renovated with modern amenities.",
+      "category": "Resort",
+      "rating": 4.8,
+      "lastRenovationDate": "2025-06-15T00:00:00Z",
+      "tags": ["luxury", "spa", "pool", "ocean"]
+    },
+    {
+      "@search.action": "upload",
+      "hotelId": "2",
+      "hotelName": "Budget Inn Downtown",
+      "description": "Affordable hotel in the heart of downtown. Clean rooms with basic amenities and free parking.",
+      "category": "Budget",
+      "rating": 3.2,
+      "lastRenovationDate": "2018-03-01T00:00:00Z",
+      "tags": ["budget", "parking", "downtown"]
+    },
+    {
+      "@search.action": "upload",
+      "hotelId": "3",
+      "hotelName": "Grand Hotel & Spa",
+      "description": "Historic grand hotel with spa services and fine dining. Located near the convention center.",
+      "category": "Luxury",
+      "rating": 4.5,
+      "lastRenovationDate": "2022-11-20T00:00:00Z",
+      "tags": ["luxury", "spa", "dining", "historic"]
+    },
+    {
+      "@search.action": "upload",
+      "hotelId": "4",
+      "hotelName": "Modern City Hotel",
+      "description": "Contemporary urban hotel with rooftop bar and fitness center. Walking distance to attractions.",
+      "category": "Urban",
+      "rating": 4.1,
+      "lastRenovationDate": "2026-01-10T00:00:00Z",
+      "tags": ["modern", "fitness", "rooftop"]
+    },
+    {
+      "@search.action": "upload",
+      "hotelId": "5",
+      "hotelName": "Seaside Budget Motel",
+      "description": "Simple motel near the beach. Basic rooms with ocean views at budget-friendly prices.",
+      "category": "Budget",
+      "rating": 2.8,
+      "lastRenovationDate": "2015-07-01T00:00:00Z",
+      "tags": ["budget", "beach", "ocean"]
+    }
+  ]
+}
+
+### [AZURE] Upload hotel documents with varying ratings, dates, and tags
+POST {{azureBaseUrl}}/indexes/hotels-scored/docs/index?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
 
 {
   "value": [
@@ -204,10 +376,20 @@ api-key: {{adminKey}}
 # 3. SEARCH WITHOUT PROFILE (BASELINE)
 # ============================================
 
-### Baseline search — pure BM25 text relevance (but note: defaultScoringProfile "boost-rating" is active)
+### [SIM] Baseline search — pure BM25 text relevance (but note: defaultScoringProfile "boost-rating" is active)
 POST {{baseUrl}}/indexes/hotels-scored/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
+
+{
+  "search": "hotel spa",
+  "top": 5
+}
+
+### [AZURE] Baseline search — pure BM25 text relevance (but note: defaultScoringProfile "boost-rating" is active)
+POST {{azureBaseUrl}}/indexes/hotels-scored/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
 
 {
   "search": "hotel spa",
@@ -218,10 +400,21 @@ api-key: {{queryKey}}
 # 4. SEARCH WITH TEXT WEIGHTS PROFILE
 # ============================================
 
-### Boost hotel name matches 5x over description matches
+### [SIM] Boost hotel name matches 5x over description matches
 POST {{baseUrl}}/indexes/hotels-scored/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
+
+{
+  "search": "spa",
+  "scoringProfile": "boost-name",
+  "top": 5
+}
+
+### [AZURE] Boost hotel name matches 5x over description matches
+POST {{azureBaseUrl}}/indexes/hotels-scored/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
 
 {
   "search": "spa",
@@ -233,10 +426,21 @@ api-key: {{queryKey}}
 # 5. SEARCH WITH MAGNITUDE PROFILE
 # ============================================
 
-### Boost by rating — higher rated hotels appear first
+### [SIM] Boost by rating — higher rated hotels appear first
 POST {{baseUrl}}/indexes/hotels-scored/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
+
+{
+  "search": "hotel",
+  "scoringProfile": "boost-rating",
+  "top": 5
+}
+
+### [AZURE] Boost by rating — higher rated hotels appear first
+POST {{azureBaseUrl}}/indexes/hotels-scored/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
 
 {
   "search": "hotel",
@@ -248,10 +452,21 @@ api-key: {{queryKey}}
 # 6. SEARCH WITH FRESHNESS PROFILE
 # ============================================
 
-### Boost recently renovated hotels (within last 2 years)
+### [SIM] Boost recently renovated hotels (within last 2 years)
 POST {{baseUrl}}/indexes/hotels-scored/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
+
+{
+  "search": "hotel",
+  "scoringProfile": "boost-recent",
+  "top": 5
+}
+
+### [AZURE] Boost recently renovated hotels (within last 2 years)
+POST {{azureBaseUrl}}/indexes/hotels-scored/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
 
 {
   "search": "hotel",
@@ -263,10 +478,24 @@ api-key: {{queryKey}}
 # 7. SEARCH WITH TAG PROFILE
 # ============================================
 
-### Boost hotels matching user's preferred tags
+### [SIM] Boost hotels matching user's preferred tags
 POST {{baseUrl}}/indexes/hotels-scored/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
+
+{
+  "search": "hotel",
+  "scoringProfile": "boost-tags",
+  "scoringParameters": [
+    "userTags-luxury,spa"
+  ],
+  "top": 5
+}
+
+### [AZURE] Boost hotels matching user's preferred tags
+POST {{azureBaseUrl}}/indexes/hotels-scored/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
 
 {
   "search": "hotel",
@@ -281,10 +510,21 @@ api-key: {{queryKey}}
 # 8. SEARCH WITH COMBINED PROFILE
 # ============================================
 
-### Combined: text weights + magnitude + freshness
+### [SIM] Combined: text weights + magnitude + freshness
 POST {{baseUrl}}/indexes/hotels-scored/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
+
+{
+  "search": "spa resort",
+  "scoringProfile": "combined",
+  "top": 5
+}
+
+### [AZURE] Combined: text weights + magnitude + freshness
+POST {{azureBaseUrl}}/indexes/hotels-scored/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
 
 {
   "search": "spa resort",
@@ -296,7 +536,7 @@ api-key: {{queryKey}}
 # 9. SEARCH WITH DEBUG TO SEE BOOSTS
 # ============================================
 
-### Debug mode shows document boosts and subscores
+### [SIM] Debug mode shows document boosts and subscores
 POST {{baseUrl}}/indexes/hotels-scored/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -308,10 +548,34 @@ api-key: {{queryKey}}
   "top": 5
 }
 
-### Debug with combined profile
+### [AZURE] Debug mode shows document boosts and subscores
+POST {{azureBaseUrl}}/indexes/hotels-scored/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "hotel spa",
+  "scoringProfile": "boost-rating",
+  "debug": "all",
+  "top": 5
+}
+
+### [SIM] Debug with combined profile
 POST {{baseUrl}}/indexes/hotels-scored/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
+
+{
+  "search": "spa",
+  "scoringProfile": "combined",
+  "debug": "all",
+  "top": 5
+}
+
+### [AZURE] Debug with combined profile
+POST {{azureBaseUrl}}/indexes/hotels-scored/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
 
 {
   "search": "spa",
@@ -324,10 +588,20 @@ api-key: {{queryKey}}
 # 10. ERROR CASES
 # ============================================
 
-### Non-existent scoring profile — should return 400
+### [SIM] Non-existent scoring profile — should return 400
 POST {{baseUrl}}/indexes/hotels-scored/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
+
+{
+  "search": "hotel",
+  "scoringProfile": "nonexistent-profile"
+}
+
+### [AZURE] Non-existent scoring profile — should return 400
+POST {{azureBaseUrl}}/indexes/hotels-scored/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
 
 {
   "search": "hotel",
@@ -338,13 +612,21 @@ api-key: {{queryKey}}
 # 11. SEARCH VIA GET WITH SCORING PARAMS
 # ============================================
 
-### GET endpoint supports scoringProfile and scoringParameter query params
+### [SIM] GET endpoint supports scoringProfile and scoringParameter query params
 GET {{baseUrl}}/indexes/hotels-scored/docs?api-version={{apiVersion}}&search=hotel&scoringProfile=boost-tags&scoringParameter=userTags-luxury,spa&$top=5
 api-key: {{queryKey}}
 
-### GET with debug to see boosts
+### [AZURE] GET endpoint supports scoringProfile and scoringParameter query params
+GET {{azureBaseUrl}}/indexes/hotels-scored/docs?api-version={{apiVersion}}&search=hotel&scoringProfile=boost-tags&scoringParameter=userTags-luxury,spa&$top=5
+Authorization: Bearer {{azureToken}}
+
+### [SIM] GET with debug to see boosts
 GET {{baseUrl}}/indexes/hotels-scored/docs?api-version={{apiVersion}}&search=spa&scoringProfile=boost-rating&debug=all&$top=5
 api-key: {{queryKey}}
+
+### [AZURE] GET with debug to see boosts
+GET {{azureBaseUrl}}/indexes/hotels-scored/docs?api-version={{apiVersion}}&search=spa&scoringProfile=boost-rating&debug=all&$top=5
+Authorization: Bearer {{azureToken}}
 
 # ============================================
 # 12. NEGATIVE BOOST (DEMOTE DOCUMENTS)
@@ -354,7 +636,7 @@ api-key: {{queryKey}}
 ### First, create a profile that demotes budget category tags.
 ### (To test this, re-create the index with an additional profile.)
 
-### Search with scoringStatistics — accepted for compatibility (always uses local)
+### [SIM] Search with scoringStatistics — accepted for compatibility (always uses local)
 POST {{baseUrl}}/indexes/hotels-scored/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
@@ -366,10 +648,118 @@ api-key: {{queryKey}}
   "top": 5
 }
 
+### [AZURE] Search with scoringStatistics — accepted for compatibility (always uses local)
+POST {{azureBaseUrl}}/indexes/hotels-scored/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "hotel",
+  "scoringProfile": "boost-rating",
+  "scoringStatistics": "local",
+  "top": 5
+}
+
 # ============================================
-# 13. CLEANUP
+# 13. BOOSTS BEFORE SORTING AND PAGING
+# ============================================
+# Function boosts apply within the scoring, so the top hits, search.score()
+# sorts and ties on a field sort all use the boosted score.
+
+### [SIM] Sort by the boosted score: @search.score never increases → in order: 2, 4
+# By text alone hotel 4 matches "hotel" best, in its name and description; the boosted tag puts hotel 2 first.
+POST {{baseUrl}}/indexes/hotels-scored/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "hotel",
+  "filter": "hotelId ne '3'",
+  "scoringProfile": "boost-tags",
+  "scoringParameters": ["userTags-parking"],
+  "orderby": "search.score() desc",
+  "select": "hotelId, tags",
+  "top": 5
+}
+
+### [AZURE] Sort by the boosted score: @search.score never increases → in order: 2, 4
+POST {{azureBaseUrl}}/indexes/hotels-scored/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "hotel",
+  "filter": "hotelId ne '3'",
+  "scoringProfile": "boost-tags",
+  "scoringParameters": ["userTags-parking"],
+  "orderby": "search.score() desc",
+  "select": "hotelId, tags",
+  "top": 5
+}
+
+### [SIM] The top hit is the best boosted match, not the best text match → 2
+POST {{baseUrl}}/indexes/hotels-scored/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "hotel",
+  "scoringProfile": "boost-tags",
+  "scoringParameters": ["userTags-parking"],
+  "select": "hotelId, tags",
+  "top": 1
+}
+
+### [AZURE] The top hit is the best boosted match, not the best text match → 2
+POST {{azureBaseUrl}}/indexes/hotels-scored/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "hotel",
+  "scoringProfile": "boost-tags",
+  "scoringParameters": ["userTags-parking"],
+  "select": "hotelId, tags",
+  "top": 1
+}
+
+### [SIM] Ties on a field sort are broken by the boosted score → in order: 2, 5
+# Both are Budget hotels; hotel 5 matches "budget" best, but only hotel 2 has the boosted tag.
+POST {{baseUrl}}/indexes/hotels-scored/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "budget",
+  "scoringProfile": "boost-tags",
+  "scoringParameters": ["userTags-parking"],
+  "orderby": "category asc",
+  "select": "hotelId, category, tags",
+  "top": 5
+}
+
+### [AZURE] Ties on a field sort are broken by the boosted score → in order: 2, 5
+POST {{azureBaseUrl}}/indexes/hotels-scored/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "search": "budget",
+  "scoringProfile": "boost-tags",
+  "scoringParameters": ["userTags-parking"],
+  "orderby": "category asc",
+  "select": "hotelId, category, tags",
+  "top": 5
+}
+
+# ============================================
+# 14. CLEANUP
 # ============================================
 
-### Delete the index
+### [SIM] Delete the index
 DELETE {{baseUrl}}/indexes/hotels-scored?api-version={{apiVersion}}
 api-key: {{adminKey}}
+
+### [AZURE] Delete the index
+DELETE {{azureBaseUrl}}/indexes/hotels-scored?api-version={{apiVersion}}
+Authorization: Bearer {{azureToken}}

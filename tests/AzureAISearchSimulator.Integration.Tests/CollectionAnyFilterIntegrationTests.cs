@@ -212,21 +212,17 @@ public class CollectionAnyFilterIntegrationTests : IDisposable
     }
 
     [Fact]
-    public async Task Filter_AnyGt_WithUnparsableOperand_ReturnsNoDocumentsRatherThanEveryDocument()
+    public async Task Filter_AnyGt_WithUnparsableOperand_IsRejected()
     {
         var indexName = $"any-int-gt-invalid-{Guid.NewGuid():N}";
         await SeedHotels(indexName);
 
-        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        // As in Azure, a filter that can't be parsed is a 400, never a clause that is ignored.
+        await Assert.ThrowsAsync<ArgumentException>(() => _searchService.SearchAsync(indexName, new SearchRequest
         {
             Search = "*",
             Filter = "roomNumbers/any(c: c gt invalid)"
-        });
-
-        // BuildNumericRangeQuery's operand parsing fails for "invalid" on every numeric/date
-        // type it tries. The important regression to guard against: this must NOT fall back
-        // to matching every document (see SearchService.BuildNumericRangeQuery).
-        Assert.Empty(response.Value);
+        }));
     }
 
     [Fact]
@@ -294,18 +290,17 @@ public class CollectionAnyFilterIntegrationTests : IDisposable
     }
 
     [Fact]
-    public async Task Filter_AnyEq_OnNonFilterableComplexSubField_ReturnsNoDocuments()
+    public async Task Filter_AnyEq_OnNonFilterableComplexSubField_IsRejected()
     {
         var indexName = $"any-complex-nonfilterable-{Guid.NewGuid():N}";
         await SeedHotels(indexName);
 
-        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        // As in Azure, filtering on a field that isn't filterable is a 400.
+        await Assert.ThrowsAsync<ArgumentException>(() => _searchService.SearchAsync(indexName, new SearchRequest
         {
             Search = "*",
             Filter = "accounts/any(acc: acc/notes eq 'premium')"
-        });
-
-        Assert.Empty(response.Value);
+        }));
     }
 
     [Fact]
@@ -465,20 +460,34 @@ public class CollectionAnyFilterIntegrationTests : IDisposable
     }
 
     [Fact]
-    public async Task Filter_All_IsUnsupported_ReturnsNoDocumentsRatherThanEveryDocument()
+    public async Task Filter_AllEq_OnNumericCollection_ReturnsDocumentsWhoseEveryValueMatches()
     {
-        var indexName = $"all-unsupported-{Guid.NewGuid():N}";
+        var indexName = $"all-eq-{Guid.NewGuid():N}";
         await SeedHotels(indexName);
 
+        // As in Azure, all() over a numeric collection accepts a single eq; no hotel has only room 101.
         var response = await _searchService.SearchAsync(indexName, new SearchRequest
         {
             Search = "*",
             Filter = "roomNumbers/all(c: c eq 101)"
         });
 
-        // "all()" isn't implemented (see SearchService.ParseCollectionLambdaFilter). The important
-        // regression to guard against: this must NOT silently fall back to matching every document.
         Assert.Empty(response.Value);
+    }
+
+    [Fact]
+    public async Task Filter_AllNe_OnNumericCollection_ReturnsDocumentsWithoutThatValue()
+    {
+        var indexName = $"all-ne-{Guid.NewGuid():N}";
+        await SeedHotels(indexName);
+
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Filter = "roomNumbers/all(c: c ne 101)"
+        });
+
+        Assert.Equal("2", Assert.Single(response.Value)["id"]?.ToString());
     }
 
     public void Dispose()

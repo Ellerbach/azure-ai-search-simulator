@@ -67,11 +67,58 @@ public static class LuceneDocumentMapper
             }
         }
 
+        // As in Azure, a suggester can draw on fields that aren't searchable: they get terms only suggestions match.
+        foreach (var path in schema.Suggesters?.SelectMany(s => s.SourceFields).Distinct() ?? [])
+        {
+            var suggestField = GetSuggestFieldName(schema, path);
+            if (suggestField != path)
+            {
+                foreach (var text in StringsAt(searchDocument, path.Split('/'), 0))
+                {
+                    doc.Add(new TextField(suggestField, text, Field.Store.NO));
+                }
+            }
+        }
+
         // Store the original JSON for retrieval
         doc.Add(new StoredField("_raw_json", JsonSerializer.Serialize(searchDocument)));
 
         return doc;
     }
+
+    /// <summary>
+    /// The Lucene field suggestions match a suggester source field in: the field itself if it's searchable, else its
+    /// suggest-only terms (under a name with a '#', which field names can't contain).
+    /// </summary>
+    /// <param name="schema">The index definition.</param>
+    /// <param name="path">The source field's path, e.g. <c>ShortName/en</c>.</param>
+    /// <returns>The Lucene field name.</returns>
+    public static string GetSuggestFieldName(SearchIndex schema, string path)
+    {
+        SearchField? field = null;
+        IEnumerable<SearchField>? fields = schema.Fields;
+        foreach (var segment in path.Split('/'))
+        {
+            field = fields?.FirstOrDefault(f => f.Name == segment);
+            fields = field?.Fields;
+        }
+
+        return field is { Searchable: not true } ? path + "#suggest" : path;
+    }
+
+    /// <summary>
+    /// The strings at a path in a document, through complex objects and collections.
+    /// </summary>
+    private static IEnumerable<string> StringsAt(object? value, string[] path, int depth) => value switch
+    {
+        JsonElement { ValueKind: JsonValueKind.Array } items => items.EnumerateArray().SelectMany(item => StringsAt(item, path, depth)),
+        JsonElement { ValueKind: JsonValueKind.String } text when depth == path.Length => [text.GetString()!],
+        string text when depth == path.Length => [text],
+        System.Collections.IEnumerable items and not string and not IDictionary<string, object?> => items.Cast<object?>().SelectMany(item => StringsAt(item, path, depth)),
+        _ when depth < path.Length && value is not null && ExtractComplexObjectValue(value) is { } fields && fields.TryGetValue(path[depth], out var child)
+            => StringsAt(child, path, depth + 1),
+        _ => [],
+    };
 
     /// <summary>
     /// Converts a Lucene document back to a search document.
@@ -375,7 +422,7 @@ public static class LuceneDocumentMapper
             dateValue = DateTimeOffset.Parse(ConvertToString(value));
         }
 
-        var ticks = dateValue.UtcTicks;
+        var ticks = Filtering.ODataFilter.ToAzurePrecision(dateValue).UtcTicks;
 
         if (field.Filterable == true)
         {
@@ -663,7 +710,8 @@ public static class LuceneDocumentMapper
 
         if (field.Retrievable != false)
         {
-            fields.Add(new StoredField(field.Name, JsonSerializer.Serialize(values)));
+            // NaN and the infinities are valid Edm.Double values.
+            fields.Add(new StoredField(field.Name, JsonSerializer.Serialize(values, new JsonSerializerOptions { NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowNamedFloatingPointLiterals })));
         }
 
         return fields;
@@ -756,13 +804,24 @@ public static class LuceneDocumentMapper
             return je.ValueKind switch
             {
                 JsonValueKind.Number => je.GetDouble(),
-                JsonValueKind.String => double.TryParse(je.GetString(), out var s) ? s : 0,
+                JsonValueKind.String => ParseDouble(je.GetString()),
                 _ => 0
             };
         }
 
-        return Convert.ToDouble(value);
+        return value is string text ? ParseDouble(text) : Convert.ToDouble(value);
     }
+
+    /// <summary>
+    /// Parses a double, including the special values Azure's JSON spells NaN, INF and -INF.
+    /// </summary>
+    private static double ParseDouble(string? text) => text switch
+    {
+        "NaN" => double.NaN,
+        "INF" => double.PositiveInfinity,
+        "-INF" => double.NegativeInfinity,
+        _ => double.TryParse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var number) ? number : 0,
+    };
 
     private static bool ConvertToBoolean(object? value)
     {

@@ -261,6 +261,7 @@ public partial class IndexerService : IIndexerService
                     {
                         try
                         {
+                            RemoveFieldsNotInIndex(await _indexService.GetIndexAsync(targetIndex), actions);
                             var request = new IndexDocumentsRequest { Value = actions };
                             await _documentService.IndexDocumentsAsync(targetIndex, request);
                             processedCount += actions.Count;
@@ -533,7 +534,7 @@ public partial class IndexerService : IIndexerService
         Dictionary<string, object?>? existingDoc;
         try
         {
-            existingDoc = await _documentService.GetDocumentAsync(
+            existingDoc = await _documentService.GetStoredDocumentAsync(
                 indexer.TargetIndexName, docKey);
         }
         catch
@@ -626,6 +627,26 @@ public partial class IndexerService : IIndexerService
         if (string.IsNullOrEmpty(key) || !ValidKeyPattern().IsMatch(key))
         {
             throw new InvalidDocumentKeyException(key, documentName, dataSourceName);
+        }
+    }
+
+    /// <summary>
+    /// Removes the source and enrichment fields the target index doesn't define, which Azure doesn't index.
+    /// </summary>
+    private static void RemoveFieldsNotInIndex(SearchIndex? index, List<IndexAction> actions)
+    {
+        if (index is null)
+        {
+            return;
+        }
+
+        var fields = index.Fields.Select(f => f.Name).ToHashSet(StringComparer.Ordinal);
+        foreach (var action in actions)
+        {
+            foreach (var name in action.Keys.Where(k => !k.StartsWith('@') && !fields.Contains(k)).ToList())
+            {
+                action.Remove(name);
+            }
         }
     }
 
@@ -1314,7 +1335,7 @@ public partial class IndexerService : IIndexerService
         return element.ValueKind switch
         {
             System.Text.Json.JsonValueKind.String => element.GetString(),
-            System.Text.Json.JsonValueKind.Number => element.TryGetInt64(out var longValue) ? longValue : element.GetDouble(),
+            System.Text.Json.JsonValueKind.Number => element.TryGetInt64(out var longValue) ? (object)longValue : element.GetDouble(),
             System.Text.Json.JsonValueKind.True => true,
             System.Text.Json.JsonValueKind.False => false,
             System.Text.Json.JsonValueKind.Null => null,

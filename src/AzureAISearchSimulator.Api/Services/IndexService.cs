@@ -83,6 +83,8 @@ public partial class IndexService : IIndexService
         {
             // Enforce similarity immutability on update
             ValidateSimilarityUpdate(existing, index, allowIndexDowntime);
+            ApplyIndexDefaults(existing);
+            IndexUpdateRules.Validate(existing, index, allowIndexDowntime);
 
             _logger.LogInformation("Updating existing index {IndexName}", indexName);
             return await _repository.UpdateAsync(index, cancellationToken);
@@ -297,6 +299,11 @@ public partial class IndexService : IIndexService
         // Validate suggesters
         if (index.Suggesters != null)
         {
+            if (index.Suggesters.Count > 1)
+            {
+                errors.Add("An index cannot have more than one suggester with searchMode='analyzingInfixMatching'.");
+            }
+
             foreach (var suggester in index.Suggesters)
             {
                 if (string.IsNullOrWhiteSpace(suggester.Name))
@@ -304,17 +311,45 @@ public partial class IndexService : IIndexService
                     errors.Add("Suggester name is required");
                 }
 
-                foreach (var sourceField in suggester.SourceFields)
+                if (suggester.SourceFields.Count == 0)
                 {
-                    var field = index.Fields?.FirstOrDefault(f => f.Name == sourceField);
+                    errors.Add($"Suggesters must have at least one source field. No fields referenced by suggester '{suggester.Name}'.");
+                }
+
+                if (suggester.SourceFields.Distinct(StringComparer.Ordinal).Count() != suggester.SourceFields.Count)
+                {
+                    errors.Add($"One or more fields in suggester '{suggester.Name}' are duplicates of each other.");
+                }
+
+                var unknown = new List<string>();
+                foreach (var sourceField in suggester.SourceFields.Distinct(StringComparer.Ordinal))
+                {
+                    // As in Azure, a source field can be a path to a sub-field of a complex field, and needn't be searchable.
+                    SearchField? field = null;
+                    var candidates = index.Fields;
+                    foreach (var segment in sourceField.Split('/'))
+                    {
+                        field = candidates?.FirstOrDefault(f => f.Name == segment);
+                        candidates = field?.Fields;
+                    }
+
                     if (field == null)
                     {
-                        errors.Add($"Suggester '{suggester.Name}' references unknown field '{sourceField}'");
+                        unknown.Add(sourceField);
                     }
-                    else if (field.Type != SearchFieldDataType.String)
+                    else if (field.Type != SearchFieldDataType.String && field.Type != SearchFieldDataType.CollectionString)
                     {
-                        errors.Add($"Suggester '{suggester.Name}' field '{sourceField}' must be of type Edm.String");
+                        errors.Add($"Field '{sourceField}' in suggester '{suggester.Name}' is of type '{field.Type}'. Only fields of type Edm.String or Collection(Edm.String) can be used as source of suggestions.");
                     }
+                    else if (!IsSuggesterAnalyzer(field.Analyzer ?? field.IndexAnalyzer))
+                    {
+                        errors.Add($"Field '{sourceField}' in suggester '{suggester.Name}' uses an unsupported analyzers configuration. Suggesters are only supported with the default analyzer and language analyzers in this version of the API.");
+                    }
+                }
+
+                if (unknown.Count > 0)
+                {
+                    errors.Add($"One or more fields in suggester '{suggester.Name}' are not defined as fields in the index. Please remove them from the suggester definition. Fields: {string.Join(", ", unknown)}.");
                 }
             }
         }
@@ -323,6 +358,20 @@ public partial class IndexService : IIndexService
             ? IndexValidationResult.Success() 
             : IndexValidationResult.Failure(errors);
     }
+
+    /// <summary>
+    /// The analyzers a suggester source field can use: Azure disallows custom analyzers and the built-in ones other
+    /// than standard Lucene (keyword, pattern, simple, ...), leaving the language analyzers.
+    /// </summary>
+    private static readonly HashSet<string> SuggesterAnalyzers = AnalyzerFactory.GetSupportedAnalyzers()
+        .Where(name => name is not ("standardasciifolding.lucene" or "simple.lucene" or "whitespace.lucene" or "keyword.lucene" or "stop.lucene"))
+        .Where(name => name.EndsWith(".lucene", StringComparison.Ordinal) || name.EndsWith(".microsoft", StringComparison.Ordinal))
+        .ToHashSet(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Whether a suggester source field can use the analyzer; no analyzer means standard Lucene.
+    /// </summary>
+    private static bool IsSuggesterAnalyzer(string? name) => name is null or "standard" || SuggesterAnalyzers.Contains(name);
 
     /// <summary>
     /// Validates scoring profiles, text weights, and scoring function field references.

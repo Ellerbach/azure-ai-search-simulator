@@ -439,6 +439,93 @@ public class CustomAnalyzerIntegrationTests : IDisposable
         Assert.Equal(0, response.Value.Count);
     }
 
+    // ─── Analyzers on complex sub-fields ─────────────────────────────
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("ShortName/en")]
+    public async Task Search_WithLanguageAnalyzerOnComplexSubField_StemsTheSubField(string? searchFields)
+    {
+        // Arrange
+        var indexName = $"subfield-analyzer-{Guid.NewGuid():N}";
+        RegisterIndex(new SearchIndex
+        {
+            Name = indexName,
+            Fields = new List<SearchField>
+            {
+                new() { Name = "id", Type = "Edm.String", Key = true },
+                new()
+                {
+                    Name = "ShortName",
+                    Type = "Edm.ComplexType",
+                    Fields = new List<SearchField>
+                    {
+                        new() { Name = "en", Type = "Edm.String", Searchable = true, Analyzer = "en.lucene" }
+                    }
+                }
+            }
+        });
+
+        await UploadDocuments(indexName,
+            new Dictionary<string, object?>
+            {
+                ["id"] = "1",
+                ["ShortName"] = new Dictionary<string, object?> { ["en"] = "The running club" }
+            });
+
+        // Act
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "run",
+            SearchFields = searchFields
+        });
+
+        // Assert
+        Assert.Equal("1", Assert.Single(response.Value)["id"]?.ToString());
+    }
+
+    [Fact]
+    public async Task Search_WithLanguageAnalyzerOnOneSubField_LeavesTheOthersOnTheStandardAnalyzer()
+    {
+        // Arrange
+        var indexName = $"subfield-analyzer-{Guid.NewGuid():N}";
+        RegisterIndex(new SearchIndex
+        {
+            Name = indexName,
+            Fields = new List<SearchField>
+            {
+                new() { Name = "id", Type = "Edm.String", Key = true },
+                new()
+                {
+                    Name = "ShortName",
+                    Type = "Edm.ComplexType",
+                    Fields = new List<SearchField>
+                    {
+                        new() { Name = "en", Type = "Edm.String", Searchable = true, Analyzer = "en.lucene" },
+                        new() { Name = "other", Type = "Edm.String", Searchable = true }
+                    }
+                }
+            }
+        });
+
+        await UploadDocuments(indexName,
+            new Dictionary<string, object?>
+            {
+                ["id"] = "1",
+                ["ShortName"] = new Dictionary<string, object?> { ["en"] = "club", ["other"] = "The running club" }
+            });
+
+        // Act
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "run",
+            SearchFields = "ShortName/other"
+        });
+
+        // Assert
+        Assert.Empty(response.Value);
+    }
+
     public void Dispose()
     {
         _luceneManager?.Dispose();

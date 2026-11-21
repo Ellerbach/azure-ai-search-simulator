@@ -50,6 +50,12 @@ public class SearchResponse
     /// </summary>
     [JsonPropertyName("@odata.nextLink")]
     public string? ODataNextLink { get; set; }
+
+    /// <summary>
+    /// The request to send for the next page, when the request didn't set top and more results remain.
+    /// </summary>
+    [JsonPropertyName("@search.nextPageParameters")]
+    public SearchRequest? NextPageParameters { get; set; }
 }
 
 /// <summary>
@@ -153,6 +159,12 @@ public class FacetResult
     /// </summary>
     [JsonPropertyName("avg")]
     public double? Avg { get; set; }
+
+    /// <summary>
+    /// Number of distinct field values across all matching documents (for metric:cardinality facets).
+    /// </summary>
+    [JsonPropertyName("cardinality")]
+    public long? Cardinality { get; set; }
 
     /// <summary>
     /// Range start (for range facets).

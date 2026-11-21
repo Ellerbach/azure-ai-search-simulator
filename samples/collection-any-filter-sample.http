@@ -101,7 +101,7 @@ api-key: {{queryKey}}
 
 {
   "search": "*",
-  "filter": "lastRenovationDate gt 2020-01-11"
+  "filter": "lastRenovationDate gt 2020-01-11T00:00:00Z"
 }
 
 ### any() filter over the string collection "tags" (should match hotel 1 only)
@@ -144,13 +144,12 @@ api-key: {{queryKey}}
   "filter": "tags/any(t: search.in(t, 'spa,breakfast', ','))"
 }
 
-### all() is recognized but not supported - returns zero documents rather than
-### silently matching every document. See docs/LIMITATIONS.md.
+### all() over the int collection (should match hotel 2 only: every room is above 300)
 POST {{baseUrl}}/indexes/hotels-int-collection/docs/search?api-version={{apiVersion}}
 Content-Type: application/json
 api-key: {{queryKey}}
 
 {
   "search": "*",
-  "filter": "roomNumbers/all(c: c eq 101)"
+  "filter": "roomNumbers/all(c: c gt 300)"
 }

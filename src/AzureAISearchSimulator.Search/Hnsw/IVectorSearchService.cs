@@ -82,6 +82,11 @@ public interface IVectorSearchService
         int k);
 
     /// <summary>
+    /// The similarity metric <see cref="Search"/> ranks by.
+    /// </summary>
+    string ApproximateMetric => "cosine";
+
+    /// <summary>
     /// Performs a filtered vector search using post-filtering with oversampling.
     /// </summary>
     /// <param name="indexName">Name of the search index.</param>

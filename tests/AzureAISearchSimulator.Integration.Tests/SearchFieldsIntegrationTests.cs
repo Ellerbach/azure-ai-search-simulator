@@ -218,12 +218,117 @@ public class SearchFieldsIntegrationTests : IDisposable
     public async Task Search_ExpandsSynonymsOnComplexSubFields(string? searchFields)
     {
         var indexName = await CreateHotelsIndexWithDocuments(roomTypeSynonymMaps: new List<string> { "room-types" });
-        _synonymMapResolverMock
-            .Setup(x => x.ExpandTerms(It.IsAny<IEnumerable<string>>(), "penthouse"))
-            .Returns(new List<string> { "penthouse", "suite" });
+        UseSynonymRules(["penthouse", "suite"]);
 
         // Only the synonym "suite" is in the index, in rooms/type
         Assert.Equal(new List<string?> { "1" }, await SearchIds(indexName, "penthouse", searchFields));
+    }
+
+    [Theory]
+    [InlineData("penthouse harbor", "1")]
+    [InlineData("penthouse view", "")]
+    public async Task Search_WithSearchModeAllAndSynonyms_StillRequiresEveryTerm(string search, string expected)
+    {
+        // Arrange: hotel 1 has a suite and "harbor" but no "view"; hotel 2 has "harbor" and "view" but no suite.
+        var indexName = await CreateHotelsIndexWithDocuments(roomTypeSynonymMaps: new List<string> { "room-types" });
+        UseSynonymRules(["penthouse", "suite"]);
+
+        // Act
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest { Search = search, SearchMode = "all" });
+
+        // Assert
+        Assert.Equal(expected, string.Join(',', response.Value.Select(r => r["hotelId"]?.ToString() ?? "(null)").Order()));
+    }
+
+    [Fact]
+    public async Task Search_WithMultiWordSynonym_KeepsTheStopwordGap()
+    {
+        // Arrange: en.lucene drops "of" but keeps its position, so "city of lights" isn't "city lights".
+        var indexName = await CreateNicknameIndexAsync("The city of lights", "Bright city lights");
+        UseSynonymRules(["lutetia", "city of lights"]);
+
+        // Act
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest { Search = "lutetia" });
+
+        // Assert
+        Assert.Equal("1", Assert.Single(response.Value)["id"]?.ToString());
+    }
+
+    [Fact]
+    public async Task Search_WithStemmingAnalyzer_MatchesTheRulesAfterAnalysis()
+    {
+        // Arrange: as in Azure, rules are analyzed like the field, so "running" (analyzed as "run") finds the rule.
+        var indexName = await CreateNicknameIndexAsync("The morning sprint", "A quiet walk");
+        UseSynonymRules(["running", "sprint"]);
+
+        // Act
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest { Search = "running" });
+
+        // Assert
+        Assert.Equal("1", Assert.Single(response.Value)["id"]?.ToString());
+    }
+
+    [Fact]
+    public async Task Search_WithQuotedPhraseWithAStopwordGap_DoesNotMatchAContiguousRule()
+    {
+        // Arrange: "fish of gold" keeps the gap of "of", so the rule for "fish gold" doesn't apply.
+        var indexName = await CreateNicknameIndexAsync("Aquarium", "The fish of gold");
+        UseSynonymRules(["fish gold", "aquarium"]);
+
+        // Act
+        var response = await _searchService.SearchAsync(indexName, new SearchRequest { Search = "\"fish of gold\"" });
+
+        // Assert
+        Assert.Equal("2", Assert.Single(response.Value)["id"]?.ToString());
+    }
+
+    [Fact]
+    public async Task Search_WithQuotedPhraseInASynonymRule_ExpandsThePhrase()
+    {
+        // Arrange: no room type is "penthouse suite", but the rule maps it to "standard".
+        var indexName = await CreateHotelsIndexWithDocuments(roomTypeSynonymMaps: new List<string> { "room-types" });
+        UseSynonymRules(["penthouse suite", "standard"]);
+
+        // Act & Assert
+        Assert.Equal(new List<string?> { "2" }, await SearchIds(indexName, "\"penthouse suite\"", "rooms/type"));
+    }
+
+    // Mocks the resolver as a synonym map of equivalence rules.
+    private void UseSynonymRules(params string[][] rules)
+    {
+        _synonymMapResolverMock
+            .Setup(x => x.GetRuleTerms(It.IsAny<IEnumerable<string>>()))
+            .Returns(rules.SelectMany(rule => rule).ToList());
+        _synonymMapResolverMock
+            .Setup(x => x.ExpandTerms(It.IsAny<IEnumerable<string>>(), It.IsAny<string>()))
+            .Returns((IEnumerable<string> _, string term) =>
+                rules.FirstOrDefault(rule => rule.Contains(term, StringComparer.OrdinalIgnoreCase))?.ToList() ?? [term]);
+    }
+
+    private async Task<string> CreateNicknameIndexAsync(params string[] nicknames)
+    {
+        var indexName = $"searchfields-{Guid.NewGuid():N}";
+        _indexServiceMock.Setup(x => x.GetIndexAsync(indexName, It.IsAny<CancellationToken>())).ReturnsAsync(new SearchIndex
+        {
+            Name = indexName,
+            Fields =
+            [
+                new SearchField { Name = "id", Type = "Edm.String", Key = true },
+                new SearchField { Name = "nickname", Type = "Edm.String", Searchable = true, Analyzer = "en.lucene", SynonymMaps = ["cities"] },
+            ],
+        });
+        _luceneManager.GetWriter(indexName);
+        await _documentService.IndexDocumentsAsync(indexName, new IndexDocumentsRequest
+        {
+            Value = nicknames.Select((nickname, i) => new IndexAction
+            {
+                ["@search.action"] = "upload",
+                ["id"] = (i + 1).ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["nickname"] = nickname,
+            }).ToList(),
+        });
+
+        return indexName;
     }
 
     [Fact]

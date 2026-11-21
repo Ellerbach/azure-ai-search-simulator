@@ -1,0 +1,2096 @@
+### =====================================================
+### Index Update Sample Requests
+### Demonstrates which changes to an existing index are applied in
+### place and which Azure AI Search refuses (with its messages):
+### fields can be added but not deleted or changed (except
+### retrievable, searchAnalyzer and synonymMaps), analysis
+### components can't change and are only added with
+### allowIndexDowntime, suggesters only gain new fields, and vector
+### algorithms in use can't change.
+### =====================================================
+###
+### SETUP ORDER:
+### 1. Create the index
+### 2. Send the updates in order (each title gives the expected status)
+### 3. Cleanup
+###
+### Prerequisites:
+### - The simulator running at https://localhost:7250
+### - REST Client extension for VS Code
+### - For the [AZURE] requests: an Azure AI Search service with role-based
+###   access, the Search Service Contributor and Search Index Data Contributor
+###   roles, and AZURE_BASE_URL and ENTRA_TOKEN in .env (see .env.example).
+###   To use keys instead, replace "Authorization: Bearer {{azureToken}}"
+###   with an api-key header.
+### - Each request is a [SIM]/[AZURE] pair; run the steps in order on each.
+### =====================================================
+
+@baseUrl = {{$dotenv BASE_URL}}
+@apiVersion = {{$dotenv API_VERSION}}
+@adminKey = {{$dotenv ADMIN_KEY}}
+@azureBaseUrl = {{$dotenv AZURE_BASE_URL}}
+@azureToken = {{$dotenv ENTRA_TOKEN}}
+
+# =====================================================
+# 1. CREATE THE INDEX
+# =====================================================
+
+### [SIM] Create an index with a custom analyzer, a suggester and a vector field
+PUT {{baseUrl}}/indexes/index-update-sample?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "name": "index-update-sample",
+  "fields": [
+    {
+      "name": "id",
+      "type": "Edm.String",
+      "key": true,
+      "filterable": true
+    },
+    {
+      "name": "title",
+      "type": "Edm.String",
+      "searchable": true
+    },
+    {
+      "name": "summary",
+      "type": "Edm.String",
+      "searchable": true
+    },
+    {
+      "name": "category",
+      "type": "Edm.String",
+      "filterable": true,
+      "facetable": true
+    },
+    {
+      "name": "notes",
+      "type": "Edm.String",
+      "searchable": true,
+      "analyzer": "notes_analyzer"
+    },
+    {
+      "name": "embedding",
+      "type": "Collection(Edm.Single)",
+      "searchable": true,
+      "dimensions": 2,
+      "vectorSearchProfile": "vector-profile"
+    }
+  ],
+  "suggesters": [
+    {
+      "name": "sg",
+      "searchMode": "analyzingInfixMatching",
+      "sourceFields": [
+        "title"
+      ]
+    }
+  ],
+  "analyzers": [
+    {
+      "@odata.type": "#Microsoft.Azure.Search.CustomAnalyzer",
+      "name": "notes_analyzer",
+      "tokenizer": "standard_v2",
+      "tokenFilters": [
+        "lowercase"
+      ]
+    }
+  ],
+  "vectorSearch": {
+    "algorithms": [
+      {
+        "name": "hnsw",
+        "kind": "hnsw",
+        "hnswParameters": {
+          "metric": "cosine",
+          "m": 4,
+          "efConstruction": 400
+        }
+      }
+    ],
+    "profiles": [
+      {
+        "name": "vector-profile",
+        "algorithm": "hnsw"
+      }
+    ]
+  }
+}
+
+### [AZURE] Create an index with a custom analyzer, a suggester and a vector field
+PUT {{azureBaseUrl}}/indexes/index-update-sample?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "name": "index-update-sample",
+  "fields": [
+    {
+      "name": "id",
+      "type": "Edm.String",
+      "key": true,
+      "filterable": true
+    },
+    {
+      "name": "title",
+      "type": "Edm.String",
+      "searchable": true
+    },
+    {
+      "name": "summary",
+      "type": "Edm.String",
+      "searchable": true
+    },
+    {
+      "name": "category",
+      "type": "Edm.String",
+      "filterable": true,
+      "facetable": true
+    },
+    {
+      "name": "notes",
+      "type": "Edm.String",
+      "searchable": true,
+      "analyzer": "notes_analyzer"
+    },
+    {
+      "name": "embedding",
+      "type": "Collection(Edm.Single)",
+      "searchable": true,
+      "dimensions": 2,
+      "vectorSearchProfile": "vector-profile"
+    }
+  ],
+  "suggesters": [
+    {
+      "name": "sg",
+      "searchMode": "analyzingInfixMatching",
+      "sourceFields": [
+        "title"
+      ]
+    }
+  ],
+  "analyzers": [
+    {
+      "@odata.type": "#Microsoft.Azure.Search.CustomAnalyzer",
+      "name": "notes_analyzer",
+      "tokenizer": "standard_v2",
+      "tokenFilters": [
+        "lowercase"
+      ]
+    }
+  ],
+  "vectorSearch": {
+    "algorithms": [
+      {
+        "name": "hnsw",
+        "kind": "hnsw",
+        "hnswParameters": {
+          "metric": "cosine",
+          "m": 4,
+          "efConstruction": 400
+        }
+      }
+    ],
+    "profiles": [
+      {
+        "name": "vector-profile",
+        "algorithm": "hnsw"
+      }
+    ]
+  }
+}
+
+# =====================================================
+# 2. UPDATES
+# =====================================================
+
+### [SIM] Add a field, and make an existing field non-retrievable: both allowed
+PUT {{baseUrl}}/indexes/index-update-sample?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "name": "index-update-sample",
+  "fields": [
+    {
+      "name": "id",
+      "type": "Edm.String",
+      "key": true,
+      "filterable": true
+    },
+    {
+      "name": "title",
+      "type": "Edm.String",
+      "searchable": true,
+      "retrievable": false
+    },
+    {
+      "name": "summary",
+      "type": "Edm.String",
+      "searchable": true
+    },
+    {
+      "name": "category",
+      "type": "Edm.String",
+      "filterable": true,
+      "facetable": true
+    },
+    {
+      "name": "notes",
+      "type": "Edm.String",
+      "searchable": true,
+      "analyzer": "notes_analyzer"
+    },
+    {
+      "name": "embedding",
+      "type": "Collection(Edm.Single)",
+      "searchable": true,
+      "dimensions": 2,
+      "vectorSearchProfile": "vector-profile"
+    },
+    {
+      "name": "rating",
+      "type": "Edm.Double",
+      "filterable": true,
+      "sortable": true
+    }
+  ],
+  "suggesters": [
+    {
+      "name": "sg",
+      "searchMode": "analyzingInfixMatching",
+      "sourceFields": [
+        "title"
+      ]
+    }
+  ],
+  "analyzers": [
+    {
+      "@odata.type": "#Microsoft.Azure.Search.CustomAnalyzer",
+      "name": "notes_analyzer",
+      "tokenizer": "standard_v2",
+      "tokenFilters": [
+        "lowercase"
+      ]
+    }
+  ],
+  "vectorSearch": {
+    "algorithms": [
+      {
+        "name": "hnsw",
+        "kind": "hnsw",
+        "hnswParameters": {
+          "metric": "cosine",
+          "m": 4,
+          "efConstruction": 400
+        }
+      }
+    ],
+    "profiles": [
+      {
+        "name": "vector-profile",
+        "algorithm": "hnsw"
+      }
+    ]
+  }
+}
+
+### [AZURE] Add a field, and make an existing field non-retrievable: both allowed
+PUT {{azureBaseUrl}}/indexes/index-update-sample?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "name": "index-update-sample",
+  "fields": [
+    {
+      "name": "id",
+      "type": "Edm.String",
+      "key": true,
+      "filterable": true
+    },
+    {
+      "name": "title",
+      "type": "Edm.String",
+      "searchable": true,
+      "retrievable": false
+    },
+    {
+      "name": "summary",
+      "type": "Edm.String",
+      "searchable": true
+    },
+    {
+      "name": "category",
+      "type": "Edm.String",
+      "filterable": true,
+      "facetable": true
+    },
+    {
+      "name": "notes",
+      "type": "Edm.String",
+      "searchable": true,
+      "analyzer": "notes_analyzer"
+    },
+    {
+      "name": "embedding",
+      "type": "Collection(Edm.Single)",
+      "searchable": true,
+      "dimensions": 2,
+      "vectorSearchProfile": "vector-profile"
+    },
+    {
+      "name": "rating",
+      "type": "Edm.Double",
+      "filterable": true,
+      "sortable": true
+    }
+  ],
+  "suggesters": [
+    {
+      "name": "sg",
+      "searchMode": "analyzingInfixMatching",
+      "sourceFields": [
+        "title"
+      ]
+    }
+  ],
+  "analyzers": [
+    {
+      "@odata.type": "#Microsoft.Azure.Search.CustomAnalyzer",
+      "name": "notes_analyzer",
+      "tokenizer": "standard_v2",
+      "tokenFilters": [
+        "lowercase"
+      ]
+    }
+  ],
+  "vectorSearch": {
+    "algorithms": [
+      {
+        "name": "hnsw",
+        "kind": "hnsw",
+        "hnswParameters": {
+          "metric": "cosine",
+          "m": 4,
+          "efConstruction": 400
+        }
+      }
+    ],
+    "profiles": [
+      {
+        "name": "vector-profile",
+        "algorithm": "hnsw"
+      }
+    ]
+  }
+}
+
+### [SIM] The same analyzer with its properties in another order is unchanged
+PUT {{baseUrl}}/indexes/index-update-sample?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "name": "index-update-sample",
+  "fields": [
+    {
+      "name": "id",
+      "type": "Edm.String",
+      "key": true,
+      "filterable": true
+    },
+    {
+      "name": "title",
+      "type": "Edm.String",
+      "searchable": true,
+      "retrievable": false
+    },
+    {
+      "name": "summary",
+      "type": "Edm.String",
+      "searchable": true
+    },
+    {
+      "name": "category",
+      "type": "Edm.String",
+      "filterable": true,
+      "facetable": true
+    },
+    {
+      "name": "notes",
+      "type": "Edm.String",
+      "searchable": true,
+      "analyzer": "notes_analyzer"
+    },
+    {
+      "name": "embedding",
+      "type": "Collection(Edm.Single)",
+      "searchable": true,
+      "dimensions": 2,
+      "vectorSearchProfile": "vector-profile"
+    },
+    {
+      "name": "rating",
+      "type": "Edm.Double",
+      "filterable": true,
+      "sortable": true
+    }
+  ],
+  "suggesters": [
+    {
+      "name": "sg",
+      "searchMode": "analyzingInfixMatching",
+      "sourceFields": [
+        "title"
+      ]
+    }
+  ],
+  "analyzers": [
+    {
+      "tokenFilters": [
+        "lowercase"
+      ],
+      "tokenizer": "standard_v2",
+      "name": "notes_analyzer",
+      "@odata.type": "#Microsoft.Azure.Search.CustomAnalyzer"
+    }
+  ],
+  "vectorSearch": {
+    "algorithms": [
+      {
+        "name": "hnsw",
+        "kind": "hnsw",
+        "hnswParameters": {
+          "metric": "cosine",
+          "m": 4,
+          "efConstruction": 400
+        }
+      }
+    ],
+    "profiles": [
+      {
+        "name": "vector-profile",
+        "algorithm": "hnsw"
+      }
+    ]
+  }
+}
+
+### [AZURE] The same analyzer with its properties in another order is unchanged
+PUT {{azureBaseUrl}}/indexes/index-update-sample?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "name": "index-update-sample",
+  "fields": [
+    {
+      "name": "id",
+      "type": "Edm.String",
+      "key": true,
+      "filterable": true
+    },
+    {
+      "name": "title",
+      "type": "Edm.String",
+      "searchable": true,
+      "retrievable": false
+    },
+    {
+      "name": "summary",
+      "type": "Edm.String",
+      "searchable": true
+    },
+    {
+      "name": "category",
+      "type": "Edm.String",
+      "filterable": true,
+      "facetable": true
+    },
+    {
+      "name": "notes",
+      "type": "Edm.String",
+      "searchable": true,
+      "analyzer": "notes_analyzer"
+    },
+    {
+      "name": "embedding",
+      "type": "Collection(Edm.Single)",
+      "searchable": true,
+      "dimensions": 2,
+      "vectorSearchProfile": "vector-profile"
+    },
+    {
+      "name": "rating",
+      "type": "Edm.Double",
+      "filterable": true,
+      "sortable": true
+    }
+  ],
+  "suggesters": [
+    {
+      "name": "sg",
+      "searchMode": "analyzingInfixMatching",
+      "sourceFields": [
+        "title"
+      ]
+    }
+  ],
+  "analyzers": [
+    {
+      "tokenFilters": [
+        "lowercase"
+      ],
+      "tokenizer": "standard_v2",
+      "name": "notes_analyzer",
+      "@odata.type": "#Microsoft.Azure.Search.CustomAnalyzer"
+    }
+  ],
+  "vectorSearch": {
+    "algorithms": [
+      {
+        "name": "hnsw",
+        "kind": "hnsw",
+        "hnswParameters": {
+          "metric": "cosine",
+          "m": 4,
+          "efConstruction": 400
+        }
+      }
+    ],
+    "profiles": [
+      {
+        "name": "vector-profile",
+        "algorithm": "hnsw"
+      }
+    ]
+  }
+}
+
+### [SIM] Change an existing field's attributes → 400
+PUT {{baseUrl}}/indexes/index-update-sample?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "name": "index-update-sample",
+  "fields": [
+    {
+      "name": "id",
+      "type": "Edm.String",
+      "key": true,
+      "filterable": true
+    },
+    {
+      "name": "title",
+      "type": "Edm.String",
+      "searchable": true,
+      "retrievable": false
+    },
+    {
+      "name": "summary",
+      "type": "Edm.String",
+      "searchable": true
+    },
+    {
+      "name": "category",
+      "type": "Edm.String",
+      "filterable": false,
+      "facetable": true
+    },
+    {
+      "name": "notes",
+      "type": "Edm.String",
+      "searchable": true,
+      "analyzer": "notes_analyzer"
+    },
+    {
+      "name": "embedding",
+      "type": "Collection(Edm.Single)",
+      "searchable": true,
+      "dimensions": 2,
+      "vectorSearchProfile": "vector-profile"
+    },
+    {
+      "name": "rating",
+      "type": "Edm.Double",
+      "filterable": true,
+      "sortable": true
+    }
+  ],
+  "suggesters": [
+    {
+      "name": "sg",
+      "searchMode": "analyzingInfixMatching",
+      "sourceFields": [
+        "title"
+      ]
+    }
+  ],
+  "analyzers": [
+    {
+      "@odata.type": "#Microsoft.Azure.Search.CustomAnalyzer",
+      "name": "notes_analyzer",
+      "tokenizer": "standard_v2",
+      "tokenFilters": [
+        "lowercase"
+      ]
+    }
+  ],
+  "vectorSearch": {
+    "algorithms": [
+      {
+        "name": "hnsw",
+        "kind": "hnsw",
+        "hnswParameters": {
+          "metric": "cosine",
+          "m": 4,
+          "efConstruction": 400
+        }
+      }
+    ],
+    "profiles": [
+      {
+        "name": "vector-profile",
+        "algorithm": "hnsw"
+      }
+    ]
+  }
+}
+
+### [AZURE] Change an existing field's attributes → 400
+PUT {{azureBaseUrl}}/indexes/index-update-sample?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "name": "index-update-sample",
+  "fields": [
+    {
+      "name": "id",
+      "type": "Edm.String",
+      "key": true,
+      "filterable": true
+    },
+    {
+      "name": "title",
+      "type": "Edm.String",
+      "searchable": true,
+      "retrievable": false
+    },
+    {
+      "name": "summary",
+      "type": "Edm.String",
+      "searchable": true
+    },
+    {
+      "name": "category",
+      "type": "Edm.String",
+      "filterable": false,
+      "facetable": true
+    },
+    {
+      "name": "notes",
+      "type": "Edm.String",
+      "searchable": true,
+      "analyzer": "notes_analyzer"
+    },
+    {
+      "name": "embedding",
+      "type": "Collection(Edm.Single)",
+      "searchable": true,
+      "dimensions": 2,
+      "vectorSearchProfile": "vector-profile"
+    },
+    {
+      "name": "rating",
+      "type": "Edm.Double",
+      "filterable": true,
+      "sortable": true
+    }
+  ],
+  "suggesters": [
+    {
+      "name": "sg",
+      "searchMode": "analyzingInfixMatching",
+      "sourceFields": [
+        "title"
+      ]
+    }
+  ],
+  "analyzers": [
+    {
+      "@odata.type": "#Microsoft.Azure.Search.CustomAnalyzer",
+      "name": "notes_analyzer",
+      "tokenizer": "standard_v2",
+      "tokenFilters": [
+        "lowercase"
+      ]
+    }
+  ],
+  "vectorSearch": {
+    "algorithms": [
+      {
+        "name": "hnsw",
+        "kind": "hnsw",
+        "hnswParameters": {
+          "metric": "cosine",
+          "m": 4,
+          "efConstruction": 400
+        }
+      }
+    ],
+    "profiles": [
+      {
+        "name": "vector-profile",
+        "algorithm": "hnsw"
+      }
+    ]
+  }
+}
+
+### [SIM] Delete a field → 400
+PUT {{baseUrl}}/indexes/index-update-sample?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "name": "index-update-sample",
+  "fields": [
+    {
+      "name": "id",
+      "type": "Edm.String",
+      "key": true,
+      "filterable": true
+    },
+    {
+      "name": "title",
+      "type": "Edm.String",
+      "searchable": true,
+      "retrievable": false
+    },
+    {
+      "name": "summary",
+      "type": "Edm.String",
+      "searchable": true
+    },
+    {
+      "name": "notes",
+      "type": "Edm.String",
+      "searchable": true,
+      "analyzer": "notes_analyzer"
+    },
+    {
+      "name": "embedding",
+      "type": "Collection(Edm.Single)",
+      "searchable": true,
+      "dimensions": 2,
+      "vectorSearchProfile": "vector-profile"
+    },
+    {
+      "name": "rating",
+      "type": "Edm.Double",
+      "filterable": true,
+      "sortable": true
+    }
+  ],
+  "suggesters": [
+    {
+      "name": "sg",
+      "searchMode": "analyzingInfixMatching",
+      "sourceFields": [
+        "title"
+      ]
+    }
+  ],
+  "analyzers": [
+    {
+      "@odata.type": "#Microsoft.Azure.Search.CustomAnalyzer",
+      "name": "notes_analyzer",
+      "tokenizer": "standard_v2",
+      "tokenFilters": [
+        "lowercase"
+      ]
+    }
+  ],
+  "vectorSearch": {
+    "algorithms": [
+      {
+        "name": "hnsw",
+        "kind": "hnsw",
+        "hnswParameters": {
+          "metric": "cosine",
+          "m": 4,
+          "efConstruction": 400
+        }
+      }
+    ],
+    "profiles": [
+      {
+        "name": "vector-profile",
+        "algorithm": "hnsw"
+      }
+    ]
+  }
+}
+
+### [AZURE] Delete a field → 400
+PUT {{azureBaseUrl}}/indexes/index-update-sample?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "name": "index-update-sample",
+  "fields": [
+    {
+      "name": "id",
+      "type": "Edm.String",
+      "key": true,
+      "filterable": true
+    },
+    {
+      "name": "title",
+      "type": "Edm.String",
+      "searchable": true,
+      "retrievable": false
+    },
+    {
+      "name": "summary",
+      "type": "Edm.String",
+      "searchable": true
+    },
+    {
+      "name": "notes",
+      "type": "Edm.String",
+      "searchable": true,
+      "analyzer": "notes_analyzer"
+    },
+    {
+      "name": "embedding",
+      "type": "Collection(Edm.Single)",
+      "searchable": true,
+      "dimensions": 2,
+      "vectorSearchProfile": "vector-profile"
+    },
+    {
+      "name": "rating",
+      "type": "Edm.Double",
+      "filterable": true,
+      "sortable": true
+    }
+  ],
+  "suggesters": [
+    {
+      "name": "sg",
+      "searchMode": "analyzingInfixMatching",
+      "sourceFields": [
+        "title"
+      ]
+    }
+  ],
+  "analyzers": [
+    {
+      "@odata.type": "#Microsoft.Azure.Search.CustomAnalyzer",
+      "name": "notes_analyzer",
+      "tokenizer": "standard_v2",
+      "tokenFilters": [
+        "lowercase"
+      ]
+    }
+  ],
+  "vectorSearch": {
+    "algorithms": [
+      {
+        "name": "hnsw",
+        "kind": "hnsw",
+        "hnswParameters": {
+          "metric": "cosine",
+          "m": 4,
+          "efConstruction": 400
+        }
+      }
+    ],
+    "profiles": [
+      {
+        "name": "vector-profile",
+        "algorithm": "hnsw"
+      }
+    ]
+  }
+}
+
+### [SIM] Change an existing analyzer → 400
+PUT {{baseUrl}}/indexes/index-update-sample?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "name": "index-update-sample",
+  "fields": [
+    {
+      "name": "id",
+      "type": "Edm.String",
+      "key": true,
+      "filterable": true
+    },
+    {
+      "name": "title",
+      "type": "Edm.String",
+      "searchable": true,
+      "retrievable": false
+    },
+    {
+      "name": "summary",
+      "type": "Edm.String",
+      "searchable": true
+    },
+    {
+      "name": "category",
+      "type": "Edm.String",
+      "filterable": true,
+      "facetable": true
+    },
+    {
+      "name": "notes",
+      "type": "Edm.String",
+      "searchable": true,
+      "analyzer": "notes_analyzer"
+    },
+    {
+      "name": "embedding",
+      "type": "Collection(Edm.Single)",
+      "searchable": true,
+      "dimensions": 2,
+      "vectorSearchProfile": "vector-profile"
+    },
+    {
+      "name": "rating",
+      "type": "Edm.Double",
+      "filterable": true,
+      "sortable": true
+    }
+  ],
+  "suggesters": [
+    {
+      "name": "sg",
+      "searchMode": "analyzingInfixMatching",
+      "sourceFields": [
+        "title"
+      ]
+    }
+  ],
+  "analyzers": [
+    {
+      "@odata.type": "#Microsoft.Azure.Search.CustomAnalyzer",
+      "name": "notes_analyzer",
+      "tokenizer": "standard_v2",
+      "tokenFilters": [
+        "lowercase",
+        "asciifolding"
+      ]
+    }
+  ],
+  "vectorSearch": {
+    "algorithms": [
+      {
+        "name": "hnsw",
+        "kind": "hnsw",
+        "hnswParameters": {
+          "metric": "cosine",
+          "m": 4,
+          "efConstruction": 400
+        }
+      }
+    ],
+    "profiles": [
+      {
+        "name": "vector-profile",
+        "algorithm": "hnsw"
+      }
+    ]
+  }
+}
+
+### [AZURE] Change an existing analyzer → 400
+PUT {{azureBaseUrl}}/indexes/index-update-sample?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "name": "index-update-sample",
+  "fields": [
+    {
+      "name": "id",
+      "type": "Edm.String",
+      "key": true,
+      "filterable": true
+    },
+    {
+      "name": "title",
+      "type": "Edm.String",
+      "searchable": true,
+      "retrievable": false
+    },
+    {
+      "name": "summary",
+      "type": "Edm.String",
+      "searchable": true
+    },
+    {
+      "name": "category",
+      "type": "Edm.String",
+      "filterable": true,
+      "facetable": true
+    },
+    {
+      "name": "notes",
+      "type": "Edm.String",
+      "searchable": true,
+      "analyzer": "notes_analyzer"
+    },
+    {
+      "name": "embedding",
+      "type": "Collection(Edm.Single)",
+      "searchable": true,
+      "dimensions": 2,
+      "vectorSearchProfile": "vector-profile"
+    },
+    {
+      "name": "rating",
+      "type": "Edm.Double",
+      "filterable": true,
+      "sortable": true
+    }
+  ],
+  "suggesters": [
+    {
+      "name": "sg",
+      "searchMode": "analyzingInfixMatching",
+      "sourceFields": [
+        "title"
+      ]
+    }
+  ],
+  "analyzers": [
+    {
+      "@odata.type": "#Microsoft.Azure.Search.CustomAnalyzer",
+      "name": "notes_analyzer",
+      "tokenizer": "standard_v2",
+      "tokenFilters": [
+        "lowercase",
+        "asciifolding"
+      ]
+    }
+  ],
+  "vectorSearch": {
+    "algorithms": [
+      {
+        "name": "hnsw",
+        "kind": "hnsw",
+        "hnswParameters": {
+          "metric": "cosine",
+          "m": 4,
+          "efConstruction": 400
+        }
+      }
+    ],
+    "profiles": [
+      {
+        "name": "vector-profile",
+        "algorithm": "hnsw"
+      }
+    ]
+  }
+}
+
+### [SIM] Add an analyzer without allowIndexDowntime → 400
+PUT {{baseUrl}}/indexes/index-update-sample?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "name": "index-update-sample",
+  "fields": [
+    {
+      "name": "id",
+      "type": "Edm.String",
+      "key": true,
+      "filterable": true
+    },
+    {
+      "name": "title",
+      "type": "Edm.String",
+      "searchable": true,
+      "retrievable": false
+    },
+    {
+      "name": "summary",
+      "type": "Edm.String",
+      "searchable": true
+    },
+    {
+      "name": "category",
+      "type": "Edm.String",
+      "filterable": true,
+      "facetable": true
+    },
+    {
+      "name": "notes",
+      "type": "Edm.String",
+      "searchable": true,
+      "analyzer": "notes_analyzer"
+    },
+    {
+      "name": "embedding",
+      "type": "Collection(Edm.Single)",
+      "searchable": true,
+      "dimensions": 2,
+      "vectorSearchProfile": "vector-profile"
+    },
+    {
+      "name": "rating",
+      "type": "Edm.Double",
+      "filterable": true,
+      "sortable": true
+    }
+  ],
+  "suggesters": [
+    {
+      "name": "sg",
+      "searchMode": "analyzingInfixMatching",
+      "sourceFields": [
+        "title"
+      ]
+    }
+  ],
+  "analyzers": [
+    {
+      "@odata.type": "#Microsoft.Azure.Search.CustomAnalyzer",
+      "name": "notes_analyzer",
+      "tokenizer": "standard_v2",
+      "tokenFilters": [
+        "lowercase"
+      ]
+    },
+    {
+      "@odata.type": "#Microsoft.Azure.Search.CustomAnalyzer",
+      "name": "codes_analyzer",
+      "tokenizer": "keyword_v2",
+      "tokenFilters": [
+        "lowercase"
+      ]
+    }
+  ],
+  "vectorSearch": {
+    "algorithms": [
+      {
+        "name": "hnsw",
+        "kind": "hnsw",
+        "hnswParameters": {
+          "metric": "cosine",
+          "m": 4,
+          "efConstruction": 400
+        }
+      }
+    ],
+    "profiles": [
+      {
+        "name": "vector-profile",
+        "algorithm": "hnsw"
+      }
+    ]
+  }
+}
+
+### [AZURE] Add an analyzer without allowIndexDowntime → 400
+PUT {{azureBaseUrl}}/indexes/index-update-sample?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "name": "index-update-sample",
+  "fields": [
+    {
+      "name": "id",
+      "type": "Edm.String",
+      "key": true,
+      "filterable": true
+    },
+    {
+      "name": "title",
+      "type": "Edm.String",
+      "searchable": true,
+      "retrievable": false
+    },
+    {
+      "name": "summary",
+      "type": "Edm.String",
+      "searchable": true
+    },
+    {
+      "name": "category",
+      "type": "Edm.String",
+      "filterable": true,
+      "facetable": true
+    },
+    {
+      "name": "notes",
+      "type": "Edm.String",
+      "searchable": true,
+      "analyzer": "notes_analyzer"
+    },
+    {
+      "name": "embedding",
+      "type": "Collection(Edm.Single)",
+      "searchable": true,
+      "dimensions": 2,
+      "vectorSearchProfile": "vector-profile"
+    },
+    {
+      "name": "rating",
+      "type": "Edm.Double",
+      "filterable": true,
+      "sortable": true
+    }
+  ],
+  "suggesters": [
+    {
+      "name": "sg",
+      "searchMode": "analyzingInfixMatching",
+      "sourceFields": [
+        "title"
+      ]
+    }
+  ],
+  "analyzers": [
+    {
+      "@odata.type": "#Microsoft.Azure.Search.CustomAnalyzer",
+      "name": "notes_analyzer",
+      "tokenizer": "standard_v2",
+      "tokenFilters": [
+        "lowercase"
+      ]
+    },
+    {
+      "@odata.type": "#Microsoft.Azure.Search.CustomAnalyzer",
+      "name": "codes_analyzer",
+      "tokenizer": "keyword_v2",
+      "tokenFilters": [
+        "lowercase"
+      ]
+    }
+  ],
+  "vectorSearch": {
+    "algorithms": [
+      {
+        "name": "hnsw",
+        "kind": "hnsw",
+        "hnswParameters": {
+          "metric": "cosine",
+          "m": 4,
+          "efConstruction": 400
+        }
+      }
+    ],
+    "profiles": [
+      {
+        "name": "vector-profile",
+        "algorithm": "hnsw"
+      }
+    ]
+  }
+}
+
+### [SIM] Add an analyzer with allowIndexDowntime=true: allowed
+PUT {{baseUrl}}/indexes/index-update-sample?api-version={{apiVersion}}&allowIndexDowntime=true
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "name": "index-update-sample",
+  "fields": [
+    {
+      "name": "id",
+      "type": "Edm.String",
+      "key": true,
+      "filterable": true
+    },
+    {
+      "name": "title",
+      "type": "Edm.String",
+      "searchable": true,
+      "retrievable": false
+    },
+    {
+      "name": "summary",
+      "type": "Edm.String",
+      "searchable": true
+    },
+    {
+      "name": "category",
+      "type": "Edm.String",
+      "filterable": true,
+      "facetable": true
+    },
+    {
+      "name": "notes",
+      "type": "Edm.String",
+      "searchable": true,
+      "analyzer": "notes_analyzer"
+    },
+    {
+      "name": "embedding",
+      "type": "Collection(Edm.Single)",
+      "searchable": true,
+      "dimensions": 2,
+      "vectorSearchProfile": "vector-profile"
+    },
+    {
+      "name": "rating",
+      "type": "Edm.Double",
+      "filterable": true,
+      "sortable": true
+    }
+  ],
+  "suggesters": [
+    {
+      "name": "sg",
+      "searchMode": "analyzingInfixMatching",
+      "sourceFields": [
+        "title"
+      ]
+    }
+  ],
+  "analyzers": [
+    {
+      "@odata.type": "#Microsoft.Azure.Search.CustomAnalyzer",
+      "name": "notes_analyzer",
+      "tokenizer": "standard_v2",
+      "tokenFilters": [
+        "lowercase"
+      ]
+    },
+    {
+      "@odata.type": "#Microsoft.Azure.Search.CustomAnalyzer",
+      "name": "codes_analyzer",
+      "tokenizer": "keyword_v2",
+      "tokenFilters": [
+        "lowercase"
+      ]
+    }
+  ],
+  "vectorSearch": {
+    "algorithms": [
+      {
+        "name": "hnsw",
+        "kind": "hnsw",
+        "hnswParameters": {
+          "metric": "cosine",
+          "m": 4,
+          "efConstruction": 400
+        }
+      }
+    ],
+    "profiles": [
+      {
+        "name": "vector-profile",
+        "algorithm": "hnsw"
+      }
+    ]
+  }
+}
+
+### [AZURE] Add an analyzer with allowIndexDowntime=true: allowed
+PUT {{azureBaseUrl}}/indexes/index-update-sample?api-version={{apiVersion}}&allowIndexDowntime=true
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "name": "index-update-sample",
+  "fields": [
+    {
+      "name": "id",
+      "type": "Edm.String",
+      "key": true,
+      "filterable": true
+    },
+    {
+      "name": "title",
+      "type": "Edm.String",
+      "searchable": true,
+      "retrievable": false
+    },
+    {
+      "name": "summary",
+      "type": "Edm.String",
+      "searchable": true
+    },
+    {
+      "name": "category",
+      "type": "Edm.String",
+      "filterable": true,
+      "facetable": true
+    },
+    {
+      "name": "notes",
+      "type": "Edm.String",
+      "searchable": true,
+      "analyzer": "notes_analyzer"
+    },
+    {
+      "name": "embedding",
+      "type": "Collection(Edm.Single)",
+      "searchable": true,
+      "dimensions": 2,
+      "vectorSearchProfile": "vector-profile"
+    },
+    {
+      "name": "rating",
+      "type": "Edm.Double",
+      "filterable": true,
+      "sortable": true
+    }
+  ],
+  "suggesters": [
+    {
+      "name": "sg",
+      "searchMode": "analyzingInfixMatching",
+      "sourceFields": [
+        "title"
+      ]
+    }
+  ],
+  "analyzers": [
+    {
+      "@odata.type": "#Microsoft.Azure.Search.CustomAnalyzer",
+      "name": "notes_analyzer",
+      "tokenizer": "standard_v2",
+      "tokenFilters": [
+        "lowercase"
+      ]
+    },
+    {
+      "@odata.type": "#Microsoft.Azure.Search.CustomAnalyzer",
+      "name": "codes_analyzer",
+      "tokenizer": "keyword_v2",
+      "tokenFilters": [
+        "lowercase"
+      ]
+    }
+  ],
+  "vectorSearch": {
+    "algorithms": [
+      {
+        "name": "hnsw",
+        "kind": "hnsw",
+        "hnswParameters": {
+          "metric": "cosine",
+          "m": 4,
+          "efConstruction": 400
+        }
+      }
+    ],
+    "profiles": [
+      {
+        "name": "vector-profile",
+        "algorithm": "hnsw"
+      }
+    ]
+  }
+}
+
+### [SIM] Remove the suggester → 400
+PUT {{baseUrl}}/indexes/index-update-sample?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "name": "index-update-sample",
+  "fields": [
+    {
+      "name": "id",
+      "type": "Edm.String",
+      "key": true,
+      "filterable": true
+    },
+    {
+      "name": "title",
+      "type": "Edm.String",
+      "searchable": true,
+      "retrievable": false
+    },
+    {
+      "name": "summary",
+      "type": "Edm.String",
+      "searchable": true
+    },
+    {
+      "name": "category",
+      "type": "Edm.String",
+      "filterable": true,
+      "facetable": true
+    },
+    {
+      "name": "notes",
+      "type": "Edm.String",
+      "searchable": true,
+      "analyzer": "notes_analyzer"
+    },
+    {
+      "name": "embedding",
+      "type": "Collection(Edm.Single)",
+      "searchable": true,
+      "dimensions": 2,
+      "vectorSearchProfile": "vector-profile"
+    },
+    {
+      "name": "rating",
+      "type": "Edm.Double",
+      "filterable": true,
+      "sortable": true
+    }
+  ],
+  "suggesters": [],
+  "analyzers": [
+    {
+      "@odata.type": "#Microsoft.Azure.Search.CustomAnalyzer",
+      "name": "notes_analyzer",
+      "tokenizer": "standard_v2",
+      "tokenFilters": [
+        "lowercase"
+      ]
+    },
+    {
+      "@odata.type": "#Microsoft.Azure.Search.CustomAnalyzer",
+      "name": "codes_analyzer",
+      "tokenizer": "keyword_v2",
+      "tokenFilters": [
+        "lowercase"
+      ]
+    }
+  ],
+  "vectorSearch": {
+    "algorithms": [
+      {
+        "name": "hnsw",
+        "kind": "hnsw",
+        "hnswParameters": {
+          "metric": "cosine",
+          "m": 4,
+          "efConstruction": 400
+        }
+      }
+    ],
+    "profiles": [
+      {
+        "name": "vector-profile",
+        "algorithm": "hnsw"
+      }
+    ]
+  }
+}
+
+### [AZURE] Remove the suggester → 400
+PUT {{azureBaseUrl}}/indexes/index-update-sample?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "name": "index-update-sample",
+  "fields": [
+    {
+      "name": "id",
+      "type": "Edm.String",
+      "key": true,
+      "filterable": true
+    },
+    {
+      "name": "title",
+      "type": "Edm.String",
+      "searchable": true,
+      "retrievable": false
+    },
+    {
+      "name": "summary",
+      "type": "Edm.String",
+      "searchable": true
+    },
+    {
+      "name": "category",
+      "type": "Edm.String",
+      "filterable": true,
+      "facetable": true
+    },
+    {
+      "name": "notes",
+      "type": "Edm.String",
+      "searchable": true,
+      "analyzer": "notes_analyzer"
+    },
+    {
+      "name": "embedding",
+      "type": "Collection(Edm.Single)",
+      "searchable": true,
+      "dimensions": 2,
+      "vectorSearchProfile": "vector-profile"
+    },
+    {
+      "name": "rating",
+      "type": "Edm.Double",
+      "filterable": true,
+      "sortable": true
+    }
+  ],
+  "suggesters": [],
+  "analyzers": [
+    {
+      "@odata.type": "#Microsoft.Azure.Search.CustomAnalyzer",
+      "name": "notes_analyzer",
+      "tokenizer": "standard_v2",
+      "tokenFilters": [
+        "lowercase"
+      ]
+    },
+    {
+      "@odata.type": "#Microsoft.Azure.Search.CustomAnalyzer",
+      "name": "codes_analyzer",
+      "tokenizer": "keyword_v2",
+      "tokenFilters": [
+        "lowercase"
+      ]
+    }
+  ],
+  "vectorSearch": {
+    "algorithms": [
+      {
+        "name": "hnsw",
+        "kind": "hnsw",
+        "hnswParameters": {
+          "metric": "cosine",
+          "m": 4,
+          "efConstruction": 400
+        }
+      }
+    ],
+    "profiles": [
+      {
+        "name": "vector-profile",
+        "algorithm": "hnsw"
+      }
+    ]
+  }
+}
+
+### [SIM] Add an existing field to the suggester → 400
+PUT {{baseUrl}}/indexes/index-update-sample?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "name": "index-update-sample",
+  "fields": [
+    {
+      "name": "id",
+      "type": "Edm.String",
+      "key": true,
+      "filterable": true
+    },
+    {
+      "name": "title",
+      "type": "Edm.String",
+      "searchable": true,
+      "retrievable": false
+    },
+    {
+      "name": "summary",
+      "type": "Edm.String",
+      "searchable": true
+    },
+    {
+      "name": "category",
+      "type": "Edm.String",
+      "filterable": true,
+      "facetable": true
+    },
+    {
+      "name": "notes",
+      "type": "Edm.String",
+      "searchable": true,
+      "analyzer": "notes_analyzer"
+    },
+    {
+      "name": "embedding",
+      "type": "Collection(Edm.Single)",
+      "searchable": true,
+      "dimensions": 2,
+      "vectorSearchProfile": "vector-profile"
+    },
+    {
+      "name": "rating",
+      "type": "Edm.Double",
+      "filterable": true,
+      "sortable": true
+    }
+  ],
+  "suggesters": [
+    {
+      "name": "sg",
+      "searchMode": "analyzingInfixMatching",
+      "sourceFields": [
+        "title",
+        "summary"
+      ]
+    }
+  ],
+  "analyzers": [
+    {
+      "@odata.type": "#Microsoft.Azure.Search.CustomAnalyzer",
+      "name": "notes_analyzer",
+      "tokenizer": "standard_v2",
+      "tokenFilters": [
+        "lowercase"
+      ]
+    },
+    {
+      "@odata.type": "#Microsoft.Azure.Search.CustomAnalyzer",
+      "name": "codes_analyzer",
+      "tokenizer": "keyword_v2",
+      "tokenFilters": [
+        "lowercase"
+      ]
+    }
+  ],
+  "vectorSearch": {
+    "algorithms": [
+      {
+        "name": "hnsw",
+        "kind": "hnsw",
+        "hnswParameters": {
+          "metric": "cosine",
+          "m": 4,
+          "efConstruction": 400
+        }
+      }
+    ],
+    "profiles": [
+      {
+        "name": "vector-profile",
+        "algorithm": "hnsw"
+      }
+    ]
+  }
+}
+
+### [AZURE] Add an existing field to the suggester → 400
+PUT {{azureBaseUrl}}/indexes/index-update-sample?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "name": "index-update-sample",
+  "fields": [
+    {
+      "name": "id",
+      "type": "Edm.String",
+      "key": true,
+      "filterable": true
+    },
+    {
+      "name": "title",
+      "type": "Edm.String",
+      "searchable": true,
+      "retrievable": false
+    },
+    {
+      "name": "summary",
+      "type": "Edm.String",
+      "searchable": true
+    },
+    {
+      "name": "category",
+      "type": "Edm.String",
+      "filterable": true,
+      "facetable": true
+    },
+    {
+      "name": "notes",
+      "type": "Edm.String",
+      "searchable": true,
+      "analyzer": "notes_analyzer"
+    },
+    {
+      "name": "embedding",
+      "type": "Collection(Edm.Single)",
+      "searchable": true,
+      "dimensions": 2,
+      "vectorSearchProfile": "vector-profile"
+    },
+    {
+      "name": "rating",
+      "type": "Edm.Double",
+      "filterable": true,
+      "sortable": true
+    }
+  ],
+  "suggesters": [
+    {
+      "name": "sg",
+      "searchMode": "analyzingInfixMatching",
+      "sourceFields": [
+        "title",
+        "summary"
+      ]
+    }
+  ],
+  "analyzers": [
+    {
+      "@odata.type": "#Microsoft.Azure.Search.CustomAnalyzer",
+      "name": "notes_analyzer",
+      "tokenizer": "standard_v2",
+      "tokenFilters": [
+        "lowercase"
+      ]
+    },
+    {
+      "@odata.type": "#Microsoft.Azure.Search.CustomAnalyzer",
+      "name": "codes_analyzer",
+      "tokenizer": "keyword_v2",
+      "tokenFilters": [
+        "lowercase"
+      ]
+    }
+  ],
+  "vectorSearch": {
+    "algorithms": [
+      {
+        "name": "hnsw",
+        "kind": "hnsw",
+        "hnswParameters": {
+          "metric": "cosine",
+          "m": 4,
+          "efConstruction": 400
+        }
+      }
+    ],
+    "profiles": [
+      {
+        "name": "vector-profile",
+        "algorithm": "hnsw"
+      }
+    ]
+  }
+}
+
+### [SIM] Change a vector algorithm a field uses → 400
+PUT {{baseUrl}}/indexes/index-update-sample?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "name": "index-update-sample",
+  "fields": [
+    {
+      "name": "id",
+      "type": "Edm.String",
+      "key": true,
+      "filterable": true
+    },
+    {
+      "name": "title",
+      "type": "Edm.String",
+      "searchable": true,
+      "retrievable": false
+    },
+    {
+      "name": "summary",
+      "type": "Edm.String",
+      "searchable": true
+    },
+    {
+      "name": "category",
+      "type": "Edm.String",
+      "filterable": true,
+      "facetable": true
+    },
+    {
+      "name": "notes",
+      "type": "Edm.String",
+      "searchable": true,
+      "analyzer": "notes_analyzer"
+    },
+    {
+      "name": "embedding",
+      "type": "Collection(Edm.Single)",
+      "searchable": true,
+      "dimensions": 2,
+      "vectorSearchProfile": "vector-profile"
+    },
+    {
+      "name": "rating",
+      "type": "Edm.Double",
+      "filterable": true,
+      "sortable": true
+    }
+  ],
+  "suggesters": [
+    {
+      "name": "sg",
+      "searchMode": "analyzingInfixMatching",
+      "sourceFields": [
+        "title"
+      ]
+    }
+  ],
+  "analyzers": [
+    {
+      "@odata.type": "#Microsoft.Azure.Search.CustomAnalyzer",
+      "name": "notes_analyzer",
+      "tokenizer": "standard_v2",
+      "tokenFilters": [
+        "lowercase"
+      ]
+    },
+    {
+      "@odata.type": "#Microsoft.Azure.Search.CustomAnalyzer",
+      "name": "codes_analyzer",
+      "tokenizer": "keyword_v2",
+      "tokenFilters": [
+        "lowercase"
+      ]
+    }
+  ],
+  "vectorSearch": {
+    "algorithms": [
+      {
+        "name": "hnsw",
+        "kind": "hnsw",
+        "hnswParameters": {
+          "metric": "cosine",
+          "m": 8,
+          "efConstruction": 400
+        }
+      }
+    ],
+    "profiles": [
+      {
+        "name": "vector-profile",
+        "algorithm": "hnsw"
+      }
+    ]
+  }
+}
+
+### [AZURE] Change a vector algorithm a field uses → 400
+PUT {{azureBaseUrl}}/indexes/index-update-sample?api-version={{apiVersion}}
+Content-Type: application/json
+Authorization: Bearer {{azureToken}}
+
+{
+  "name": "index-update-sample",
+  "fields": [
+    {
+      "name": "id",
+      "type": "Edm.String",
+      "key": true,
+      "filterable": true
+    },
+    {
+      "name": "title",
+      "type": "Edm.String",
+      "searchable": true,
+      "retrievable": false
+    },
+    {
+      "name": "summary",
+      "type": "Edm.String",
+      "searchable": true
+    },
+    {
+      "name": "category",
+      "type": "Edm.String",
+      "filterable": true,
+      "facetable": true
+    },
+    {
+      "name": "notes",
+      "type": "Edm.String",
+      "searchable": true,
+      "analyzer": "notes_analyzer"
+    },
+    {
+      "name": "embedding",
+      "type": "Collection(Edm.Single)",
+      "searchable": true,
+      "dimensions": 2,
+      "vectorSearchProfile": "vector-profile"
+    },
+    {
+      "name": "rating",
+      "type": "Edm.Double",
+      "filterable": true,
+      "sortable": true
+    }
+  ],
+  "suggesters": [
+    {
+      "name": "sg",
+      "searchMode": "analyzingInfixMatching",
+      "sourceFields": [
+        "title"
+      ]
+    }
+  ],
+  "analyzers": [
+    {
+      "@odata.type": "#Microsoft.Azure.Search.CustomAnalyzer",
+      "name": "notes_analyzer",
+      "tokenizer": "standard_v2",
+      "tokenFilters": [
+        "lowercase"
+      ]
+    },
+    {
+      "@odata.type": "#Microsoft.Azure.Search.CustomAnalyzer",
+      "name": "codes_analyzer",
+      "tokenizer": "keyword_v2",
+      "tokenFilters": [
+        "lowercase"
+      ]
+    }
+  ],
+  "vectorSearch": {
+    "algorithms": [
+      {
+        "name": "hnsw",
+        "kind": "hnsw",
+        "hnswParameters": {
+          "metric": "cosine",
+          "m": 8,
+          "efConstruction": 400
+        }
+      }
+    ],
+    "profiles": [
+      {
+        "name": "vector-profile",
+        "algorithm": "hnsw"
+      }
+    ]
+  }
+}
+
+# =====================================================
+# 3. CLEANUP
+# =====================================================
+
+### [SIM] Delete the index
+DELETE {{baseUrl}}/indexes/index-update-sample?api-version={{apiVersion}}
+api-key: {{adminKey}}
+
+### [AZURE] Delete the index
+DELETE {{azureBaseUrl}}/indexes/index-update-sample?api-version={{apiVersion}}
+Authorization: Bearer {{azureToken}}

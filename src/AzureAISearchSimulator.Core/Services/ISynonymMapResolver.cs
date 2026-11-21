@@ -14,4 +14,11 @@ public interface ISynonymMapResolver
     /// <param name="term">The search term to expand.</param>
     /// <returns>The original term plus all matching synonyms.</returns>
     IReadOnlyList<string> ExpandTerms(IEnumerable<string> synonymMapNames, string term);
+
+    /// <summary>
+    /// Returns every term the synonym maps have a rule for, as written in the rules, so callers can analyze them like the field.
+    /// </summary>
+    /// <param name="synonymMapNames">The synonym map names configured on the field.</param>
+    /// <returns>The terms that <see cref="ExpandTerms"/> expands.</returns>
+    IReadOnlyCollection<string> GetRuleTerms(IEnumerable<string> synonymMapNames);
 }

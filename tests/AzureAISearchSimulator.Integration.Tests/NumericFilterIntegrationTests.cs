@@ -271,7 +271,7 @@ public class NumericFilterIntegrationTests : IDisposable
         var response = await _searchService.SearchAsync(indexName, new SearchRequest
         {
             Search = "*",
-            Filter = "lastRenovationDate gt 2020-01-11"
+            Filter = "lastRenovationDate gt 2020-01-11T00:00:00Z"
         });
 
         Assert.Single(response.Value);
@@ -293,7 +293,7 @@ public class NumericFilterIntegrationTests : IDisposable
         var response = await _searchService.SearchAsync(indexName, new SearchRequest
         {
             Search = "*",
-            Filter = "lastRenovationDate ge 2020-01-11"
+            Filter = "lastRenovationDate ge 2020-01-11T00:00:00Z"
         });
 
         Assert.Equal(2, response.Value.Count);
@@ -314,7 +314,7 @@ public class NumericFilterIntegrationTests : IDisposable
         var response = await _searchService.SearchAsync(indexName, new SearchRequest
         {
             Search = "*",
-            Filter = "lastRenovationDate lt 2020-01-11"
+            Filter = "lastRenovationDate lt 2020-01-11T00:00:00Z"
         });
 
         Assert.Single(response.Value);
@@ -336,10 +336,25 @@ public class NumericFilterIntegrationTests : IDisposable
         var response = await _searchService.SearchAsync(indexName, new SearchRequest
         {
             Search = "*",
-            Filter = "lastRenovationDate le 2020-01-11"
+            Filter = "lastRenovationDate le 2020-01-11T00:00:00Z"
         });
 
         Assert.Equal(2, response.Value.Count);
+    }
+
+    [Fact]
+    public async Task Filter_DateTimeOffset_WithoutTime_IsRejected()
+    {
+        var indexName = $"datenotime-{Guid.NewGuid():N}";
+        var index = CreateDateIndex(indexName);
+        RegisterIndex(index);
+
+        // As in Azure, a date literal needs a time and an offset.
+        await Assert.ThrowsAsync<ArgumentException>(() => _searchService.SearchAsync(indexName, new SearchRequest
+        {
+            Search = "*",
+            Filter = "lastRenovationDate gt 2020-01-11"
+        }));
     }
 
     public void Dispose()

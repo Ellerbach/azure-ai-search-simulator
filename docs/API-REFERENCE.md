@@ -462,14 +462,20 @@ api-key: <query-key>
 
 #### Facet Specifications
 
-Each entry in `facets` is a facetable field name, optionally followed by comma-separated parameters:
+Each entry in `facets` is a facetable field name (a path for complex sub-fields, e.g. `rooms/baseRate`), optionally followed by comma-separated parameters. Parameter names are case-sensitive, and an unknown parameter returns 400, as in Azure:
 
 | Parameter | Description | Example |
 | --------- | ----------- | ------- |
-| `count:N` | Maximum number of facet buckets (default 10) | `"category,count:5"` |
-| `interval:N` | Interval buckets for numeric fields | `"rating,interval:1"` |
-| `metric:sum`\|`min`\|`max`\|`avg` | Aggregation over a numeric field (`Edm.Int32`, `Edm.Int64`, `Edm.Double`). Returns a single bucket containing only the computed metric. Whitespace around `:` is tolerated (`"field, metric: sum"`). | `"sleepsCount,metric:sum"` |
+| `count:N` | Maximum number of value buckets (default 10, `0` for all) | `"category,count:5"` |
+| `sort:` | Orders value buckets by `count` (the default, highest first), `-count`, `value` or `-value` | `"category,sort:value"` |
+| `interval:` | Interval buckets: a whole number above 0 on numeric fields, or `minute`, `hour`, `day`, `week`, `month`, `quarter` or `year` on dates. Each bucket is its lower bound, in `value`; empty buckets are left out | `"rating,interval:1"` |
+| `timeoffset:` | Shifts date interval boundaries to a time zone (`+01:00`, `-0530`, `+05`) | `"opened,interval:day,timeoffset:+01:00"` |
+| `values:` | Range buckets between `\|`-separated bounds on numeric and date fields, with `from` and `to` (empty ranges included) | `"rating,values:3\|4"` |
+| `metric:sum`\|`min`\|`max`\|`avg` | Aggregation over a numeric field (`Edm.Int32`, `Edm.Int64`, `Edm.Double`, and their collections). Returns a single bucket containing only the computed metric. Whitespace around `:` is tolerated (`"field, metric: sum"`). | `"sleepsCount,metric:sum"` |
+| `metric:cardinality` | The number of distinct values (exact in the simulator; `precisionThreshold:N` is accepted) | `"category,metric:cardinality"` |
 | `default:V` | Substitutes `V` for documents missing a value, for any of the metrics above. Numeric fields take an unquoted number (`default:5`); combine with a metric. | `"sleepsCount,metric:sum,default:0"` |
+
+`count` and `sort` can't be combined with `interval` or `values`, nor `metric` with any of them, as in Azure.
 
 An aggregation facet returns a single bucket containing only the requested metric:
 
@@ -491,7 +497,7 @@ An aggregation facet returns a single bucket containing only the requested metri
 }
 ```
 
-The aggregation is computed over the documents matching the current search text and filter. Documents without a value for the field contribute the `default:` value if one is specified, otherwise they're excluded. For `avg`, an excluded document is left out of both the sum and the denominator. The same field may appear in multiple facet expressions (e.g. `"rating,interval:1"` and `"rating,metric:sum"`); the buckets are appended to the same field's array, and a field can be requested with more than one metric in the same query (e.g. `"price,metric:min"` and `"price,metric:max"`). Azure's `cardinality` metric and `precisionThreshold` parameter are not supported.
+The aggregation is computed over the documents matching the current search text and filter, and over every element of a collection. Documents without a value for the field contribute the `default:` value if one is specified, otherwise they're excluded. For `avg`, an excluded document is left out of both the sum and the denominator. A field can be faceted once, plus once per metric (e.g. `"rating,interval:1"`, `"rating,metric:min"` and `"rating,metric:max"`); their buckets are appended to the same field's array. Faceting a field twice otherwise returns 400, as in Azure.
 
 #### featuresMode Parameter
 
@@ -667,14 +673,15 @@ The simulator implements a dual-layer vector search system:
 
 **Filtered Vector Search:**
 
-When filters are applied, the simulator uses post-filtering with oversampling:
+When a search has a `filter`, the simulator pre-filters, as Azure does by default (`vectorFilterMode: preFilter`):
 
-1. Retrieve `k × oversampleMultiplier` candidates from HNSW
-2. Filter candidates to those matching the OData filter
-3. Return top-k filtered results
-4. Fall back to brute-force if insufficient results
+1. Find the documents that match the OData filter
+2. Compute the exact distance from the query vector to each of them, with the vector profile's metric
+3. Return the k nearest
 
-This ensures good recall even with selective filters.
+The k nearest neighbours are always taken among the documents that pass the filter, however selective it is. A vector query without search text returns only its k neighbours.
+
+With `vectorFilterMode: postFilter` or `strictPostFilter`, the simulator takes the k nearest neighbours of the whole index and drops those that fail the filter, so fewer than k may be returned.
 
 **Score Calculation:**
 
@@ -900,7 +907,7 @@ When `debug` is enabled, the `@search.documentDebugInfo` includes a `documentBoo
       { "value": "Budget", "count": 27 }
     ],
     "rating": [
-      { "from": 4, "to": 5, "count": 30 }
+      { "value": 4, "count": 30 }
     ]
   },
   "value": [

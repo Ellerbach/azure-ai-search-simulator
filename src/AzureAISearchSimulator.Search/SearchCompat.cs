@@ -1,0 +1,287 @@
+using System.Text.Json;
+using AzureAISearchSimulator.Core.Models;
+using Lucene.Net.Search;
+
+namespace AzureAISearchSimulator.Search;
+
+/// <summary>
+/// Azure AI Search behaviours that the simulator adds around its search pipeline: paging, <c>$orderby</c> validation,
+/// and vector query validation and exact search.
+/// </summary>
+internal static class SearchCompat
+{
+    private const int DefaultPageSize = 50;
+
+    /// <summary>
+    /// Azure's default <c>hybridSearch.maxTextRecallSize</c>: how many text matches a hybrid query fuses with its vector neighbours.
+    /// </summary>
+    public const int MaxTextRecallSize = 1000;
+
+    /// <summary>
+    /// Counts the keys whose documents don't match a query, with one search per thousand keys (Lucene's clause limit)
+    /// rather than one per key, since the query may carry an expensive filter.
+    /// </summary>
+    /// <param name="searcher">The index searcher.</param>
+    /// <param name="keyField">The name of the index's key field.</param>
+    /// <param name="query">The query the documents are checked against.</param>
+    /// <param name="keys">The document keys to check.</param>
+    /// <returns>How many of the keys don't match the query.</returns>
+    public static int CountNotMatching(IndexSearcher searcher, string keyField, Query query, IReadOnlyCollection<string> keys)
+    {
+        var matching = 0;
+        foreach (var chunk in keys.Chunk(1000))
+        {
+            var anyKey = new BooleanQuery();
+            foreach (var key in chunk)
+            {
+                anyKey.Add(new TermQuery(new Lucene.Net.Index.Term(keyField, key)), Occur.SHOULD);
+            }
+
+            matching += searcher.Search(new BooleanQuery { { query, Occur.MUST }, { anyKey, Occur.MUST } }, 1).TotalHits;
+        }
+
+        return keys.Count - matching;
+    }
+
+    /// <summary>
+    /// Without <c>top</c>, Azure returns 50 results and, when more remain, the request for the next 50
+    /// (<c>@search.nextPageParameters</c>), which the SDKs' paged iterables follow. The API adds <c>@odata.nextLink</c>,
+    /// which depends on the HTTP request.
+    /// </summary>
+    /// <param name="response">The response to add the next page to.</param>
+    /// <param name="request">The request that produced the response.</param>
+    /// <param name="available">How many results the request can return in total.</param>
+    public static void AddNextPage(SearchResponse response, SearchRequest request, long available)
+    {
+        var skip = request.Skip ?? 0;
+        if (request.Top != null || available <= skip + DefaultPageSize)
+        {
+            return;
+        }
+
+        var next = JsonSerializer.Deserialize<SearchRequest>(JsonSerializer.Serialize(request))!;
+        next.Skip = skip + DefaultPageSize;
+        response.NextPageParameters = next;
+    }
+
+    /// <summary>
+    /// Validates one <c>$orderby</c> clause as Azure does.
+    /// </summary>
+    /// <param name="index">The index being searched.</param>
+    /// <param name="tokens">The clause, split on spaces: a field path or <c>search.score()</c>, then optionally <c>asc</c> or <c>desc</c>.</param>
+    /// <returns>The sortable field the clause sorts on, or <see langword="null"/> for <c>search.score()</c>.</returns>
+    /// <exception cref="ArgumentException">The clause is malformed or the field isn't sortable.</exception>
+    public static SearchField? ValidateOrderBy(SearchIndex index, string[] tokens)
+    {
+        if (tokens.Length is 0 or > 2 || (tokens.Length == 2 && tokens[1] is not ("asc" or "desc")))
+        {
+            throw new ArgumentException($"Invalid expression: '{string.Join(' ', tokens)}' isn't a valid $orderby clause.\r\nParameter name: $orderby");
+        }
+
+        var fieldName = tokens[0];
+        if (fieldName == "search.score()")
+        {
+            return null;
+        }
+
+        SearchField? field = null;
+        var candidates = index.Fields;
+        foreach (var segment in fieldName.Split('/'))
+        {
+            if (field?.IsCollection == true)
+            {
+                candidates = null;
+            }
+
+            field = candidates?.FirstOrDefault(f => f.Name == segment);
+            candidates = field?.Fields;
+        }
+
+        if (field is null || field.Sortable != true || field.IsCollection || field.IsComplex)
+        {
+            throw new ArgumentException($"Invalid expression: '{fieldName}' isn't a sortable field.\r\nParameter name: $orderby");
+        }
+
+        return field;
+    }
+
+    /// <summary>
+    /// Rejects what Azure rejects: vector queries without a vector or fields, of a kind other than <c>vector</c>, on
+    /// fields that aren't vector fields or with a vector of the wrong length, and unknown filter modes.
+    /// </summary>
+    /// <param name="index">The index being searched.</param>
+    /// <param name="request">The search request, which has vector queries.</param>
+    /// <exception cref="ArgumentException">A vector query or the filter mode is invalid.</exception>
+    public static void ValidateVectorQueries(SearchIndex index, SearchRequest request)
+    {
+        if (request.VectorFilterMode is not (null or "preFilter" or "postFilter" or "strictPostFilter"))
+        {
+            throw new ArgumentException($"Invalid vectorFilterMode '{request.VectorFilterMode}'. Use 'preFilter', 'postFilter' or 'strictPostFilter'.");
+        }
+
+        foreach (var query in request.VectorQueries!)
+        {
+            if (query.Kind != "vector")
+            {
+                throw new ArgumentException($"Vector queries of kind '{query.Kind}' aren't supported; only 'vector', with the vector given.");
+            }
+
+            if (query.Vector is not { Length: > 0 } || !VectorFields(query).Any())
+            {
+                throw new ArgumentException("A vector query needs a 'vector' and the 'fields' to search.");
+            }
+
+            foreach (var name in VectorFields(query))
+            {
+                var field = index.Fields.FirstOrDefault(f => f.Name == name)
+                    ?? throw new ArgumentException($"Unknown field '{name}' in vector field list.");
+                if (!field.IsVector || field.Dimensions is not > 0)
+                {
+                    throw new ArgumentException($"The field '{name}' in the vector field list is not a vector field.");
+                }
+
+                if (query.Vector!.Length != field.Dimensions)
+                {
+                    throw new ArgumentException(
+                        $"The vector field '{name}', with dimension of '{field.Dimensions}', expects a length of '{field.Dimensions}'. However, the provided vector has a length of '{query.Vector.Length}'.");
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Whether an unfiltered vector query must be searched exactly: only cosine fields can use the approximate
+    /// search, and only when it is cosine too.
+    /// </summary>
+    /// <param name="index">The index being searched.</param>
+    /// <param name="query">The vector query.</param>
+    /// <param name="approximateMetric">The metric the approximate search ranks by.</param>
+    /// <returns><see langword="true"/> if the query needs <see cref="ExactVectorSearch"/>.</returns>
+    public static bool NeedsExactSearch(SearchIndex index, VectorQuery query, string? approximateMetric) =>
+        query.Exhaustive == true
+        || !string.Equals(approximateMetric ?? "cosine", "cosine", StringComparison.OrdinalIgnoreCase)
+        || VectorFields(query).Select(field => AlgorithmFor(index, field)).Any(a => a?.Kind == "exhaustiveKnn" || MetricOf(a) != "cosine");
+
+    /// <summary>
+    /// Finds the exact k nearest neighbours of each vector query, ranked by its field's metric. Without a filter,
+    /// or with <c>preFilter</c> (Azure's default), they're taken among the documents that pass the filter;
+    /// <c>postFilter</c> and <c>strictPostFilter</c> (the same on one shard) take them among all documents, then drop
+    /// those that don't pass.
+    /// </summary>
+    /// <param name="searcher">The index searcher.</param>
+    /// <param name="index">The index being searched.</param>
+    /// <param name="keyField">The name of the index's key field.</param>
+    /// <param name="filterQuery">The filter, if any.</param>
+    /// <param name="filterMode">The request's <c>vectorFilterMode</c>.</param>
+    /// <param name="queries">The vector queries to search exactly.</param>
+    /// <returns>Each neighbour's key and its best score across the queries.</returns>
+    public static Dictionary<string, double> ExactVectorSearch(
+        IndexSearcher searcher,
+        SearchIndex index,
+        string keyField,
+        Query? filterQuery,
+        string? filterMode,
+        List<VectorQuery> queries)
+    {
+        var result = new Dictionary<string, double>(StringComparer.Ordinal);
+        if (queries.Count == 0)
+        {
+            return result;
+        }
+
+        var preFilter = filterMode is null or "preFilter";
+        var sourceAndKey = new HashSet<string> { "_raw_json", keyField };
+        var candidates = new List<(string Key, JsonElement Source)>();
+        foreach (var hit in searcher.Search(preFilter ? filterQuery ?? new MatchAllDocsQuery() : new MatchAllDocsQuery(), Math.Max(1, searcher.IndexReader.MaxDoc)).ScoreDocs)
+        {
+            var doc = searcher.IndexReader.Document(hit.Doc, sourceAndKey);
+            if (doc.Get(keyField) is { } key && doc.Get("_raw_json") is { } json)
+            {
+                using var source = JsonDocument.Parse(json);
+                candidates.Add((key, source.RootElement.Clone()));
+            }
+        }
+
+        var passing = preFilter || filterQuery is null
+            ? null
+            : searcher.Search(filterQuery, Math.Max(1, searcher.IndexReader.MaxDoc)).ScoreDocs
+                .Select(hit => searcher.IndexReader.Document(hit.Doc, sourceAndKey).Get(keyField))
+                .ToHashSet(StringComparer.Ordinal);
+
+        foreach (var query in queries)
+        {
+            foreach (var field in VectorFields(query))
+            {
+                var metric = MetricOf(AlgorithmFor(index, field));
+                var nearest = candidates
+                    .Select(c => (c.Key, Vector: c.Source.TryGetProperty(field, out var v) && v.ValueKind == JsonValueKind.Array ? v.EnumerateArray().Select(x => x.GetSingle()).ToArray() : null))
+                    .Where(c => c.Vector is not null && c.Vector.Length == query.Vector!.Length)
+                    .Select(c => (c.Key, Measure: Measure(metric, query.Vector!, c.Vector!)))
+                    .OrderBy(c => c.Measure.Distance)
+                    .ThenBy(c => c.Key, StringComparer.Ordinal)
+                    .Take(query.K > 0 ? query.K : 50)
+                    .Where(c => passing is null || passing.Contains(c.Key));
+                foreach (var (key, (_, score)) in nearest)
+                {
+                    result[key] = result.TryGetValue(key, out var existing) ? Math.Max(existing, score) : score;
+                }
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// The field names in a vector query's comma-separated <c>fields</c>.
+    /// </summary>
+    /// <param name="query">The vector query.</param>
+    /// <returns>The trimmed field names.</returns>
+    public static IEnumerable<string> VectorFields(VectorQuery query) =>
+        (query.Fields ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    /// <summary>
+    /// The vector search algorithm a field uses through its profile, if any.
+    /// </summary>
+    private static VectorSearchAlgorithm? AlgorithmFor(SearchIndex index, string fieldName)
+    {
+        var profile = index.Fields.FirstOrDefault(f => f.Name == fieldName)?.VectorSearchProfile;
+        var algorithm = index.VectorSearch?.Profiles?.FirstOrDefault(p => p.Name == profile)?.Algorithm;
+        return index.VectorSearch?.Algorithms?.FirstOrDefault(a => a.Name == algorithm);
+    }
+
+    /// <summary>
+    /// An algorithm's metric, cosine by default.
+    /// </summary>
+    private static string MetricOf(VectorSearchAlgorithm? definition) =>
+        (definition?.Kind == "exhaustiveKnn" ? definition.ExhaustiveKnnParameters?.Metric : definition?.HnswParameters?.Metric) ?? "cosine";
+
+    /// <summary>
+    /// The distance between two vectors under a metric (lower is nearer) and its score, 1 / (1 + distance) like the
+    /// simulator's HNSW search.
+    /// </summary>
+    private static (double Distance, double Score) Measure(string metric, float[] a, float[] b)
+    {
+        double dot = 0, aa = 0, bb = 0, l2 = 0;
+        for (var i = 0; i < a.Length; i++)
+        {
+            // In double, so large components don't overflow float.
+            double x = a[i], y = b[i];
+            dot += x * y;
+            aa += x * x;
+            bb += y * y;
+            l2 += (x - y) * (x - y);
+        }
+
+        switch (metric.ToLowerInvariant())
+        {
+            case "euclidean":
+                return (Math.Sqrt(l2), 1 / (1 + Math.Sqrt(l2)));
+            case "dotproduct":
+                // The dot product is unbounded, so 1 / (2 - dot) (the cosine score on unit vectors) only applies up to 1.
+                return (-dot, dot <= 1 ? 1 / (2 - dot) : dot);
+            default:
+                var cosineDistance = aa == 0 || bb == 0 ? 1 : 1 - dot / Math.Sqrt(aa * bb);
+                return (cosineDistance, 1 / (1 + cosineDistance));
+        }
+    }
+}

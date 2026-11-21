@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 using AzureAISearchSimulator.Core.Models;
 using AzureAISearchSimulator.Core.Services;
 using AzureAISearchSimulator.Search.Hnsw;
+using System.Text;
 using System.Text.Json;
 
 namespace AzureAISearchSimulator.Search;
@@ -128,8 +129,18 @@ public class SearchService : ISearchService
         Dictionary<string, double>? vectorScores = null;
         if (request.VectorQueries != null && request.VectorQueries.Any())
         {
+            SearchCompat.ValidateVectorQueries(index, request);
             vectorSearchStopwatch.Start();
-            vectorScores = ExecuteVectorSearch(indexName, request.VectorQueries);
+            // The HNSW index is approximate and cosine by default; filters, exhaustive queries and other metrics need the exact search.
+            var exactQueries = filterQuery == null
+                ? request.VectorQueries.Where(q => SearchCompat.NeedsExactSearch(index, q, _vectorSearchService.ApproximateMetric)).ToList()
+                : request.VectorQueries;
+            vectorScores = SearchCompat.ExactVectorSearch(searcher, index, keyField, filterQuery, request.VectorFilterMode, exactQueries);
+            foreach (var (key, score) in ExecuteVectorSearch(indexName, request.VectorQueries.Except(exactQueries).ToList()))
+            {
+                vectorScores[key] = vectorScores.TryGetValue(key, out var existing) ? Math.Max(existing, score) : score;
+            }
+
             vectorSearchStopwatch.Stop();
             
             if (debugMode && debugInfo != null)
@@ -154,42 +165,45 @@ public class SearchService : ISearchService
         // the true match count regardless of numHits, and results are re-sliced to the
         // requested top/skip below, so clamping numHits to at least 1 is safe here.
         var topN = Math.Max(1, (request.Skip ?? 0) + (request.Top ?? 50));
+        if (textQuery != null && vectorScores != null)
+        {
+            // As in Azure, a hybrid query fuses a fixed window of text matches, so pages don't rerank each other.
+            topN = SearchCompat.MaxTextRecallSize;
+        }
+
+        var effectiveTextQuery = textQuery != null ? BuildEffectiveQuery(textQuery, filterQuery) : null;
+        // Validated for every query, including vector-only ones, whose neighbours keep their similarity order.
+        var sort = BuildSort(request.OrderBy, index);
         TopDocs? topDocs = null;
+
+        // As in Azure, function boosts apply before the top hits are taken, sorted by score and ties broken.
+        var boostInLucene = vectorScores == null && scoringProfile?.Functions is { Count: > 0 };
+        Query Boosted(Query query) => boostInLucene
+            ? new ScoringProfileBoostQuery(query, document => _scoringProfileService.CalculateDocumentBoost(
+                scoringProfile!, LuceneDocumentMapper.FromLuceneDocument(document, null), scoringParameters))
+            : query;
         
         textSearchStopwatch.Start();
-        if (textQuery != null)
+        if (effectiveTextQuery != null)
         {
-            // Apply OData filter if present
-            Query finalQuery = textQuery;
-            if (filterQuery != null)
-            {
-                var bq = new BooleanQuery();
-                bq.Add(textQuery, Occur.MUST);
-                bq.Add(filterQuery, Occur.MUST);
-                finalQuery = bq;
-            }
-
-            var sort = BuildSort(request.OrderBy, index);
             topDocs = sort != null
-                ? searcher.Search(finalQuery, topN, sort)
-                : searcher.Search(finalQuery, topN);
+                ? searcher.Search(Boosted(effectiveTextQuery), null, topN, sort, doDocScores: true, doMaxScore: false)
+                : searcher.Search(Boosted(effectiveTextQuery), topN);
         }
-        else if (filterQuery != null)
+        else if (filterQuery != null && vectorScores == null)
         {
             // Filter-only search
-            var sort = BuildSort(request.OrderBy, index);
             topDocs = sort != null
-                ? searcher.Search(filterQuery, topN, sort)
-                : searcher.Search(filterQuery, topN);
+                ? searcher.Search(Boosted(filterQuery), null, topN, sort, doDocScores: true, doMaxScore: false)
+                : searcher.Search(Boosted(filterQuery), topN);
         }
-        else if (vectorScores == null || !vectorScores.Any())
+        else if (vectorScores == null)
         {
-            // Match all documents
+            // Match all documents (a vector query without text returns only its nearest neighbours, as in Azure)
             var matchAllQuery = new MatchAllDocsQuery();
-            var sort = BuildSort(request.OrderBy, index);
             topDocs = sort != null
-                ? searcher.Search(matchAllQuery, topN, sort)
-                : searcher.Search(matchAllQuery, topN);
+                ? searcher.Search(Boosted(matchAllQuery), null, topN, sort, doDocScores: true, doMaxScore: false)
+                : searcher.Search(Boosted(matchAllQuery), topN);
         }
         textSearchStopwatch.Stop();
 
@@ -234,7 +248,9 @@ public class SearchService : ISearchService
             debugVector,
             scoringProfile,
             scoringParameters,
-            index);
+            index,
+            keepTextOrder: sort != null && vectorScores == null,
+            boostsApplied: boostInLucene);
 
         // Apply skip and top
         var finalResults = combinedResults.Results
@@ -282,7 +298,7 @@ public class SearchService : ISearchService
 
             if (luceneDoc != null)
             {
-                var doc = LuceneDocumentMapper.FromLuceneDocument(luceneDoc, selectedFields);
+                var doc = DocumentCompat.Shape(index, LuceneDocumentMapper.FromLuceneDocument(luceneDoc), selectedFields);
                 foreach (var kvp in doc)
                 {
                     searchResult[kvp.Key] = kvp.Value;
@@ -301,16 +317,27 @@ public class SearchService : ISearchService
             response.Value.Add(searchResult);
         }
 
+        SearchCompat.AddNextPage(response, request, vectorScores != null ? combinedResults.Results.Count() : Math.Max(topDocs?.TotalHits ?? 0, combinedResults.Results.Count()));
+
+        // Vector neighbours count towards facets and @odata.count alongside all text matches, as in Azure.
+        var vectorDocs = vectorScores == null
+            ? null
+            : combinedResults.Results.Where(r => r.DocId >= 0 && vectorScores.ContainsKey(r.Key)).Select(r => r.DocId).ToList();
+
         // Calculate facets if requested
         if (request.Facets != null && request.Facets.Any())
         {
-            response.SearchFacets = CalculateFacets(searcher, index, request.Facets, textQuery, filterQuery);
+            response.SearchFacets = CalculateFacets(searcher, index, request.Facets, textQuery, filterQuery, vectorDocs);
         }
 
         // Include count if requested
         if (request.Count == true)
         {
-            if (topDocs != null)
+            if (topDocs != null && vectorScores != null)
+            {
+                response.ODataCount = topDocs.TotalHits + SearchCompat.CountNotMatching(searcher, keyField, effectiveTextQuery!, vectorScores.Keys);
+            }
+            else if (topDocs != null)
             {
                 response.ODataCount = topDocs.TotalHits;
             }
@@ -373,7 +400,9 @@ public class SearchService : ISearchService
         bool debugVector,
         ScoringProfile? scoringProfile = null,
         Dictionary<string, string>? scoringParameters = null,
-        SearchIndex? index = null)
+        SearchIndex? index = null,
+        bool keepTextOrder = false,
+        bool boostsApplied = false)
     {
         var combined = new Dictionary<string, (int DocId, double TextScore, double VectorScore)>();
         var textRanks = new Dictionary<string, int>();
@@ -461,13 +490,16 @@ public class SearchService : ISearchService
 
                 // Apply scoring profile function boosts
                 double documentBoost = 1.0;
-                if (scoringProfile?.Functions != null && scoringProfile.Functions.Count > 0 && docId >= 0)
+                if (scoringProfile?.Functions != null && scoringProfile.Functions.Count > 0 && docId >= 0 && (!boostsApplied || debugVector))
                 {
                     var luceneDoc = searcher.Doc(docId);
                     var docFields = LuceneDocumentMapper.FromLuceneDocument(luceneDoc, null);
                     documentBoost = _scoringProfileService.CalculateDocumentBoost(
                         scoringProfile, docFields, scoringParameters ?? new Dictionary<string, string>());
-                    finalScore *= documentBoost;
+                    if (!boostsApplied)
+                    {
+                        finalScore *= documentBoost;
+                    }
                 }
 
                 // Build per-document debug info matching official structure
@@ -520,8 +552,11 @@ public class SearchService : ISearchService
                 }
 
                 return (DocId: docId, Score: finalScore, Key: kvp.Key);
-            })
-            .OrderByDescending(r => r.Score);
+            });
+        if (!keepTextOrder)
+        {
+            results = results.OrderByDescending(r => r.Score);
+        }
 
         return (results, documentDebugInfos);
     }
@@ -551,13 +586,21 @@ public class SearchService : ISearchService
         return modes;
     }
 
-    private Query BuildTextQuery(string indexName, SearchIndex schema, SearchRequest request, Dictionary<string, double>? textWeights = null)
+    /// <summary>
+    /// Builds the Lucene query for the request's search text over its search fields.
+    /// </summary>
+    /// <param name="indexName">The index name.</param>
+    /// <param name="schema">The index definition.</param>
+    /// <param name="request">The request, for its search text, search fields, query type and search mode.</param>
+    /// <param name="textWeights">The scoring profile's field weights, if any.</param>
+    /// <param name="strict">Whether text that can't be parsed, or an index without searchable fields, is a 400 (as for <c>search.ismatch</c>) instead of matching every document.</param>
+    private Query BuildTextQuery(string indexName, SearchIndex schema, SearchRequest request, Dictionary<string, double>? textWeights = null, bool strict = false)
     {
         var searchableFields = ResolveSearchFields(schema, request.SearchFields);
 
         if (!searchableFields.Any())
         {
-            return new MatchAllDocsQuery();
+            return strict ? throw new ArgumentException("The index has no searchable fields for search.ismatch.") : new MatchAllDocsQuery();
         }
 
         var analyzer = _indexManager.GetAnalyzer(indexName);
@@ -586,16 +629,13 @@ public class SearchService : ISearchService
             ? new MultiFieldQueryParser(LuceneDocumentMapper.AppLuceneVersion, searchableFields, analyzer, fieldBoosts)
             : new MultiFieldQueryParser(LuceneDocumentMapper.AppLuceneVersion, searchableFields, analyzer);
 
-        // Configure query parser based on queryType
+        // As in Azure, searchMode (not queryType) decides whether unqualified terms are OR'ed or AND'ed.
+        parser.DefaultOperator = string.Equals(request.SearchMode, "all", StringComparison.OrdinalIgnoreCase)
+            ? Operator.AND
+            : Operator.OR;
         if (request.QueryType?.ToLowerInvariant() == "full")
         {
-            parser.DefaultOperator = Operator.AND;
             parser.AllowLeadingWildcard = true;
-        }
-        else
-        {
-            // Simple query syntax
-            parser.DefaultOperator = Operator.OR;
         }
 
         try
@@ -606,6 +646,10 @@ public class SearchService : ISearchService
             // Expand with synonyms if any searchable fields have synonym maps
             var synonymExpandedQuery = ExpandWithSynonyms(schema, request, baseQuery, analyzer);
             return synonymExpandedQuery ?? baseQuery;
+        }
+        catch (ParseException ex) when (strict)
+        {
+            throw new ArgumentException($"Invalid expression: search.ismatch query '{request.Search}' can't be parsed: {ex.Message}\r\nParameter name: $filter", ex);
         }
         catch (ParseException ex)
         {
@@ -738,43 +782,152 @@ public class SearchService : ISearchService
             return null;
         }
 
-        // Tokenize the search text into terms
-        var searchTerms = request.Search.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        if (searchTerms.Length == 0)
-        {
-            return null;
-        }
-
-        // Build expanded query: for each field with synonyms, add synonym-expanded terms
-        var expandedQuery = new BooleanQuery();
-        expandedQuery.Add(baseQuery, Occur.SHOULD); // Original query
-
+        // As in Azure, each term is replaced by itself or its synonyms where it appears, so searchMode=all still
+        // requires every term (or one of its synonyms) and a synonym can't stand in for a different term.
+        var synonymMaps = activeFields.ToDictionary(f => f.Path, f => f.Field.SynonymMaps!, StringComparer.Ordinal);
         var hasExpansions = false;
 
-        foreach (var field in activeFields)
+        // As in Azure, rules are analyzed like the field, so on en.lucene the rule "running, sprint" applies to "run".
+        var rulesByField = new Dictionary<string, ILookup<string, string>>(StringComparer.Ordinal);
+        List<string> SynonymsOf(string field, string signature)
         {
-            foreach (var term in searchTerms)
+            if (!rulesByField.TryGetValue(field, out var rules))
             {
-                var expanded = _synonymMapResolver.ExpandTerms(field.Field.SynonymMaps!, term);
-                if (expanded.Count > 1) // Has actual synonyms (more than just the original term)
-                {
-                    hasExpansions = true;
-                    foreach (var synonymTerm in expanded)
+                rules = (_synonymMapResolver.GetRuleTerms(synonymMaps[field]) ?? [])
+                    .ToLookup(term => Signature(AnalyzeTerms(field, term, analyzer)), StringComparer.Ordinal);
+                rulesByField[field] = rules;
+            }
+
+            return rules[signature]
+                .SelectMany(term => _synonymMapResolver.ExpandTerms(synonymMaps[field], term))
+                .Select(synonym => (Text: synonym, Signature: Signature(AnalyzeTerms(field, synonym, analyzer))))
+                .Where(synonym => synonym.Signature.Length > 0 && synonym.Signature != signature)
+                .DistinctBy(synonym => synonym.Signature, StringComparer.Ordinal)
+                .Select(synonym => synonym.Text)
+                .ToList();
+        }
+
+        Query Expand(Query query)
+        {
+            switch (query)
+            {
+                case BooleanQuery boolean:
+                    var copy = new BooleanQuery(boolean.CoordDisabled) { Boost = boolean.Boost, MinimumNumberShouldMatch = boolean.MinimumNumberShouldMatch };
+                    foreach (var clause in boolean.Clauses)
                     {
-                        if (!string.Equals(synonymTerm, term, StringComparison.OrdinalIgnoreCase))
-                        {
-                            var synonymQuery = new Lucene.Net.Search.TermQuery(
-                                new Lucene.Net.Index.Term(field.Path, synonymTerm.ToLowerInvariant()));
-                            expandedQuery.Add(synonymQuery, Occur.SHOULD);
-                            _logger.LogDebug("Synonym expansion: '{Original}' -> '{Synonym}' on field '{Field}'",
-                                term, synonymTerm, field.Path);
-                        }
+                        copy.Add(Expand(clause.Query), clause.Occur);
                     }
-                }
+
+                    return copy;
+                case TermQuery termQuery when synonymMaps.ContainsKey(termQuery.Term.Field):
+                    var text = termQuery.Term.Text;
+                    var synonyms = SynonymsOf(termQuery.Term.Field, text);
+                    if (synonyms.Count == 0)
+                    {
+                        return query;
+                    }
+
+                    hasExpansions = true;
+                    var alternatives = new BooleanQuery { Boost = termQuery.Boost };
+                    alternatives.Add(new TermQuery(termQuery.Term), Occur.SHOULD);
+                    foreach (var synonym in synonyms)
+                    {
+                        alternatives.Add(AnalyzedQuery(termQuery.Term.Field, synonym, analyzer), Occur.SHOULD);
+                        _logger.LogDebug("Synonym expansion: '{Original}' -> '{Synonym}' on field '{Field}'",
+                            text, synonym, termQuery.Term.Field);
+                    }
+
+                    return alternatives;
+                // As in Azure, a quoted phrase is looked up as a whole (e.g. "new york" for the rule "new york, nyc").
+                case PhraseQuery phrase when phrase.GetTerms() is { Length: > 1 } phraseTerms
+                    && phraseTerms.All(t => t.Field == phraseTerms[0].Field)
+                    && synonymMaps.ContainsKey(phraseTerms[0].Field):
+                    var phraseSynonyms = SynonymsOf(
+                        phraseTerms[0].Field, Signature(phraseTerms.Select(t => t.Text).Zip(phrase.GetPositions()).ToList()));
+                    if (phraseSynonyms.Count == 0)
+                    {
+                        return query;
+                    }
+
+                    hasExpansions = true;
+                    var phraseAlternatives = new BooleanQuery { Boost = phrase.Boost };
+                    var unboosted = (PhraseQuery)phrase.Clone();
+                    unboosted.Boost = 1;
+                    phraseAlternatives.Add(unboosted, Occur.SHOULD);
+                    foreach (var synonym in phraseSynonyms)
+                    {
+                        phraseAlternatives.Add(AnalyzedQuery(phraseTerms[0].Field, synonym, analyzer), Occur.SHOULD);
+                    }
+
+                    return phraseAlternatives;
+                default:
+                    return query;
             }
         }
 
+        var expandedQuery = Expand(baseQuery);
         return hasExpansions ? expandedQuery : null;
+    }
+
+    /// <summary>
+    /// A synonym analyzed like the field: one term, or a phrase for a multi-word synonym (keeping gaps left by stopwords).
+    /// </summary>
+    private static Query AnalyzedQuery(string field, string text, Lucene.Net.Analysis.Analyzer analyzer)
+    {
+        var terms = AnalyzeTerms(field, text, analyzer);
+        if (terms.Count == 1)
+        {
+            return new TermQuery(new Lucene.Net.Index.Term(field, terms[0].Text));
+        }
+
+        var phrase = new PhraseQuery();
+        foreach (var (term, position) in terms)
+        {
+            phrase.Add(new Lucene.Net.Index.Term(field, term), position);
+        }
+
+        return phrase;
+    }
+
+    /// <summary>
+    /// The tokens a field's analyzer produces for a text, with their positions.
+    /// </summary>
+    private static List<(string Text, int Position)> AnalyzeTerms(string field, string text, Lucene.Net.Analysis.Analyzer analyzer)
+    {
+        var terms = new List<(string Text, int Position)>();
+        using var stream = analyzer.GetTokenStream(field, new StringReader(text));
+        var termAttribute = stream.AddAttribute<Lucene.Net.Analysis.TokenAttributes.ICharTermAttribute>();
+        var incrementAttribute = stream.AddAttribute<Lucene.Net.Analysis.TokenAttributes.IPositionIncrementAttribute>();
+        var position = -1;
+        stream.Reset();
+        while (stream.IncrementToken())
+        {
+            position += incrementAttribute.PositionIncrement;
+            terms.Add((termAttribute.ToString(), position));
+        }
+
+        stream.End();
+        return terms;
+    }
+
+    /// <summary>
+    /// Analyzed tokens as text, with one space per position step, so a gap left by a dropped stopword
+    /// ("city of lights") isn't "city lights".
+    /// </summary>
+    private static string Signature(IReadOnlyList<(string Text, int Position)> terms)
+    {
+        var signature = new StringBuilder();
+        for (var i = 0; i < terms.Count; i++)
+        {
+            if (i > 0)
+            {
+                signature.Append(' ', terms[i].Position - terms[i - 1].Position);
+            }
+
+            signature.Append(terms[i].Text);
+        }
+
+        return signature.ToString();
     }
 
     private string EscapeForSimpleQuery(string query, string? queryType)
@@ -802,35 +955,18 @@ public class SearchService : ISearchService
         return escaped;
     }
 
-    private Query? BuildFilterQuery(SearchIndex schema, string filter)
-    {
-        // Simple OData filter parser - handles basic cases
-        // Full OData support would require a proper parser
-        
-        try
+    /// <summary>
+    /// Builds the query for a <c>$filter</c>. It fails closed: anything the filter parser can't evaluate exactly is a
+    /// 400, never an ignored clause.
+    /// </summary>
+    private Query? BuildFilterQuery(SearchIndex schema, string filter) =>
+        Filtering.ODataFilter.ToQuery(schema, filter, isMatch => BuildTextQuery(schema.Name, schema, new SearchRequest
         {
-            var boolQuery = new BooleanQuery();
-
-            var parts = SplitTopLevelAndClauses(filter);
-
-            foreach (var part in parts)
-            {
-                var trimmed = part.Trim();
-                var query = ParseFilterExpression(schema, trimmed);
-                if (query != null)
-                {
-                    boolQuery.Add(query, Occur.MUST);
-                }
-            }
-
-            return boolQuery.Clauses.Count > 0 ? boolQuery : null;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to parse filter '{Filter}'", filter);
-            return null;
-        }
-    }
+            Search = isMatch.Search,
+            SearchFields = isMatch.SearchFields,
+            QueryType = isMatch.QueryType,
+            SearchMode = isMatch.SearchMode,
+        }, strict: true));
 
     /// <summary>
     /// Splits a filter string into top-level "and"-conjoined clauses, the same way
@@ -1438,46 +1574,61 @@ public class SearchService : ISearchService
         }
 
         var sortFields = new List<SortField>();
-        var parts = orderBy.Split(',', StringSplitOptions.RemoveEmptyEntries);
+        var parts = orderBy.Split(',');
+        if (parts.Length > 32)
+        {
+            throw new ArgumentException("Invalid expression: $orderby can have at most 32 clauses.\r\nParameter name: $orderby");
+        }
 
         foreach (var part in parts)
         {
-            var trimmed = part.Trim();
-            var tokens = trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            var fieldName = tokens[0];
-            var reverse = tokens.Length > 1 && 
-                tokens[1].Equals("desc", StringComparison.OrdinalIgnoreCase);
+            var tokens = part.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            var field = SearchCompat.ValidateOrderBy(index, tokens);
+            var reverse = tokens.Length > 1 && tokens[1] == "desc";
 
-            if (fieldName.Equals("search.score()", StringComparison.OrdinalIgnoreCase))
+            if (field is null)
             {
-                sortFields.Add(SortField.FIELD_SCORE);
+                // Lucene's score order is descending, so it's reversed for asc (the default).
+                sortFields.Add(new SortField(null, SortFieldType.SCORE, !reverse));
             }
             else
             {
-                // Determine the correct sort field type based on the index schema
-                var sortFieldType = GetSortFieldType(fieldName, index);
+                var fieldName = tokens[0];
+                var sortFieldType = GetSortFieldType(field);
                 // String fields store DocValues at the plain field name;
                 // numeric/date fields use the "_sort" suffix
                 var sortFieldName = sortFieldType == SortFieldType.STRING
                     ? fieldName
                     : fieldName + "_sort";
-                sortFields.Add(new SortField(sortFieldName, sortFieldType, reverse));
+                // As in Azure, documents without a value sort first ascending and last descending.
+                var sortField = sortFieldType is SortFieldType.INT32 or SortFieldType.INT64 or SortFieldType.DOUBLE
+                    ? new SortField(sortFieldName, new MissingFirstComparerSource(sortFieldType == SortFieldType.DOUBLE), reverse)
+                    : new SortField(sortFieldName, sortFieldType, reverse);
+                if (sortField.Type != SortFieldType.CUSTOM)
+                {
+                    sortField.SetMissingValue(sortFieldType == SortFieldType.SINGLE
+                        ? J2N.Numerics.Single.GetInstance(float.NegativeInfinity)
+                        : SortField.STRING_FIRST);
+                }
+
+                sortFields.Add(sortField);
             }
+        }
+
+        // As in Azure, ties are broken by score.
+        if (!sortFields.Any(s => s.Type == SortFieldType.SCORE))
+        {
+            sortFields.Add(SortField.FIELD_SCORE);
         }
 
         return sortFields.Any() ? new Sort(sortFields.ToArray()) : null;
     }
 
-    private static SortFieldType GetSortFieldType(string fieldName, SearchIndex index)
+    /// <summary>
+    /// The Lucene sort type for a sortable field's type.
+    /// </summary>
+    private static SortFieldType GetSortFieldType(SearchField field)
     {
-        var field = index.Fields?.FirstOrDefault(f => 
-            f.Name.Equals(fieldName, StringComparison.OrdinalIgnoreCase));
-        
-        if (field == null)
-        {
-            return SortFieldType.STRING;
-        }
-
         // Map Azure Search field types to Lucene sort field types
         return field.Type?.ToLowerInvariant() switch
         {
@@ -1501,11 +1652,11 @@ public class SearchService : ISearchService
                 continue;
             }
 
-            var results = _vectorSearchService.Search(
+            var results = SearchCompat.VectorFields(vectorQuery).SelectMany(field => _vectorSearchService.Search(
                 indexName,
-                vectorQuery.Fields ?? string.Empty,
+                field,
                 vectorQuery.Vector.ToArray(),
-                vectorQuery.K > 0 ? vectorQuery.K : 50);
+                vectorQuery.K > 0 ? vectorQuery.K : 50));
 
             foreach (var result in results)
             {
@@ -1628,7 +1779,7 @@ public class SearchService : ISearchService
         var analyzer = _indexManager.GetAnalyzer(indexName);
         var termsByField = sourceFields
             .Distinct()
-            .ToDictionary(field => field, field => TokenizeSuggestSearch(analyzer, field, request.Search));
+            .ToDictionary(field => LuceneDocumentMapper.GetSuggestFieldName(index, field), field => TokenizeSuggestSearch(analyzer, LuceneDocumentMapper.GetSuggestFieldName(index, field), request.Search));
         var terms = termsByField.Values.SelectMany(t => t).Distinct().ToList();
 
         if (terms.Count == 0)
@@ -1907,7 +2058,7 @@ public class SearchService : ISearchService
 
         var liveDocs = MultiFields.GetLiveDocs(reader);
         var docsByTerm = new Dictionary<string, HashSet<int>>(StringComparer.Ordinal);
-        foreach (var field in sourceFields.Distinct())
+        foreach (var field in sourceFields.Distinct().Select(field => LuceneDocumentMapper.GetSuggestFieldName(index, field)))
         {
             var prefix = TokenizeSuggestSearch(analyzer, field, lastWord).LastOrDefault();
             var terms = prefix != null ? MultiFields.GetTerms(reader, field) : null;
@@ -1979,7 +2130,7 @@ public class SearchService : ISearchService
     /// canonicalFieldName is rebuilt from the schema's own casing for each segment, since Lucene
     /// field names are case-sensitive and must match how LuceneDocumentMapper indexed them.
     /// </summary>
-    private static SearchField? ResolveFieldByPath(List<SearchField> topLevelFields, string path, out string canonicalFieldName)
+    private static SearchField? ResolveFieldByPath(List<SearchField> topLevelFields, string path, out string canonicalFieldName, bool throughComplexCollections = false)
     {
         var segments = path.Split('/');
         var candidates = topLevelFields;
@@ -2002,7 +2153,8 @@ public class SearchService : ISearchService
             {
                 // Only Edm.ComplexType sub-fields are indexed by LuceneDocumentMapper;
                 // Collection(Edm.ComplexType) sub-fields are not, so don't descend into them.
-                if (current.Type != SearchFieldDataType.ComplexType)
+                if (current.Type != SearchFieldDataType.ComplexType
+                    && !(throughComplexCollections && current.Type == SearchFieldDataType.CollectionComplex))
                 {
                     canonicalFieldName = path;
                     return null;
@@ -2025,85 +2177,32 @@ public class SearchService : ISearchService
         SearchIndex schema,
         List<string> facetSpecs,
         Query? textQuery,
-        Query? filterQuery)
+        Query? filterQuery,
+        IReadOnlyCollection<int>? vectorDocs = null)
     {
-        var facets = new Dictionary<string, List<FacetResult>>();
-        var reader = searcher.IndexReader;
-
-        // Build the effective query combining text and filter
-        Query effectiveQuery = BuildEffectiveQuery(textQuery, filterQuery);
-
-        // Collect all matching document IDs
+        // Text matches (or all filter matches) plus any vector neighbours; a vector-only query facets only its neighbours.
         var matchingDocs = new HashSet<int>();
-        var collector = new MatchingDocsCollector(matchingDocs);
-        searcher.Search(effectiveQuery, collector);
-
-        foreach (var facetSpec in facetSpecs)
+        if (vectorDocs == null || textQuery != null)
         {
-            var parsed = ParseFacetSpec(facetSpec);
-            var fieldName = parsed.FieldName;
-            var count = parsed.Count ?? 10;
-            var interval = parsed.Interval;
-            var metric = parsed.Metric;
-
-            // Verify field is facetable. fieldName may be a path into a complex-type field
-            // (e.g. "Tiles/PendingPaymentCount"), so resolve it by walking the schema's
-            // field/sub-field tree rather than a flat top-level lookup.
-            var field = ResolveFieldByPath(schema.Fields, fieldName, out var canonicalFieldName);
-
-            if (field == null || field.Facetable != true)
-            {
-                _logger.LogWarning("Field '{FieldName}' is not facetable, skipping", fieldName);
-                continue;
-            }
-
-            List<FacetResult>? results;
-            if (metric != null)
-            {
-                // metric facet (aggregation) takes precedence over count/interval
-                results = CalculateMetricFacet(metric, field, canonicalFieldName, parsed, reader, matchingDocs);
-                if (results == null)
-                {
-                    // Unsupported metric or wrong field type - skip this facet expression entirely
-                    // (don't add an empty entry to the response).
-                    continue;
-                }
-            }
-            else if (interval.HasValue)
-            {
-                // Range/interval facet (for numeric fields)
-                results = CalculateIntervalFacet(reader, canonicalFieldName, field.Type, interval.Value, count, matchingDocs);
-            }
-            else
-            {
-                // Value facet
-                results = CalculateValueFacet(searcher, reader, canonicalFieldName, count, matchingDocs);
-            }
-
-            // The same field may appear in multiple facet expressions
-            // (e.g. once as a value facet and once with a metric, or with several metrics) -
-            // append, don't overwrite.
-            if (facets.TryGetValue(canonicalFieldName, out var existing))
-            {
-                existing.AddRange(results);
-            }
-            else
-            {
-                facets[canonicalFieldName] = results;
-            }
+            searcher.Search(BuildEffectiveQuery(textQuery, filterQuery), new MatchingDocsCollector(matchingDocs));
         }
 
-        return facets;
+        if (vectorDocs != null)
+        {
+            matchingDocs.UnionWith(vectorDocs);
+        }
+
+        // Facets read each document's source, so they can also facet sub-fields of complex collections.
+        return FacetCompat.Calculate(searcher, schema, facetSpecs, matchingDocs, path =>
+            (ResolveFieldByPath(schema.Fields, path, out var canonical, throughComplexCollections: true), canonical));
     }
 
     private static Query BuildEffectiveQuery(Query? textQuery, Query? filterQuery)
     {
         if (textQuery != null && filterQuery != null)
         {
-            var bq = new BooleanQuery();
-            bq.Add(textQuery, Occur.MUST);
-            bq.Add(filterQuery, Occur.MUST);
-            return bq;
+            // As in Azure, filters narrow the results without changing scores.
+            return new FilteredQuery(textQuery, new QueryWrapperFilter(filterQuery));
         }
         return textQuery ?? filterQuery ?? new MatchAllDocsQuery();
     }
@@ -2134,459 +2233,6 @@ public class SearchService : ISearchService
         }
 
         public bool AcceptsDocsOutOfOrder => true;
-    }
-
-    /// <summary>
-    /// A parsed facet specification, e.g. "category,count:5", "rating,interval:1",
-    /// or "sales, metric: sum, default: 0".
-    /// </summary>
-    private sealed record FacetSpec(
-        string FieldName,
-        int? Count,
-        double? Interval,
-        string? Metric,
-        string? DefaultRaw,
-        bool DefaultIsString);
-
-    /// <summary>
-    /// Parses a facet specification. Whitespace around parameter names and values is tolerated.
-    /// Commas inside a single-quoted default string (e.g. "default: 'a, b'") are not treated
-    /// as parameter separators.
-    /// </summary>
-    private FacetSpec ParseFacetSpec(string facetSpec)
-    {
-        var parts = SplitFacetSpecParts(facetSpec);
-        var fieldName = parts[0].Trim();
-        int? count = null;
-        double? interval = null;
-        string? metric = null;
-        string? defaultRaw = null;
-        bool defaultIsString = false;
-
-        foreach (var part in parts.Skip(1))
-        {
-            var trimmed = part.Trim();
-            if (trimmed.StartsWith("count:", StringComparison.OrdinalIgnoreCase))
-            {
-                if (int.TryParse(trimmed.Substring(6).Trim(), out var c))
-                {
-                    count = c;
-                }
-            }
-            else if (trimmed.StartsWith("interval:", StringComparison.OrdinalIgnoreCase))
-            {
-                if (double.TryParse(trimmed.Substring(9).Trim(), System.Globalization.NumberStyles.Any,
-                    System.Globalization.CultureInfo.InvariantCulture, out var i))
-                {
-                    interval = i;
-                }
-            }
-            else if (trimmed.StartsWith("metric:", StringComparison.OrdinalIgnoreCase))
-            {
-                metric = trimmed.Substring(7).Trim();
-            }
-            else if (trimmed.StartsWith("default:", StringComparison.OrdinalIgnoreCase))
-            {
-                var raw = trimmed.Substring(8).Trim();
-                if (raw.Length >= 2 && raw[0] == '\'' && raw[^1] == '\'')
-                {
-                    defaultIsString = true;
-                    defaultRaw = raw.Substring(1, raw.Length - 2).Replace("\\'", "'");
-                }
-                else
-                {
-                    defaultRaw = raw;
-                }
-            }
-        }
-
-        return new FacetSpec(fieldName, count, interval, metric, defaultRaw, defaultIsString);
-    }
-
-    /// <summary>
-    /// Splits a facet spec on top-level commas, ignoring commas inside a single-quoted
-    /// string (used by the "default:'...'" parameter). A backslash before a quote escapes it.
-    /// </summary>
-    private static List<string> SplitFacetSpecParts(string facetSpec)
-    {
-        var parts = new List<string>();
-        var current = new System.Text.StringBuilder();
-        bool inQuotes = false;
-
-        for (int i = 0; i < facetSpec.Length; i++)
-        {
-            var c = facetSpec[i];
-            if (c == '\\' && i + 1 < facetSpec.Length && facetSpec[i + 1] == '\'')
-            {
-                current.Append('\'');
-                i++;
-                continue;
-            }
-            if (c == '\'')
-            {
-                inQuotes = !inQuotes;
-                current.Append(c);
-                continue;
-            }
-            if (c == ',' && !inQuotes)
-            {
-                parts.Add(current.ToString());
-                current.Clear();
-                continue;
-            }
-            current.Append(c);
-        }
-        parts.Add(current.ToString());
-
-        return parts;
-    }
-
-    /// <summary>
-    /// Resolves the "default:" value for a numeric metric (sum/min/max/avg). Returns null
-    /// (and logs a warning) if a default was specified but isn't a valid number for the field.
-    /// </summary>
-    private double? ResolveNumericDefault(FacetSpec parsed, string fieldName, string metric)
-    {
-        if (parsed.DefaultRaw == null)
-            return null;
-
-        if (parsed.DefaultIsString || !double.TryParse(parsed.DefaultRaw, System.Globalization.NumberStyles.Any,
-            System.Globalization.CultureInfo.InvariantCulture, out var value))
-        {
-            _logger.LogWarning(
-                "Facet default value '{Default}' for field '{FieldName}' is not a valid number for metric '{Metric}', ignoring default",
-                parsed.DefaultRaw, fieldName, metric);
-            return null;
-        }
-
-        return value;
-    }
-
-    /// <summary>
-    /// Calculates value facets by counting unique values only from matching documents.
-    /// </summary>
-    private List<FacetResult> CalculateValueFacet(IndexSearcher searcher, IndexReader reader, string fieldName, int maxCount, HashSet<int> matchingDocs)
-    {
-        var valueCounts = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
-
-        // Try reading from the inverted index (filterable string fields store a StringField)
-        var terms = MultiFields.GetTerms(reader, fieldName);
-        bool foundFromInvertedIndex = false;
-        if (terms != null)
-        {
-            var termsEnum = terms.GetEnumerator();
-            while (termsEnum.MoveNext())
-            {
-                var termText = termsEnum.Term.Utf8ToString();
-                if (string.IsNullOrWhiteSpace(termText))
-                    continue;
-
-                // Count only documents in the matching set
-                var docsEnum = termsEnum.Docs(null, null);
-                int count = 0;
-                int docId;
-                while ((docId = docsEnum.NextDoc()) != Lucene.Net.Search.DocIdSetIterator.NO_MORE_DOCS)
-                {
-                    if (matchingDocs.Contains(docId))
-                        count++;
-                }
-
-                if (count > 0)
-                {
-                    valueCounts[termText] = count;
-                    foundFromInvertedIndex = true;
-                }
-            }
-        }
-
-        // If no terms found via inverted index, read from SortedSetDocValues (facet-only fields)
-        if (!foundFromInvertedIndex)
-        {
-            var facetFieldName = fieldName + "_facet";
-            for (int i = 0; i < reader.Leaves.Count; i++)
-            {
-                var leaf = reader.Leaves[i];
-                var docValues = leaf.AtomicReader.GetSortedSetDocValues(facetFieldName);
-                if (docValues == null)
-                    continue;
-
-                for (int doc = 0; doc < leaf.AtomicReader.MaxDoc; doc++)
-                {
-                    int globalDocId = leaf.DocBase + doc;
-                    if (!matchingDocs.Contains(globalDocId))
-                        continue;
-
-                    docValues.SetDocument(doc);
-                    long ord;
-                    while ((ord = docValues.NextOrd()) != SortedSetDocValues.NO_MORE_ORDS)
-                    {
-                        var bytesRef = new Lucene.Net.Util.BytesRef();
-                        docValues.LookupOrd(ord, bytesRef);
-                        var termText = bytesRef.Utf8ToString();
-                        if (!string.IsNullOrWhiteSpace(termText))
-                        {
-                            valueCounts.TryGetValue(termText, out var existing);
-                            valueCounts[termText] = existing + 1;
-                        }
-                    }
-                }
-            }
-        }
-
-        // Return top N by count
-        return valueCounts
-            .OrderByDescending(kvp => kvp.Value)
-            .ThenBy(kvp => kvp.Key)
-            .Take(maxCount)
-            .Select(kvp => new FacetResult
-            {
-                Value = kvp.Key,
-                Count = kvp.Value
-            })
-            .ToList();
-    }
-
-    /// <summary>
-    /// Dispatches to the correct aggregation calculation for a metric facet expression.
-    /// Returns null (not an empty list) when the metric or field type isn't supported, so the
-    /// caller can skip the facet expression entirely rather than adding an empty entry.
-    /// </summary>
-    private List<FacetResult>? CalculateMetricFacet(string metric, SearchField field, string fieldName, FacetSpec parsed, IndexReader reader, HashSet<int> matchingDocs)
-    {
-        // Aggregation facet: metric takes precedence over count/interval
-        var metricLower = metric.ToLowerInvariant();
-
-        if (metricLower is not ("sum" or "min" or "max" or "avg"))
-        {
-            _logger.LogWarning("Facet metric '{Metric}' is not supported, skipping", metric);
-            return null;
-        }
-
-        if (field.Type is not ("Edm.Int32" or "Edm.Int64" or "Edm.Double"))
-        {
-            _logger.LogWarning(
-                "Facet metric '{Metric}' requires a numeric field, but '{FieldName}' is {FieldType}, skipping",
-                metricLower, fieldName, field.Type);
-            return null;
-        }
-
-        var defaultValue = ResolveNumericDefault(parsed, fieldName, metricLower);
-
-        return metricLower switch
-        {
-            "sum" => CalculateSumFacet(reader, fieldName, field.Type, matchingDocs, defaultValue),
-            "min" => CalculateMinMaxFacet(reader, fieldName, field.Type, matchingDocs, defaultValue, isMax: false),
-            "max" => CalculateMinMaxFacet(reader, fieldName, field.Type, matchingDocs, defaultValue, isMax: true),
-            "avg" => CalculateAvgFacet(reader, fieldName, field.Type, matchingDocs, defaultValue),
-            _ => throw new InvalidOperationException($"Unreachable metric '{metricLower}'")
-        };
-    }
-
-    /// <summary>
-    /// Calculates interval facets for numeric fields, only from matching documents.
-    /// </summary>
-    private List<FacetResult> CalculateIntervalFacet(
-        IndexReader reader, 
-        string fieldName, 
-        string fieldType, 
-        double interval, 
-        int maxCount,
-        HashSet<int> matchingDocs)
-    {
-        var rangeCounts = new Dictionary<(double From, double To), long>();
-
-        // Read numeric values only from matching documents
-        var values = new List<double>();
-        
-        foreach (var docId in matchingDocs)
-        {
-            if (docId >= reader.MaxDoc)
-                continue;
-
-            var doc = reader.Document(docId);
-            var field = doc.GetField(fieldName);
-            
-            if (field != null)
-            {
-                double? numValue = fieldType switch
-                {
-                    "Edm.Double" => field.GetDoubleValue(),
-                    "Edm.Int32" => field.GetInt32Value(),
-                    "Edm.Int64" => field.GetInt64Value(),
-                    _ => null
-                };
-
-                if (numValue.HasValue)
-                {
-                    values.Add(numValue.Value);
-                }
-            }
-        }
-
-        if (!values.Any())
-        {
-            return new List<FacetResult>();
-        }
-
-        // Calculate ranges based on interval
-        var min = values.Min();
-        var max = values.Max();
-        
-        // Round down to nearest interval
-        var rangeStart = Math.Floor(min / interval) * interval;
-        var rangeEnd = rangeStart + interval;
-
-        while (rangeStart <= max)
-        {
-            var from = rangeStart;
-            var to = rangeEnd;
-            var count = values.Count(v => v >= from && v < to);
-            
-            if (count > 0)
-            {
-                rangeCounts[(from, to)] = count;
-            }
-
-            rangeStart = rangeEnd;
-            rangeEnd += interval;
-        }
-
-        // Return ranges
-        return rangeCounts
-            .OrderBy(kvp => kvp.Key.From)
-            .Take(maxCount)
-            .Select(kvp => new FacetResult
-            {
-                From = kvp.Key.From,
-                To = kvp.Key.To,
-                Count = kvp.Value
-            })
-            .ToList();
-    }
-
-    /// <summary>
-    /// Reads the stored numeric value of a field from a document, or null if the field
-    /// wasn't stored (the document had no value for it).
-    /// </summary>
-    private static double? GetStoredNumericValue(Document doc, string fieldName, string fieldType)
-    {
-        var field = doc.GetField(fieldName);
-        if (field == null)
-            return null;
-
-        return fieldType switch
-        {
-            "Edm.Double" => field.GetDoubleValue(),
-            "Edm.Int32" => field.GetInt32Value(),
-            "Edm.Int64" => field.GetInt64Value(),
-            _ => null
-        };
-    }
-
-    /// <summary>
-    /// Calculates a sum aggregation facet (metric:sum) over matching documents.
-    /// Documents without a value for the field contribute the default (if specified),
-    /// otherwise nothing. Returns a single facet bucket containing only the sum.
-    /// </summary>
-    private List<FacetResult> CalculateSumFacet(
-        IndexReader reader,
-        string fieldName,
-        string fieldType,
-        HashSet<int> matchingDocs,
-        double? defaultValue)
-    {
-        double sum = 0;
-
-        foreach (var docId in matchingDocs)
-        {
-            if (docId >= reader.MaxDoc)
-                continue;
-
-            var doc = reader.Document(docId);
-            var value = GetStoredNumericValue(doc, fieldName, fieldType) ?? defaultValue;
-            if (value.HasValue)
-            {
-                sum += value.Value;
-            }
-        }
-
-        return new List<FacetResult> { new() { Sum = sum } };
-    }
-
-    /// <summary>
-    /// Calculates a min or max aggregation facet over matching documents.
-    /// Documents without a value for the field contribute the default (if specified),
-    /// otherwise are excluded. Returns a single facet bucket containing only the min/max.
-    /// If no document contributes a value, returns no bucket at all rather than one with
-    /// a null min/max (which would serialize to an empty, unhelpful {} object).
-    /// </summary>
-    private List<FacetResult> CalculateMinMaxFacet(
-        IndexReader reader,
-        string fieldName,
-        string fieldType,
-        HashSet<int> matchingDocs,
-        double? defaultValue,
-        bool isMax)
-    {
-        double? result = null;
-
-        foreach (var docId in matchingDocs)
-        {
-            if (docId >= reader.MaxDoc)
-                continue;
-
-            var doc = reader.Document(docId);
-            var value = GetStoredNumericValue(doc, fieldName, fieldType) ?? defaultValue;
-            if (!value.HasValue)
-                continue;
-
-            result = result.HasValue
-                ? (isMax ? Math.Max(result.Value, value.Value) : Math.Min(result.Value, value.Value))
-                : value.Value;
-        }
-
-        if (!result.HasValue)
-            return new List<FacetResult>();
-
-        return new List<FacetResult> { isMax ? new FacetResult { Max = result } : new FacetResult { Min = result } };
-    }
-
-    /// <summary>
-    /// Calculates an average aggregation facet (metric:avg) over matching documents.
-    /// Documents without a value for the field contribute the default (if specified) to
-    /// both the sum and the count, otherwise are excluded from both. Returns a single
-    /// facet bucket containing only the average. If no document contributes a value,
-    /// returns no bucket at all rather than one with a null avg (which would serialize
-    /// to an empty, unhelpful {} object).
-    /// </summary>
-    private List<FacetResult> CalculateAvgFacet(
-        IndexReader reader,
-        string fieldName,
-        string fieldType,
-        HashSet<int> matchingDocs,
-        double? defaultValue)
-    {
-        double sum = 0;
-        long count = 0;
-
-        foreach (var docId in matchingDocs)
-        {
-            if (docId >= reader.MaxDoc)
-                continue;
-
-            var doc = reader.Document(docId);
-            var value = GetStoredNumericValue(doc, fieldName, fieldType) ?? defaultValue;
-            if (!value.HasValue)
-                continue;
-
-            sum += value.Value;
-            count++;
-        }
-
-        if (count == 0)
-            return new List<FacetResult>();
-
-        return new List<FacetResult> { new() { Avg = sum / count } };
     }
 
     /// <summary>
@@ -2711,14 +2357,12 @@ public class SearchService : ISearchService
             var analyzer = _indexManager.GetAnalyzer(indexName);
             var parser = new QueryParser(LuceneDocumentMapper.AppLuceneVersion, fieldName, analyzer);
 
+            // A field's similarity is its contribution to the document's score: the query terms it matches, whatever
+            // searchMode requires of the document as a whole.
+            parser.DefaultOperator = Operator.OR;
             if (request.QueryType?.ToLowerInvariant() == "full")
             {
-                parser.DefaultOperator = Operator.AND;
                 parser.AllowLeadingWildcard = true;
-            }
-            else
-            {
-                parser.DefaultOperator = Operator.OR;
             }
 
             var searchText = EscapeForSimpleQuery(request.Search ?? "*", request.QueryType);

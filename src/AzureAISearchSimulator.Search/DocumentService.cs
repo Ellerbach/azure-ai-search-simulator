@@ -45,10 +45,13 @@ public class DocumentService : IDocumentService
         _indexManager.ConfigureAnalyzers(indexName, index);
 
         var keyField = LuceneDocumentMapper.GetKeyFieldName(index);
+        DocumentCompat.ValidateBatch(index, keyField, request.Value);
         IndexWriter writer;
+        HashSet<string> existedBefore;
         try
         {
             writer = _indexManager.GetWriter(indexName);
+            existedBefore = UploadKeysThatExist(indexName, keyField, request.Value);
         }
         catch (ObjectDisposedException)
         {
@@ -68,11 +71,17 @@ public class DocumentService : IDocumentService
         }
 
         var results = new List<IndexingResult>();
+        var existsNow = new Dictionary<string, bool>(StringComparer.Ordinal);
+        bool Exists(string key) => existsNow.TryGetValue(key, out var exists) ? exists : existedBefore.Contains(key);
 
         foreach (var action in request.Value)
         {
-            var result = await ProcessActionAsync(indexName, index, keyField, writer, action);
+            var result = await ProcessActionAsync(indexName, index, keyField, writer, action, Exists);
             results.Add(result);
+            if (result.Status)
+            {
+                existsNow[result.Key] = action.ActionType != IndexActionType.Delete;
+            }
 
             // If the index was disposed mid-batch, stop processing remaining actions
             if (result.StatusCode == 503)
@@ -114,12 +123,54 @@ public class DocumentService : IDocumentService
         return response;
     }
 
+    /// <summary>
+    /// Which uploaded keys are already in the index, from one reader snapshot. Reopening a near-real-time reader per
+    /// document is slow and disposes the shared reader under concurrent requests, so the batch avoids it.
+    /// </summary>
+    private HashSet<string> UploadKeysThatExist(string indexName, string keyField, IEnumerable<IndexAction> actions)
+    {
+        var keys = actions
+            .Where(a => a.ActionType == IndexActionType.Upload)
+            .Select(a => a.Document.TryGetValue(keyField, out var key) && key != null ? ConvertToString(key) : null)
+            .OfType<string>()
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                var found = new HashSet<string>(StringComparer.Ordinal);
+                if (keys.Count == 0)
+                {
+                    return found;
+                }
+
+                var searcher = _indexManager.GetSearcher(indexName);
+                foreach (var key in keys)
+                {
+                    if (searcher.Search(new Lucene.Net.Search.TermQuery(new Term(keyField, key)), 1).TotalHits > 0)
+                    {
+                        found.Add(key);
+                    }
+                }
+
+                return found;
+            }
+            catch (ObjectDisposedException) when (attempt < 3)
+            {
+                // Another request refreshed the shared reader; take a new snapshot.
+            }
+        }
+    }
+
     private async Task<IndexingResult> ProcessActionAsync(
         string indexName,
         SearchIndex schema,
         string keyField,
         IndexWriter writer,
-        IndexAction action)
+        IndexAction action,
+        Func<string, bool> exists)
     {
         string? key = null;
         try
@@ -145,8 +196,7 @@ public class DocumentService : IDocumentService
             switch (actionType)
             {
                 case IndexActionType.Upload:
-                    var existingDoc = await GetDocumentAsync(indexName, key);
-                    return await UploadDocumentAsync(indexName, schema, writer, term, key, action.Document, isMerge: existingDoc != null);
+                    return await UploadDocumentAsync(indexName, schema, writer, term, key, action.Document, isMerge: exists(key));
 
                 case IndexActionType.Merge:
                     return await MergeDocumentAsync(indexName, schema, writer, term, key, action.Document);
@@ -357,7 +407,7 @@ public class DocumentService : IDocumentService
         Dictionary<string, object?> document)
     {
         // Get existing document
-        var existing = await GetDocumentAsync(indexName, key);
+        var existing = await LoadDocumentAsync(indexName, key);
         if (existing == null)
         {
             return new IndexingResult
@@ -369,13 +419,7 @@ public class DocumentService : IDocumentService
             };
         }
 
-        // Merge fields
-        foreach (var kvp in document)
-        {
-            existing[kvp.Key] = kvp.Value;
-        }
-
-        return await UploadDocumentAsync(indexName, schema, writer, keyTerm, key, existing, isMerge: true);
+        return await UploadDocumentAsync(indexName, schema, writer, keyTerm, key, DocumentCompat.Merge(schema, existing, document), isMerge: true);
     }
 
     private async Task<IndexingResult> MergeOrUploadDocumentAsync(
@@ -387,15 +431,10 @@ public class DocumentService : IDocumentService
         Dictionary<string, object?> document)
     {
         // Get existing document
-        var existing = await GetDocumentAsync(indexName, key);
+        var existing = await LoadDocumentAsync(indexName, key);
         if (existing != null)
         {
-            // Merge fields
-            foreach (var kvp in document)
-            {
-                existing[kvp.Key] = kvp.Value;
-            }
-            document = existing;
+            document = DocumentCompat.Merge(schema, existing, document);
         }
 
         return await UploadDocumentAsync(indexName, schema, writer, keyTerm, key, document, isMerge: existing != null);
@@ -447,6 +486,22 @@ public class DocumentService : IDocumentService
     }
 
     public async Task<Dictionary<string, object?>?> GetDocumentAsync(
+        string indexName,
+        string key,
+        IEnumerable<string>? selectedFields = null)
+    {
+        var document = await LoadDocumentAsync(indexName, key);
+        return document is null ? null : DocumentCompat.Shape((await _indexService.GetIndexAsync(indexName))!, document, selectedFields);
+    }
+
+    /// <inheritdoc />
+    public Task<Dictionary<string, object?>?> GetStoredDocumentAsync(string indexName, string key) =>
+        LoadDocumentAsync(indexName, key);
+
+    /// <summary>
+    /// Loads a stored document as it was indexed, without shaping it for a response.
+    /// </summary>
+    private async Task<Dictionary<string, object?>?> LoadDocumentAsync(
         string indexName,
         string key,
         IEnumerable<string>? selectedFields = null)

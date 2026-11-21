@@ -1,0 +1,123 @@
+### =====================================================
+### Indexer Field Sample Requests
+### Demonstrates how an indexer writes source documents: fields the
+### target index doesn't define (source properties and metadata_*
+### values) are left out instead of failing the batch, and Edm.Int64
+### values are indexed exactly.
+### =====================================================
+###
+### SETUP ORDER:
+### 1. Create the index, the data source and the indexer
+### 2. Run the indexer and check its status
+### 3. Search the indexed documents
+### 4. Cleanup
+###
+### Prerequisites:
+### - The simulator running at https://localhost:7250
+### - REST Client extension for VS Code
+### - @sampleDataPath set to this repo's samples/sample-data folder
+###   (the source files are in samples/sample-data/indexer-fields/)
+###
+### Simulator only: Azure has no filesystem data source, so unlike the
+### other feature samples this file has no [AZURE] requests.
+### =====================================================
+
+@baseUrl = {{$dotenv BASE_URL}}
+@apiVersion = {{$dotenv API_VERSION}}
+@adminKey = {{$dotenv ADMIN_KEY}}
+@queryKey = {{$dotenv QUERY_KEY}}
+@sampleDataPath = C:/Projets/AzureAISimulator/samples/sample-data
+
+# =====================================================
+# 1. CREATE THE INDEX, THE DATA SOURCE AND THE INDEXER
+# =====================================================
+
+### Create an index that defines only some of the source's properties
+PUT {{baseUrl}}/indexes/indexer-field-sample?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "name": "indexer-field-sample",
+  "fields": [
+    { "name": "id", "type": "Edm.String", "key": true, "filterable": true },
+    { "name": "name", "type": "Edm.String", "searchable": true },
+    { "name": "views", "type": "Edm.Int64", "filterable": true, "sortable": true }
+  ]
+}
+
+### Create a data source over the JSON files in indexer-fields/
+PUT {{baseUrl}}/datasources/indexer-field-files?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "name": "indexer-field-files",
+  "type": "filesystem",
+  "credentials": { "connectionString": "{{sampleDataPath}}" },
+  "container": { "name": "indexer-fields" }
+}
+
+### Create an indexer that parses each file as one JSON document
+PUT {{baseUrl}}/indexers/indexer-field-indexer?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{adminKey}}
+
+{
+  "name": "indexer-field-indexer",
+  "dataSourceName": "indexer-field-files",
+  "targetIndexName": "indexer-field-sample",
+  "parameters": { "configuration": { "parsingMode": "json" } }
+}
+
+# =====================================================
+# 2. RUN THE INDEXER
+# =====================================================
+
+### Run the indexer
+POST {{baseUrl}}/indexers/indexer-field-indexer/run?api-version={{apiVersion}}
+api-key: {{adminKey}}
+
+### Check its status: both documents succeed, though the files have properties the index doesn't define
+GET {{baseUrl}}/indexers/indexer-field-indexer/status?api-version={{apiVersion}}
+api-key: {{adminKey}}
+
+# =====================================================
+# 3. SEARCH THE INDEXED DOCUMENTS
+# =====================================================
+
+### Both documents are indexed, with only the fields the index defines → p1, p2
+POST {{baseUrl}}/indexes/indexer-field-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "*",
+  "orderby": "id"
+}
+
+### Int64 values are exact: 9007199254740993 isn't rounded to the nearest double → p1
+POST {{baseUrl}}/indexes/indexer-field-sample/docs/search?api-version={{apiVersion}}
+Content-Type: application/json
+api-key: {{queryKey}}
+
+{
+  "search": "*",
+  "filter": "views eq 9007199254740993"
+}
+
+# =====================================================
+# 4. CLEANUP
+# =====================================================
+
+### Delete the indexer
+DELETE {{baseUrl}}/indexers/indexer-field-indexer?api-version={{apiVersion}}
+api-key: {{adminKey}}
+
+### Delete the data source
+DELETE {{baseUrl}}/datasources/indexer-field-files?api-version={{apiVersion}}
+api-key: {{adminKey}}
+
+### Delete the index
+DELETE {{baseUrl}}/indexes/indexer-field-sample?api-version={{apiVersion}}
+api-key: {{adminKey}}

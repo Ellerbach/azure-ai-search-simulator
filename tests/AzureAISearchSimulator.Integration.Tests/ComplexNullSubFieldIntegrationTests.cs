@@ -200,14 +200,14 @@ public class ComplexNullSubFieldIntegrationTests : IDisposable
         var doc = await _documentService.GetDocumentAsync(indexName, "2");
 
         Assert.NotNull(doc);
-        var tiles = Assert.IsType<JsonElement>(doc!["Tiles"]);
-        Assert.Equal(JsonValueKind.Null, tiles.GetProperty("When").ValueKind);
-        Assert.Equal(JsonValueKind.Null, tiles.GetProperty("Count").ValueKind);
+        var tiles = Assert.IsType<Dictionary<string, object?>>(doc!["Tiles"]);
+        Assert.Null(tiles["When"]);
+        Assert.Null(tiles["Count"]);
 
-        var items = Assert.IsType<JsonElement>(doc["Items"]);
-        var item = Assert.Single(items.EnumerateArray());
-        Assert.Equal(JsonValueKind.Null, item.GetProperty("When").ValueKind);
-        Assert.Equal(JsonValueKind.Null, item.GetProperty("Count").ValueKind);
+        var items = Assert.IsType<List<object?>>(doc["Items"]);
+        var item = Assert.IsType<Dictionary<string, object?>>(Assert.Single(items));
+        Assert.Null(item["When"]);
+        Assert.Null(item["Count"]);
     }
 
     public void Dispose()

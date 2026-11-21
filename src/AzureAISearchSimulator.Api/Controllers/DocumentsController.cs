@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.WebUtilities;
 using AzureAISearchSimulator.Core.Models;
 using AzureAISearchSimulator.Core.Services;
 using AzureAISearchSimulator.Api.Services.Authorization;
@@ -72,6 +73,10 @@ public class DocumentsController : ControllerBase
         {
             return NotFound(new { error = new { message = $"Index '{indexName}' not found" } });
         }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = new { code = "InvalidRequestParameter", message = ex.Message } });
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error indexing documents to {IndexName}", indexName);
@@ -101,6 +106,12 @@ public class DocumentsController : ControllerBase
         try
         {
             var response = await _searchService.SearchAsync(indexName, request);
+            if (response.NextPageParameters != null)
+            {
+                // As in Azure, the next page is requested from this endpoint with POST and @search.nextPageParameters.
+                response.ODataNextLink = $"{Request.Scheme}://{Request.Host}{Request.PathBase}{Request.Path}{Request.QueryString}";
+            }
+
             return Ok(response);
         }
         catch (KeyNotFoundException)
@@ -187,6 +198,15 @@ public class DocumentsController : ControllerBase
         try
         {
             var response = await _searchService.SearchAsync(indexName, request);
+            if (response.NextPageParameters is { Skip: var nextSkip })
+            {
+                // As in Azure, a GET search continues with GET: the same query string with the next $skip.
+                var query = QueryHelpers.ParseQuery(Request.QueryString.Value);
+                query["$skip"] = nextSkip.ToString();
+                response.ODataNextLink = QueryHelpers.AddQueryString($"{Request.Scheme}://{Request.Host}{Request.PathBase}{Request.Path}", query);
+                response.NextPageParameters = null;
+            }
+
             return Ok(response);
         }
         catch (KeyNotFoundException)

@@ -633,7 +633,7 @@ public class IndexerServiceProjectionTests
             .ReturnsAsync(skillset);
 
         // Index service: return SearchIndex schemas for target indexes
-        // so BuildProjectedDocumentsAsync can resolve key field names
+        // so BuildProjectedDocumentsAsync can resolve key field names; the indexer only uploads fields they define
         _indexServiceMock
             .Setup(x => x.GetIndexAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((string name, CancellationToken _) => new SearchIndex
@@ -641,7 +641,12 @@ public class IndexerServiceProjectionTests
                 Name = name,
                 Fields = new List<SearchField>
                 {
-                    new() { Name = "chunk_id", Type = "Edm.String", Key = true }
+                    new() { Name = "chunk_id", Type = "Edm.String", Key = true },
+                    new() { Name = "parent_id", Type = "Edm.String", Filterable = true },
+                    new() { Name = "content", Type = "Edm.String", Searchable = true },
+                    new() { Name = "title", Type = "Edm.String", Searchable = true },
+                    new() { Name = "summary", Type = "Edm.String", Searchable = true },
+                    new() { Name = "metadata_storage_path", Type = "Edm.String" }
                 }
             });
 
